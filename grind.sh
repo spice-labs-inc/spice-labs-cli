@@ -37,17 +37,20 @@ Help()
 # Process the input options. Add options as needed.        #
 ############################################################
 
-#Setup some variables
+#plan to use these variables
+
 #adg build directory
 #BUILDDIR = " "
 #command to run
 #COMMAND = " "
 #jwt token for upload
 #JWT = " "
-#public key for upload
+# key for upload
 #PUBLICKEY = " "
 #output directory for adg
 #OUTPUTDIR = " "
+#payload for ginger can be file or path
+#payload=""
 #upload dir
 #UPLOADDIR = " "
 #wasabi server
@@ -55,9 +58,16 @@ Help()
 #zip file path with creditials
 #ZIPFILEPATH = " "
 
+#directory holding binaries in container
+#MUST NOT HAVE TRAILING SLASH
+binarydir="."
+
 # Get the options
-while getopts ":b:c:hj:k:o:p:s:z:" option; do
+while getopts ":b:c:hj:k:o:p:s:u:z:" option; do
    case $option in
+      b)
+         builddir=${OPTARG} >&2
+         ;;
       c) 
          command=${OPTARG} >&2
 
@@ -68,9 +78,31 @@ while getopts ":b:c:hj:k:o:p:s:z:" option; do
             Help
          fi
          ;;
+
       h) # display Help
          Help
          exit;;
+      j)
+         jwt=${OPTARG} >&2
+         ;;
+      k)
+         publickey=${OPTARG} >&2
+         ;;
+      o)
+         outputdir=${OPTARG} >&2
+         ;;
+      p)
+         payload=${OPTARG} >&2
+         ;;
+      s)
+         servername=${OPTARG} >&2
+         ;;
+      u)
+         uploaddir=${OPTARG} >&2
+         ;;
+      z)
+         zipfile=${OPTARG} >&2
+         ;;
      \?) # Invalid option
          echo "Error: Invalid option"
          Help
@@ -78,5 +110,28 @@ while getopts ":b:c:hj:k:o:p:s:z:" option; do
    esac
 done
 
+echo "Done with variables"
 
-echo "do the "$command""
+if [[ "$command" == "adg" ]]; then
+   echo "firing goatrodeo command"
+   echo "java -jar $binarydir/goatrodeo.jar -b $builddir -o $outputdir"
+   java -jar $binarydir/goatrodeo.jar -b $builddir -o $outputdir
+   
+elif [[ "$command" == "upload" ]]; then
+   echo "fire ginger command"
+   #check to see if zip file passed in and exists
+      if [[ -n "$zipfile" ]] && [[ -f $zipfile ]]; then
+            #call ginger with zipfile
+            echo "$binarydir/ginger -p $payload -z $zipfile" 
+            $binarydir/ginger -p $payload -z $zipfile
+      else
+            #call ginger with server publickey and jwt
+            echo "$binarydir/ginger -p $payload -s $servername -j $jwt -k $publickey"
+            $binarydir/ginger -p $payload -s $server -j $jwt -k $publickey
+      fi
+
+else
+   #should never get here but just in case....
+   echo "invalid command argument"
+   exit 1;
+fi
