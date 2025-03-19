@@ -5,4 +5,4 @@ FROM spicelabs/goatrodeo
 COPY --from=ginger /usr/bin/ginger /usr/bin/ginger
 COPY ./grind.sh /usr/bin/grind.sh
 
-ENTRYPOINT ["/bin/bash", "-c", "/usr/bin/grind.sh"]
+ENTRYPOINT ["/usr/bin/grind.sh"]
