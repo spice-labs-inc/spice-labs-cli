@@ -60,7 +60,7 @@ Help()
 
 #directory holding binaries in container
 #MUST NOT HAVE TRAILING SLASH
-binarydir="."
+binarydir="/usr/bin"
 
 # Get the options
 while getopts ":b:c:hj:k:o:p:s:u:z:" option; do
