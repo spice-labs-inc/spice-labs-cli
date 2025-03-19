@@ -60,7 +60,7 @@ Help()
 
 #directory holding binaries in container
 #MUST NOT HAVE TRAILING SLASH
-binarydir="/usr/bin"
+binarydir="/opt/grinder"
 
 # Get the options
 while getopts ":b:c:hj:k:o:p:s:u:z:" option; do
@@ -115,7 +115,10 @@ echo "Done with variables"
 if [[ "$command" == "adg" ]]; then
    echo "firing goatrodeo command"
    echo "java -jar $binarydir/goatrodeo.jar -b $builddir -o $outputdir"
+   #echo "java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir"
    java -jar $binarydir/goatrodeo.jar -b $builddir -o $outputdir
+   #java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir
+   
    
 elif [[ "$command" == "upload" ]]; then
    echo "fire ginger command"
