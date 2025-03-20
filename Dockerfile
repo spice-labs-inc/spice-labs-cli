@@ -1,6 +1,8 @@
 FROM spicelabs/ginger AS ginger
 FROM spicelabs/goatrodeo AS goatrodeo
 
+ENV CLASSPATH=.;/opt/docker/lib/
+
 #USER root
 #RUN mkdir /opt/grinder
 #RUN cp /opt/docker/lib/goatrodeo.goatrodeo*.jar /opt/docker/lib/goatrodeo.jar

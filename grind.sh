@@ -9,7 +9,7 @@ Help()
    # Display Help
    echo "Many options to support goatrodeo and ginger processes which are the scan/adg generation and upload respectively."
    echo
-   echo "Syntax: grind [adg|upload] [-b|j|k|o|p|s|z]"
+   echo "Syntax: grind.sh [-b|c|j|k|m|o|p|s|z]"
    echo ""
    echo "adg:: Launches goatrodeo generate adgs from container images or applications."
    echo ""
@@ -20,6 +20,7 @@ Help()
    echo "-c     Command either 'adg' or 'upload'"
    echo "-j     For upload, the JWT token for uploading to Wasabi"
    echo "-k     For upload, the key for encrypting files for uploading to Wasabi"
+   echo "-m     For upload, the mime type of the upload"
    echo "-o     For adg, directory that output should be directed to"
    echo "-p     For upload, directory or file that should be uploaded to Wasabi"
    echo "-s     For upload, the server address/endpoint to upload to"
@@ -45,6 +46,8 @@ Help()
 #COMMAND = " "
 #jwt token for upload
 #JWT = " "
+#mime type for upload
+#mime_type = ""
 # key for upload
 #PUBLICKEY = " "
 #output directory for adg
@@ -62,8 +65,12 @@ Help()
 #MUST NOT HAVE TRAILING SLASH
 binarydir="/usr/bin"
 
+# Set the directory containing the jar files
+lib_dir="/opt/docker/lib"
+
+
 # Get the options
-while getopts ":b:c:hj:k:o:p:s:u:z:" option; do
+while getopts ":b:c:hj:k:m:o:p:s:u:z:" option; do
    case $option in
       b)
          builddir=${OPTARG} >&2
@@ -87,6 +94,9 @@ while getopts ":b:c:hj:k:o:p:s:u:z:" option; do
          ;;
       k)
          publickey=${OPTARG} >&2
+         ;;
+      m)
+         mime_type=${OPTARG} >&2
          ;;
       o)
          outputdir=${OPTARG} >&2
@@ -114,9 +124,11 @@ echo "Done with variables"
 
 if [[ "$command" == "adg" ]]; then
    echo "firing goatrodeo command"
-   echo "java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir"
+  # echo "java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir"
    #echo "java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir"
-   java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir
+   #java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir
+   #java -cp "$classpath:." /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir
+   /opt/docker/bin/goatrodeo -b $builddir -o $outputdir
    #java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir
    
    
@@ -125,12 +137,12 @@ elif [[ "$command" == "upload" ]]; then
    #check to see if zip file passed in and exists
       if [[ -n "$zipfile" ]] && [[ -f $zipfile ]]; then
             #call ginger with zipfile
-            echo "$binarydir/ginger -p $payload -z $zipfile" 
-            $binarydir/ginger -p $payload -z $zipfile
+            echo "$binarydir/ginger -p $payload -z $zipfile -m $mime_type" 
+            $binarydir/ginger -p $payload -z $zipfile -m $mime_type
       else
             #call ginger with server publickey and jwt
-            echo "$binarydir/ginger -p $payload -s $servername -j $jwt -k $publickey"
-            $binarydir/ginger -p $payload -s $server -j $jwt -k $publickey
+            echo "$binarydir/ginger --payload $payload -s $servername -j $jwt -k $publickey -m $mime_type"
+            $binarydir/ginger -p $payload -s $server -j $jwt -k $publickey -m $mime_type
       fi
 
 else
