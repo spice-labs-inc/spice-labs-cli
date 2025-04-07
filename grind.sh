@@ -120,33 +120,27 @@ while getopts ":b:c:hj:k:m:o:p:s:u:z:" option; do
    esac
 done
 
-echo "Done with variables"
+#echo "Done with variables"
 
 if [[ "$command" == "adg" ]]; then
-   echo "firing goatrodeo command"
-  # echo "java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir"
-   #echo "java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir"
-   #java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir
-   #java -cp "$classpath:." /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir
+   #echo "Run goatrodeo command"
    /opt/docker/bin/goatrodeo -b $builddir -o $outputdir
-   #java -jar /opt/docker/lib/goatrodeo.goatrodeo-0.6.3.jar -b $builddir -o $outputdir
-   
-   
 elif [[ "$command" == "upload" ]]; then
-   echo "fire ginger command"
+   #echo "fire ginger command"
    #check to see if zip file passed in and exists
       if [[ -n "$zipfile" ]] && [[ -f $zipfile ]]; then
             #call ginger with zipfile
             echo "$binarydir/ginger -p $payload -z $zipfile -m $mime_type" 
             $binarydir/ginger -p $payload -z $zipfile -m $mime_type
       else
-            #call ginger with server publickey and jwt
-            echo "$binarydir/ginger --payload $payload -s $servername -j $jwt -k $publickey -m $mime_type"
-            $binarydir/ginger -p $payload -s $server -j $jwt -k $publickey -m $mime_type
+            #call ginger with payload, mime, jwt
+            echo "$binarydir/ginger -p $payload -j $jwt  -m $mime_type"
+            $binarydir/ginger -p $payload -j $jwt -m $mime_type
       fi
 
 else
    #should never get here but just in case....
    echo "invalid command argument"
+   Help
    exit 1;
 fi
