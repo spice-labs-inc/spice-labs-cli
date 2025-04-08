@@ -16,11 +16,11 @@ Help()
    echo ""
    echo "upload:: Packages to a Spice Labs server using security keys supplied"
    echo ""
-   echo "all:: Run the scan and upload the output "
+   echo "run:: Run both the scan and upload the output "
    echo ""
    echo "options:"
    echo "-b     For scan, the source directory or file to scan"
-   echo "-c     What command to run? scan, upload, or all"
+   echo "-c     What command to run? scan, upload, or run"
    echo "-d     Override underlying docker image (not common just for testing)"
    echo "-j     For upload, the JWT token (either file or token) for uploading to Spice Labs server"
    echo "-m     For upload, the mime type of the upload. Defaults to 'gr' if not passed in."
@@ -71,8 +71,8 @@ while getopts ":b:c:d:hj:m:o:" option; do
 
          #it needs to be "adg" or "upload" or call the help
          #if [ "$command" != "adg" ] && [ "$command" != "upload" ] then
-         if [[ "$command" != "scan" ]] && [[ "$command" != "upload" ]] && [[ "$command" != "all" ]]; then
-            echo "Command needs to be either scan or upload or all"
+         if [[ "$command" != "scan" ]] && [[ "$command" != "upload" ]] && [[ "$command" != "run" ]]; then
+            echo "Command needs to be either scan or upload or run"
             Help
          fi
          ;;
@@ -127,7 +127,7 @@ case $command in
         #docker run --rm  -v $outputdir:/tmp/output f3eb230f3c0c -c upload -p /tmp/output -j $jwt -z $zipfile -m $mime_type -k $publickey -s $servername
         Upload
         ;;
-    all)
+    run)
         Scan
         Upload
         ;;
