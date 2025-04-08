@@ -19,11 +19,9 @@ Help()
    echo "-b     For adg, the source directory or file to scan"
    echo "-c     Command either 'adg' or 'upload'"
    echo "-j     For upload, the JWT token for uploading to Wasabi"
-   echo "-k     For upload, the key for encrypting files for uploading to Wasabi"
    echo "-m     For upload, the mime type of the upload"
    echo "-o     For adg, directory that output should be directed to"
    echo "-p     For upload, directory or file that should be uploaded to Wasabi"
-   echo "-s     For upload, the server address/endpoint to upload to"
    echo "-z     For upload, the path to a zip file that contains security credentials for Wasabi"
    echo;
    exit 1;
@@ -65,12 +63,10 @@ Help()
 #MUST NOT HAVE TRAILING SLASH
 binarydir="/usr/bin"
 
-# Set the directory containing the jar files
-lib_dir="/opt/docker/lib"
 
 
 # Get the options
-while getopts ":b:c:hj:k:m:o:p:s:u:z:" option; do
+while getopts ":b:c:hj:m:o:p:z:" option; do
    case $option in
       b)
          builddir=${OPTARG} >&2
@@ -88,12 +84,9 @@ while getopts ":b:c:hj:k:m:o:p:s:u:z:" option; do
 
       h) # display Help
          Help
-         exit;;
+         ;;
       j)
          jwt=${OPTARG} >&2
-         ;;
-      k)
-         publickey=${OPTARG} >&2
          ;;
       m)
          mime_type=${OPTARG} >&2
@@ -103,12 +96,6 @@ while getopts ":b:c:hj:k:m:o:p:s:u:z:" option; do
          ;;
       p)
          payload=${OPTARG} >&2
-         ;;
-      s)
-         servername=${OPTARG} >&2
-         ;;
-      u)
-         uploaddir=${OPTARG} >&2
          ;;
       z)
          zipfile=${OPTARG} >&2
@@ -124,23 +111,22 @@ done
 
 if [[ "$command" == "adg" ]]; then
    #echo "Run goatrodeo command"
-   /opt/docker/bin/goatrodeo -b $builddir -o $outputdir
+   /opt/docker/bin/goatrodeo -b "$builddir" -o "$outputdir"
 elif [[ "$command" == "upload" ]]; then
    #echo "fire ginger command"
    #check to see if zip file passed in and exists
       if [[ -n "$zipfile" ]] && [[ -f $zipfile ]]; then
             #call ginger with zipfile
             echo "$binarydir/ginger -p $payload -z $zipfile -m $mime_type" 
-            $binarydir/ginger -p $payload -z $zipfile -m $mime_type
+            $binarydir/ginger -p "$payload" -z "$zipfile" -m "$mime_type"
       else
             #call ginger with payload, mime, jwt
             echo "$binarydir/ginger -p $payload -j $jwt  -m $mime_type"
-            $binarydir/ginger -p $payload -j $jwt -m $mime_type
+            $binarydir/ginger -p "$payload" -j "$jwt" -m "$mime_type"
       fi
 
 else
    #should never get here but just in case....
    echo "invalid command argument"
    Help
-   exit 1;
 fi
