@@ -15,11 +15,11 @@ scan:: Launches goatrodeo scanner to generate adgs from container images or appl
 
 upload:: Packages to a Spice Labs server using security keys supplied
 
-all:: Run the scan and upload the output
+run:: Run both the scan and upload the output
 
 options:
 -b     For scan, the source directory or file to scan
--c     What command to run? scan, upload, or all
+-c     What command to run? scan, upload, or run
 -d     Override underlying docker image (not common just for testing)
 -j     For upload, the JWT token (either file or token) for uploading to Spice Labs server
 -m     For upload, the mime type of the upload. Defaults to 'gr' if not passed in.
@@ -28,7 +28,9 @@ options:
 
 If I had some files to scan in a folder named ```playground/test_data```, I wanted the scan output to be stored in ```playground/output```, and I have a JWT or API token ```Downloads\spice_pass.jwt``` I could run a command to scan and upload with:
 
-```./grinder.sh -c all -b ~/playground/test_data -o ~/playground/output -j ~/Downloads/spice_pass.jwt```
+``` bash
+./grinder.sh -c all -b ~/playground/test_data -o ~/playground/output -j ~/Downloads/spice_pass.jwt
+```
 
 ## I don't want to run your grinder.sh file
 
@@ -58,10 +60,13 @@ options:
 
 Normally these will be called from a container so you will have something like:
 
-```bash
+``` bash
 docker run --rm -v ./local/path/to/scan:/tmp/scan -v ./local/path/to/goatrodeo/output:/tmp/output spicelabs/grinder -c adg -b /tmp/scan -0 /tmp/output
+```
 
 then you can upload results by:
 
-```docker run --rm -v ./local/path/to/goatrodeo/output:/tmp/output -v ./local/path/to/certs/zip:/tmp/certs spicelabs/grinder -c upload -p /tmp/output -z /tmp/certs/certs.zip -m gr  ```
+``` bash
+ docker run --rm -v ./local/path/to/goatrodeo/output:/tmp/output -v ./local/path/to/certs/zip:/tmp/certs spicelabs/grinder -c upload -p /tmp/output -z /tmp/certs/certs.zip -m gr 
+ ```
   
