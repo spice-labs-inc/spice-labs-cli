@@ -58,7 +58,8 @@ options:
 
 Normally these will be called from a container so you will have something like:
 
-```docker run --rm -v ./local/path/to/scan:/tmp/scan -v ./local/path/to/goatrodeo/output:/tmp/output spicelabs/grinder -c adg -b /tmp/scan -0 /tmp/output```
+```bash
+docker run --rm -v ./local/path/to/scan:/tmp/scan -v ./local/path/to/goatrodeo/output:/tmp/output spicelabs/grinder -c adg -b /tmp/scan -0 /tmp/output
 
 then you can upload results by:
 
