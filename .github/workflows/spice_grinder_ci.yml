@@ -1,0 +1,81 @@
+name: Spice Grinder Action
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'Select a repository from the organization'
+        required: true
+        type: choice
+        options:
+          - bigtent
+          - blog
+          - cardamom
+          - cvetardis
+          - dev-env
+          - dogfood
+          - fennel
+          - ginger
+          - goatrodeo
+          - hello-log4shell
+          - hello-log4shell-action
+          - internal-docs
+          - k8s_journey
+          - mace
+          - nutmeg
+          - peppermill
+          - pipelines
+          - platform
+          - public-docs
+          - revelations
+          - revelations_old_rust
+          - sbt-dev-env
+          - scala3.g8
+          - security-registries
+          - serrano
+          - shmem
+          - test-data
+          - turmeric
+          - wasabi
+          - zizmor-action
+
+      branch:
+        description: 'Select the branch to scan'
+        required: true
+        default: 'main'
+        type: string
+
+permissions:
+  contents: read
+  packages: read 
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout with LFS
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+
+    - name: Set up directories for running Goat Rodeo against the Goat Rodeo package
+      run: |
+        mkdir -p target/input
+        mkdir -p target/output
+        cp target/scala-*/goatrodeo*.jar target/input
+
+    - name: Scan with Spice Grinder
+      run: |
+        docker run --platform linux/amd64 --quiet --rm --network bridge --user $(id -u):$(id -g) \
+        -v $(pwd)/target/input:/input:ro -v $(pwd)/target/output:/output spicelabs/grinder:latest \
+        -c adg -b /input -o /output
+
+    - name: Upload with Spice Grinder
+      run: |
+        docker run --platform linux/amd64 --quiet --rm --user $(id -u):$(id -g) \
+        -v $(pwd)/target/output:/output  spicelabs/grinder:latest \
+        -c upload -p /output \
+        -j ${{ secrets.GRINDER_JWT }} \
+        -m gr
