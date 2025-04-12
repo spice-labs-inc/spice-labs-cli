@@ -3,34 +3,8 @@ name: Spice Grinder Repository Scanner
 on:
   workflow_dispatch:
     inputs:
-      repository:
-        description: 'Select a repository from the organization (dropdown)'
-        required: false
-        type: choice
-        options:
-          - bigtent
-          - blog
-          - cardamom
-          - cargo-version-check
-          - dashboard
-          - dev-env
-          - dogfood
-          - fennel
-          - ginger
-          - goatrodeo
-          - grinder
-          - pipelines
-          - platform
-          - public-docs
-          - red-kibble
-          - sbt-dev-env
-          - trader
-          - turmeric
-          - wasabi
-          - zizmor-action
-
       repository_url:
-        description: 'Alternative GitHub repo URL (e.g. https://github.com/org/repo.git)'
+        description: 'GitHub repo URL (e.g. https://github.com/org/repo.git)'
         required: false
         type: string
 
@@ -40,7 +14,7 @@ on:
         type: string
 
       branch:
-        description: 'Branch to scan (only applies to dropdown or URL)'
+        description: 'Branch to scan (only applies to URL)'
         required: false
         default: 'main'
         type: string
@@ -68,28 +42,36 @@ jobs:
     steps:
       - name: Show selected inputs
         run: |
-          echo "Dropdown repo:      ${{ inputs.repository }}"
           echo "GitHub repo URL:    ${{ inputs.repository_url }}"
           echo "Custom file path:   ${{ inputs.file_path }}"
           echo "Branch:             ${{ inputs.branch }}"
           echo "Config:             ${{ inputs.config }}"
           echo "Mode:               ${{ inputs.mode }}"
 
+      - name: Validate inputs (only one source allowed)
+        run: |
+          count=0
+          [[ -n "${{ inputs.repository_url }}" ]] && ((count++))
+          [[ -n "${{ inputs.file_path }}" ]] && ((count++))
+
+          if [ "$count" -eq 0 ]; then
+            echo "❌ ERROR: Please provide either 'repository_url' or 'file_path'."
+            exit 1
+          elif [ "$count" -gt 1 ]; then
+            echo "❌ ERROR: Only one of 'repository_url' or 'file_path' can be used at a time."
+            exit 1
+          fi
+
       - name: Prepare input/output directories
         run: mkdir -p target/input target/output
 
-      - name: Clone selected repository
-        if: inputs.repository != ''
-        run: |
-          git clone --branch ${{ inputs.branch }} https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/spice-labs-inc/${{ inputs.repository }} target/input
-
       - name: Clone from URL
-        if: inputs.repository_url != ''
+        if: ${{ inputs.repository_url != '' }}
         run: |
           git clone --branch ${{ inputs.branch }} --depth 1 ${{ inputs.repository_url }} target/input
 
       - name: Copy input from path
-        if: inputs.file_path != ''
+        if: ${{ inputs.file_path != '' }}
         run: |
           cp -r ${{ inputs.file_path }}/* target/input/
 
