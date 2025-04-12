@@ -1,0 +1,108 @@
+name: Spice Grinder Repository Scanner
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'Select a repository from the organization (dropdown)'
+        required: false
+        type: choice
+        options:
+          - bigtent
+          - blog
+          - cardamom
+          - cargo-version-check
+          - dashboard
+          - dev-env
+          - dogfood
+          - fennel
+          - ginger
+          - goatrodeo
+          - grinder
+          - pipelines
+          - platform
+          - public-docs
+          - red-kibble
+          - sbt-dev-env
+          - trader
+          - turmeric
+          - wasabi
+          - zizmor-action
+
+      repository_url:
+        description: 'Alternative GitHub repo URL (e.g. https://github.com/org/repo.git)'
+        required: false
+        type: string
+
+      file_path:
+        description: 'Path on the runner to scan (e.g. /path/to/code)'
+        required: false
+        type: string
+
+      branch:
+        description: 'Branch to scan (only applies to dropdown or URL)'
+        required: false
+        default: 'main'
+        type: string
+
+      config:
+        description: 'Grinder config (e.g. adg, full)'
+        required: true
+        default: 'adg'
+        type: string
+
+      mode:
+        description: 'Upload mode (e.g. gr, full)'
+        required: true
+        default: 'gr'
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show selected inputs
+        run: |
+          echo "Dropdown repo:      ${{ inputs.repository }}"
+          echo "GitHub repo URL:    ${{ inputs.repository_url }}"
+          echo "Custom file path:   ${{ inputs.file_path }}"
+          echo "Branch:             ${{ inputs.branch }}"
+          echo "Config:             ${{ inputs.config }}"
+          echo "Mode:               ${{ inputs.mode }}"
+
+      - name: Prepare input/output directories
+        run: mkdir -p target/input target/output
+
+      - name: Clone selected repository
+        if: inputs.repository != ''
+        run: |
+          git clone --branch ${{ inputs.branch }} https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/spice-labs-inc/${{ inputs.repository }} target/input
+
+      - name: Clone from URL
+        if: inputs.repository_url != ''
+        run: |
+          git clone --branch ${{ inputs.branch }} --depth 1 ${{ inputs.repository_url }} target/input
+
+      - name: Copy input from path
+        if: inputs.file_path != ''
+        run: |
+          cp -r ${{ inputs.file_path }}/* target/input/
+
+      - name: Scan with Spice Grinder
+        run: |
+          docker run --platform linux/amd64 --quiet --rm --network none --user $(id -u):$(id -g) \
+          -v $(pwd)/target/input:/input:ro -v $(pwd)/target/output:/output spicelabs/grinder:latest \
+          -c ${{ inputs.config }} -b /input -o /output
+
+      - name: Upload with Spice Grinder
+        run: |
+          docker run --platform linux/amd64 --quiet --rm --user $(id -u):$(id -g) \
+          -v $(pwd)/target/output:/output spicelabs/grinder:latest \
+          -c upload -p /output \
+          -j ${{ secrets.GRINDER_JWT }} \
+          -m ${{ inputs.mode }}
