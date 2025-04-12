@@ -1,6 +1,6 @@
 #This will be the workflow to build and publish the container
 # It will be important to watch the git and docker contexts as we are pulling other repos to build
-name: Publish Grinder Container Images
+name: Publish Spice Grinder Container Images
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
     
 jobs:
   push_to_registry:
-    name: Push Docker image to Docker Hub and GHCR
+    name: Push Docker Image to Docker Hub and GHCR.io
     runs-on: ubuntu-latest
 
     permissions:
