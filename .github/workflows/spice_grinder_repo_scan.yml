@@ -31,6 +31,9 @@ on:
         default: 'gr'
         type: string
 
+  pull_request:  
+    branches: ["main"]  
+
 permissions:
   contents: read
   packages: read
