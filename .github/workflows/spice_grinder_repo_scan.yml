@@ -29,10 +29,7 @@ on:
         description: 'Upload mode (e.g. gr, full)'
         required: true
         default: 'gr'
-        type: string
-
-  pull_request:  
-    branches: ["main"]  
+        type: string 
 
 permissions:
   contents: read
