@@ -1,132 +1,285 @@
-#! /bin/bash
+#!/bin/bash
+set -euo pipefail
 
-# this is going to be the SH file to do the work
-############################################################
-# Help                                                     #
-############################################################
-Help()
-{
-   # Display Help
-   echo "Many options to support goatrodeo and ginger processes which are the scan/adg generation and upload respectively."
-   echo
-   echo "Syntax: grind.sh [-b|c|j|k|m|o|p|s|z]"
-   echo ""
-   echo "adg:: Launches goatrodeo generate adgs from container images or applications."
-   echo ""
-   echo "upload:: packages to a Wasabi server using security keys supplied"
-   echo ""
-   echo "options:"
-   echo "-b     For adg, the source directory or file to scan"
-   echo "-c     Command either 'adg' or 'upload'"
-   echo "-j     For upload, the JWT token for uploading to Wasabi"
-   echo "-m     For upload, the mime type of the upload"
-   echo "-o     For adg, directory that output should be directed to"
-   echo "-p     For upload, directory or file that should be uploaded to Wasabi"
-   echo "-z     For upload, the path to a zip file that contains security credentials for Wasabi"
-   echo;
-   exit 1;
+# Constants
+ADG_MIME_TYPE="application/vnd.cc.bigtent"
+DEPLOYMENT_EVENTS_MIME_TYPE="application/vnd.info.deployevent"
+SPICE_PASS_ENV_VAR="SPICE_PASS"
+
+# Globals
+command="run"
+input_dir=""
+output_dir=""
+verbose=false
+quiet=false
+temp_dir=""
+spinner_pid=""
+
+#############################################
+# Help                                      #
+#############################################
+show_help() {
+  cat << EOF
+
+Usage: grind.sh --command <cmd> [--input <path>] [--output <path>] [--verbose|--quiet]
+
+Commands:
+  run                     Scan artifacts and upload ADGs (default)
+  scan-artifacts          Generate ADGs from input directory (debug use only)
+  upload-adgs             Upload pre-generated ADGs from input directory (debug use only)
+  upload-deployment-events Upload deployment log events from stdin
+
+Options:
+  --command CMD           One of: run, scan-artifacts, upload-adgs, upload-deployment-events
+  --input PATH            Input file or directory (required unless run mode uses current directory)
+  --output PATH           Output directory (required for scan-artifacts)
+  --verbose               Log full command output and stderr
+  --quiet                 Suppress all output
+  --help                  Show this help message
+
+Note:
+  The Spice Pass must be set via the environment variable $SPICE_PASS_ENV_VAR.
+
+Deployment Event Format:
+  Each event must include:
+    - identifier (string)
+    - system (string)
+    - artifact (string)
+    - start_time and/or end_time (at least one required)
+  Accepted input format: JSON array or newline-delimited JSON (JSONL)
+EOF
 }
 
-############################################################
-############################################################
-# Main program                                             #
-############################################################
-############################################################
-############################################################
-# Process the input options. Add options as needed.        #
-############################################################
+#############################################
+# Utilities                                 #
+#############################################
 
-#plan to use these variables
+fail_if_unset() {
+  local name="$1"
+  if [[ -z "${!name:-}" ]]; then
+    echo "Error: Environment variable '$name' is not set"
+    exit 1
+  fi
+}
 
-#adg build directory
-#BUILDDIR = " "
-#command to run
-#COMMAND = " "
-#jwt token for upload
-#JWT = " "
-#mime type for upload
-#mime_type = ""
-# key for upload
-#PUBLICKEY = " "
-#output directory for adg
-#OUTPUTDIR = " "
-#payload for ginger can be file or path
-#payload=""
-#upload dir
-#UPLOADDIR = " "
-#wasabi server
-#SERVERNAME = " "
-#zip file path with creditials
-#ZIPFILEPATH = " "
+check_binaries() {
+  for bin in /opt/docker/bin/goatrodeo /usr/bin/ginger /usr/bin/jq; do
+    [[ -x "$bin" ]] || {
+      echo "Error: required binary $bin not found or not executable"
+      exit 1
+    }
+  done
+}
 
-#directory holding binaries in container
-#MUST NOT HAVE TRAILING SLASH
-binarydir="/usr/bin"
+start_spinner() {
+  if [[ "$quiet" == false && -t 1 ]]; then
+    local chars
+    chars=( "|" "/" "-" "\\" )
+    (
+      while true; do
+        for c in "${chars[@]}"; do
+          printf "\r⏳ %s" "$c"
+          sleep 0.2
+        done
+      done
+    ) &
+    spinner_pid=$!
+  fi
+}
 
+stop_spinner() {
+  if [[ -n "${spinner_pid:-}" ]]; then
+    kill "$spinner_pid" 2>/dev/null || true
+    wait "$spinner_pid" 2>/dev/null || true
+    echo -ne "\r\033[K"
+    spinner_pid=""
+  fi
+}
 
+run_cmd() {
+  if [[ "$verbose" == true ]]; then
+    echo "+ $*"
+    "$@"
+  elif [[ "$quiet" == true ]]; then
+    "$@" > /dev/null 2>&1
+  else
+    "$@" > /dev/null
+  fi
+}
 
-# Get the options
-while getopts ":b:c:hj:m:o:p:z:" option; do
-   case $option in
-      b)
-         builddir=${OPTARG} >&2
-         ;;
-      c) 
-         command=${OPTARG} >&2
+cleanup() {
+  stop_spinner
+  if [[ -n "$temp_dir" && -d "$temp_dir" ]]; then
+    rm -rf "$temp_dir"
+  fi
+}
+trap cleanup EXIT
 
-         #it needs to be "adg" or "upload" or call the help
-         #if [ "$command" != "adg" ] && [ "$command" != "upload" ] then
-         if [[ "$command" != "adg" ]] && [[ "$command" != "upload" ]]; then
-            echo "Command needs to be either adg or upload"
-            Help
-         fi
-         ;;
+#############################################
+# Actions                                   #
+#############################################
 
-      h) # display Help
-         Help
-         ;;
-      j)
-         jwt=${OPTARG} >&2
-         ;;
-      m)
-         mime_type=${OPTARG} >&2
-         ;;
-      o)
-         outputdir=${OPTARG} >&2
-         ;;
-      p)
-         payload=${OPTARG} >&2
-         ;;
-      z)
-         zipfile=${OPTARG} >&2
-         ;;
-     \?) # Invalid option
-         echo "Error: Invalid option"
-         Help
-         exit 1;;
-   esac
+scan_artifacts() {
+  [[ -z "$input_dir" || -z "$output_dir" ]] && {
+    echo "Error: --input and --output are required for scan-artifacts"
+    exit 1
+  }
+
+  if run_cmd /opt/docker/bin/goatrodeo -b "$input_dir" -o "$output_dir"; then
+    [[ "$quiet" == false ]] && echo "✅ Scan successful"
+  else
+    echo "❌ Scan failed"
+    exit 1
+  fi
+}
+
+upload_adgs() {
+  [[ -z "$input_dir" ]] && {
+    echo "Error: --input is required for upload-adgs"
+    exit 1
+  }
+
+  [[ "$quiet" == false ]] && echo "📦 Uploading... this may take some time."
+  start_spinner
+  if run_cmd /usr/bin/ginger -p "$input_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE"; then
+    stop_spinner
+    [[ "$quiet" == false ]] && echo "✅ Upload successful"
+  else
+    stop_spinner
+    echo "❌ Upload failed"
+    exit 1
+  fi
+}
+
+upload_deployment_events() {
+  fail_if_unset "$SPICE_PASS_ENV_VAR"
+
+  [[ "$quiet" == false ]] && echo "📦 Uploading deployment events... this may take some time."
+  start_spinner
+
+  temp_json="$(mktemp "/tmp/deploy_events_XXXXXX").json"
+
+  if jq -e type | grep -q array; then
+    cat > "$temp_json"
+  else
+    if ! jq -s . > "$temp_json"; then
+      stop_spinner
+      echo "❌ Failed to convert input to JSON"
+      rm -f "$temp_json"
+      exit 1
+    fi
+  fi
+
+  if [[ "$verbose" == true ]]; then
+    /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE"
+  elif [[ "$quiet" == true ]]; then
+    /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" > /dev/null 2>&1
+  else
+    /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" > /dev/null 2>&1
+  fi
+
+  rm -f "$temp_json"
+  stop_spinner
+  [[ "$quiet" == false ]] && echo "✅ Deployment events upload complete"
+}
+
+run_combined() {
+  fail_if_unset "$SPICE_PASS_ENV_VAR"
+  [[ -z "$input_dir" ]] && input_dir="$(pwd)"
+  temp_dir=$(mktemp -d)
+
+  if [[ "$verbose" == true ]]; then
+    /opt/docker/bin/goatrodeo -b "$input_dir" -o "$temp_dir"
+  elif [[ "$quiet" == true ]]; then
+    /opt/docker/bin/goatrodeo -b "$input_dir" -o "$temp_dir" > /dev/null 2>&1
+  else
+    /opt/docker/bin/goatrodeo -b "$input_dir" -o "$temp_dir" > /dev/null 2>&1
+  fi
+
+  [[ "$quiet" == false ]] && echo "✅ Scan complete"
+  [[ "$quiet" == false ]] && echo "📦 Uploading... this may take some time."
+  start_spinner
+  if [[ "$verbose" == true ]]; then
+    /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE"
+  elif [[ "$quiet" == true ]]; then
+    /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" > /dev/null 2>&1
+  else
+    /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" > /dev/null 2>&1
+  fi
+  stop_spinner
+  [[ "$quiet" == false ]] && echo "✅ Upload complete"
+}
+
+#############################################
+# Parse Arguments                           #
+#############################################
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --command)
+      command="$2"
+      shift 2
+      ;;
+    --input)
+      input_dir="$2"
+      shift 2
+      ;;
+    --output)
+      output_dir="$2"
+      shift 2
+      ;;
+    --verbose)
+      verbose=true
+      shift
+      ;;
+    --quiet)
+      quiet=true
+      shift
+      ;;
+    --help)
+      show_help
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: '$1'"
+      show_help
+      exit 1
+      ;;
+  esac
 done
 
-#echo "Done with variables"
-
-if [[ "$command" == "adg" ]]; then
-   #echo "Run goatrodeo command"
-   /opt/docker/bin/goatrodeo -b "$builddir" -o "$outputdir"
-elif [[ "$command" == "upload" ]]; then
-   #echo "fire ginger command"
-   #check to see if zip file passed in and exists
-      if [[ -n "$zipfile" ]] && [[ -f $zipfile ]]; then
-            #call ginger with zipfile
-            echo "$binarydir/ginger -p $payload -z $zipfile -m $mime_type" 
-            $binarydir/ginger -p "$payload" -z "$zipfile" -m "$mime_type"
-      else
-            #call ginger with payload, mime, jwt
-            echo "$binarydir/ginger -p $payload -j $jwt  -m $mime_type"
-            $binarydir/ginger -p "$payload" -j "$jwt" -m "$mime_type"
-      fi
-
-else
-   #should never get here but just in case....
-   echo "invalid command argument"
-   Help
+if [[ "$verbose" == true && "$quiet" == true ]]; then
+  echo "Error: --verbose and --quiet cannot be used together"
+  exit 1
 fi
+
+fail_if_unset "$SPICE_PASS_ENV_VAR"
+check_binaries
+
+if [[ "$verbose" == true ]]; then
+  echo "Executing command: $command"
+elif [[ "$quiet" == false ]]; then
+  echo "🚀 Running Spice Grinder..."
+fi
+
+case "$command" in
+  scan-artifacts)
+    scan_artifacts
+    ;;
+  upload-adgs)
+    upload_adgs
+    ;;
+  upload-deployment-events)
+    upload_deployment_events
+    ;;
+  run)
+    run_combined
+    ;;
+  *)
+    echo "Error: Invalid command '$command'"
+    show_help
+    exit 1
+    ;;
+esac
+
+unset "${SPICE_PASS_ENV_VAR}"

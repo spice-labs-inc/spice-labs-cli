@@ -1,72 +1,101 @@
 # Spice Grinder
-This is a set of tools to scan your systems and upload the results to a Spice Labs server.
 
-## grinder.sh
-[grinder.sh](grinder.sh) is the most common way to interact with the toolset.  Feel free to view so that you are comfortable with the script.  At a basic level it is downloading the latest container that holds both [goatrodeo](https://github.com/spice-labs-inc/goatrodeo) and [ginger](https://github.com/spice-labs-inc/ginger).
+Spice Grinder is a containerized CLI tool for scanning your systems and uploading results to a Spice Labs server.  
+It wraps two tools:
+- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo): generates ADGs (Artifact Dependency Graphs)
+- [`ginger`](https://github.com/spice-labs-inc/ginger): uploads ADGs or deployment events
 
-It will then run the docker image passing in the various command line arguments to mount directories and run goatrodeo, ginger or both.
+---
 
-Here is a list of possible command line options:
+## 🚀 Quick Start
 
-```
-Syntax: grinder.sh [-b|c|d|j|m|o]
+### 🔹 Using `grinder.sh` (recommended)
 
-scan:: Launches goatrodeo scanner to generate adgs from container images or applications.
+[`grinder.sh`](grinder.sh) is a lightweight wrapper that runs the container for you.  
+It detects your environment, mounts input/output directories, and passes arguments to `grind.sh`.
 
-upload:: Packages to a Spice Labs server using security keys supplied
-
-run:: Run both the scan and upload the output
-
-options:
--b     For scan, the source directory or file to scan
--c     What command to run? scan, upload, or run
--d     Override underlying docker image (not common just for testing)
--j     For upload, the JWT token (either file or token) for uploading to Spice Labs server
--m     For upload, the mime type of the upload. Defaults to 'gr' if not passed in.
--o     For scan or upload, directory that output should be directed to or uploaded from
+```bash
+SPICE_PASS=... ./grinder.sh --command run --input ./my-artifacts
 ```
 
-If I had some files to scan in a folder named ```playground/test_data```, I wanted the scan output to be stored in ```playground/output```, and I have a JWT or API token ```Downloads\spice_pass.jwt``` I could run a command to scan and upload with:
+### 🔹 Usage Modes
 
-``` bash
-./grinder.sh -c all -b ~/playground/test_data -o ~/playground/output -j ~/Downloads/spice_pass.jwt
+```bash
+./grinder.sh [--command <cmd>] [--input <path>] [--output <path>] [--ci] [--quiet|--verbose]
 ```
 
-## I don't want to run your grinder.sh file
+| Command                      | Description                                     |
+|------------------------------|-------------------------------------------------|
+| `run` *(default)*            | Scan and upload in one step                    |
+| `scan-artifacts`             | Run `goatrodeo` only                           |
+| `upload-adgs`                | Upload a pre-scanned ADG directory             |
+| `upload-deployment-events`   | Upload NDJSON deployment event logs from stdin |
 
-Alternatively you can download the container and run it all yourself.
+#### Options
 
-This will run in a docker container.  It combines the functionality of both goatrodeo and ginger by wrapping both.
+- `--input` : path to scan or upload (defaults to `./`)
+- `--output`: output path (for scan only)
+- `--quiet` / `--verbose`: control logging
+- `--ci`    : CI/CD mode (auto-silent unless overridden)
+- `SPICE_PASS`: required environment variable for authentication
 
-Here are the overall options for grinder
-```
-Syntax: grind.sh [-b|c|j|k|m|o|p|s|z]
+### 🔹 Examples
 
-adg:: Launches goatrodeo generate adgs from container images or applications.
-
-upload:: packages to a Wasabi server using security keys supplied
-
-options:  
--b:     For adg, the source directory or file to scan  
--c:     Command either 'adg' or 'upload'  
--j:     For upload, the JWT token for uploading to Wasabi  
--k:     For upload, the key for encrypting files for uploading to Wasabi  
--m:     For upload, the mime type of the upload  
--o:     For adg, directory that output should be directed to 
--p:     For upload, directory or file that should be uploaded to Wasabi  
--s:     For upload, the server address/endpoint to upload to  
--z:     For upload, the path to a zip file that contains security credentials for Wasabi
+Scan and upload:
+```bash
+SPICE_PASS=... ./grinder.sh --command run --input ./src
 ```
 
-Normally these will be called from a container so you will have something like:
-
-``` bash
-docker run --rm -v ./local/path/to/scan:/tmp/scan -v ./local/path/to/goatrodeo/output:/tmp/output spicelabs/grinder -c adg -b /tmp/scan -0 /tmp/output
+CI usage:
+```bash
+SPICE_PASS=... ./grinder.sh --command upload-adgs --input ./out --ci
 ```
 
-then you can upload results by:
+Upload deployment events:
+```bash
+cat deploy.ndjson | SPICE_PASS=... ./grinder.sh --command upload-deployment-events
+```
 
-``` bash
- docker run --rm -v ./local/path/to/goatrodeo/output:/tmp/output -v ./local/path/to/certs/zip:/tmp/certs spicelabs/grinder -c upload -p /tmp/output -z /tmp/certs/certs.zip -m gr 
- ```
-  
+---
+
+## 🐳 Docker-Only Usage
+
+You can also run everything directly using Docker and `grind.sh` inside the container.
+
+```bash
+docker run --rm \
+  -e SPICE_PASS=... \
+  -v "$PWD/input:/mnt/input" \
+  -v "$PWD/output:/mnt/output" \
+  ghcr.io/spice-labs-inc/grinder:latest \
+  --command run --input /mnt/input --output /mnt/output
+```
+
+Upload only:
+```bash
+docker run --rm -e SPICE_PASS=... -v "$PWD/output:/mnt/input" \
+  ghcr.io/spice-labs-inc/grinder:latest \
+  --command upload-adgs --input /mnt/input
+```
+
+Upload deployment events:
+```bash
+cat deploy.ndjson | docker run -i --rm -e SPICE_PASS=... \
+  ghcr.io/spice-labs-inc/grinder:latest --command upload-deployment-events
+```
+
+---
+
+## 📦 Repository
+
+This tool is maintained by [Spice Labs](https://github.com/spice-labs-inc).
+
+- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo)
+- [`ginger`](https://github.com/spice-labs-inc/ginger)
+- [`grinder`](https://github.com/spice-labs-inc/grinder)
+
+---
+
+## ⚖️ License
+
+Licensed under the Apache License 2.0. See [`LICENSE`](LICENSE) for details.
