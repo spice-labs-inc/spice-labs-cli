@@ -175,7 +175,7 @@ upload_deployment_events() {
   elif [[ "$quiet" == true ]]; then
     /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" > /dev/null 2>&1
   else
-    /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" > /dev/null 2>&1
+    /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" 2>&1 | grep 'Important! SHA256 hash of bundle is' | sed 's/^.*Important/Important/'
   fi
 
   rm -f "$temp_json"
@@ -204,7 +204,7 @@ run_combined() {
   elif [[ "$quiet" == true ]]; then
     /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" > /dev/null 2>&1
   else
-    /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" > /dev/null 2>&1
+    /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" 2>&1 | grep 'Important! SHA256 hash of bundle is' | sed 's/^.*Important/Important/'
   fi
   stop_spinner
   [[ "$quiet" == false ]] && echo "✅ Upload complete"
