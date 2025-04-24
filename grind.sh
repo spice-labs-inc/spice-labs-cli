@@ -265,7 +265,10 @@ if [[ "$verbose" == true && "$quiet" == true ]]; then
   exit 1
 fi
 
-fail_if_unset "$SPICE_PASS_ENV_VAR"
+if [[ "$command" != "scan-artifacts" ]]; then
+  fail_if_unset "$SPICE_PASS_ENV_VAR"
+fi
+
 check_binaries
 
 if [[ "$verbose" == true ]]; then

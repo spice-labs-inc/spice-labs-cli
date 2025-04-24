@@ -71,11 +71,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Validate Spice Pass
-if [[ -z "${SPICE_PASS:-}" ]]; then
-  echo "❌ SPICE_PASS environment variable must be set"
-  exit 1
-fi
+# Validate Spice Pass only for commands that require it
+case "$command" in
+  scan-artifacts)
+    ;; # skip check
+  *)
+    if [[ -z "${SPICE_PASS:-}" ]]; then
+      echo "❌ SPICE_PASS environment variable must be set for command '$command'"
+      exit 1
+    fi
+    ;;
+esac
+
 
 # Pull image unless skipped
 if [[ "$pull_latest" == true ]]; then
