@@ -19,6 +19,7 @@ spinner_pid=""
 # Help                                      #
 #############################################
 show_help() {
+  echo "::grinder-help-start::"
   cat << EOF
 
 Usage: grind.sh --command <cmd> [--input <path>] [--output <path>] [--verbose|--quiet]
@@ -48,6 +49,7 @@ Deployment Event Format:
     - start_time and/or end_time (at least one required)
   Accepted input format: JSON array or newline-delimited JSON (JSONL)
 EOF
+echo "::grinder-help-end::"
 }
 
 #############################################
@@ -125,6 +127,16 @@ scan_artifacts() {
     exit 1
   }
 
+  [[ "$quiet" == false ]] && echo "📦 Scanning artifacts... this may take some time."
+
+  mkdir -p "$output_dir"
+  if ! touch "$output_dir/.write_test" 2>/dev/null; then
+    echo "❌ Cannot write to output directory '$output_dir'."
+    echo "   Make sure it is mounted correctly and writable by UID $(id -u) inside the container."
+    exit 1
+  fi
+  rm -f "$output_dir/.write_test"
+ 
   if run_cmd /opt/docker/bin/goatrodeo -b "$input_dir" -o "$output_dir"; then
     [[ "$quiet" == false ]] && echo "✅ Scan successful"
   else
@@ -253,7 +265,10 @@ if [[ "$verbose" == true && "$quiet" == true ]]; then
   exit 1
 fi
 
-fail_if_unset "$SPICE_PASS_ENV_VAR"
+if [[ "$command" != "scan-artifacts" ]]; then
+  fail_if_unset "$SPICE_PASS_ENV_VAR"
+fi
+
 check_binaries
 
 if [[ "$verbose" == true ]]; then
