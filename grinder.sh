@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-DOCKER_IMAGE="grinder"
+DOCKER_IMAGE="ghcr.io/spice-labs-inc/grinder:latest"
 ci_mode=false
 pull_latest=true
 
