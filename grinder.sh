@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-DOCKER_IMAGE="ghcr.io/spice-labs-inc/grinder:latest"
+DOCKER_IMAGE="grinder"
 ci_mode=false
 pull_latest=true
 
@@ -33,6 +33,7 @@ Options:
 EOF
 }
 
+# Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --command)
@@ -70,35 +71,62 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Validate Spice Pass
 if [[ -z "${SPICE_PASS:-}" ]]; then
-  echo "Error: SPICE_PASS environment variable must be set"
+  echo "❌ SPICE_PASS environment variable must be set"
   exit 1
 fi
 
+# Pull image unless skipped
 if [[ "$pull_latest" == true ]]; then
-  docker pull "$DOCKER_IMAGE" >/dev/null
+  docker pull "$DOCKER_IMAGE" > /dev/null
 fi
 
+# Prepare args
 args=(--command "$command")
+
+# Default to current dir as input if not set
 [[ -z "$input" ]] && input="$PWD"
 args+=(--input /mnt/input)
-[[ -n "$output" ]] && args+=(--output /mnt/output)
 
-# If CI mode, default to --quiet unless overridden by user
+# Ensure output directory exists for commands that write to it
+if [[ "$command" == "scan-artifacts" || "$command" == "run" ]]; then
+  if [[ -z "$output" ]]; then
+    output="$(mktemp -d)"
+  else
+    mkdir -p "$output"
+  fi
+  if [[ ! -w "$output" ]]; then
+    echo "❌ Output directory '$output' is not writable. Please fix permissions and try again."
+    exit 1
+  fi
+  args+=(--output /mnt/output)
+fi
+
+# Default to --quiet in CI unless overridden
 if [[ "$ci_mode" == true && ! " ${extra_args[*]} " =~ " --verbose " && ! " ${extra_args[*]} " =~ " --quiet " ]]; then
   args+=(--quiet)
 fi
 
-volumes=(-v "$PWD:/mnt/host")
-[[ -n "$input" ]] && volumes+=(-v "$input:/mnt/input")
+# Prepare Docker flags
+volumes=(-v "$input:/mnt/input")
 [[ -n "$output" ]] && volumes+=(-v "$output:/mnt/output")
 
-# Always pass through SPICE_PASS
 flags=(-e SPICE_PASS --rm)
-
-# If stdin is needed (events)
 [[ "$command" == "upload-deployment-events" ]] && flags+=(-i)
 
 echo "🚀 Running grinder with command: $command"
+echo "📁 Mounting input:  $input"
+[[ -n "$output" ]] && echo "📁 Mounting output: $output"
 
-docker run "${flags[@]}" "${volumes[@]}" "$DOCKER_IMAGE" "${args[@]}" "${extra_args[@]}"
+# Run and filter output
+docker run "${flags[@]}" "${volumes[@]}" "$DOCKER_IMAGE" "${args[@]}" "${extra_args[@]}" \
+  > >(sed 's/\bgrind\.sh\b/grinder.sh/g' | sed '/::grinder-help-start::/,/::grinder-help-end::/d') \
+  2> >(tee /dev/stderr) || {
+    echo
+    echo "❌ Grinder failed."
+    show_help
+    exit 1
+  }
+
+
