@@ -159,10 +159,13 @@ upload_deployment_events() {
 
   temp_json="$(mktemp "/tmp/deploy_events_XXXXXX").json"
 
-  if jq -e type | grep -q array; then
-    cat > "$temp_json"
+  #pull the passed in info into a variable to allow multi-step processing
+  temp_cache=$(cat)
+
+  if jq -e type <<< "$temp_cache" | grep -q array; then    
+    echo $temp_cache > "$temp_json"
   else
-    if ! jq -s . > "$temp_json"; then
+    if ! jq -s <<< "$temp_cache" > "$temp_json"; then
       stop_spinner
       echo "❌ Failed to convert input to JSON"
       rm -f "$temp_json"
