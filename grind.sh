@@ -65,7 +65,7 @@ fail_if_unset() {
 }
 
 check_binaries() {
-  for bin in /opt/docker/bin/goatrodeo /usr/bin/ginger /usr/bin/jq; do
+  for bin in /opt/docker/bin/goatrodeo /usr/bin/ginger ; do
     [[ -x "$bin" ]] || {
       echo "Error: required binary $bin not found or not executable"
       exit 1
