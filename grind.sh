@@ -47,7 +47,7 @@ Deployment Event Format:
     - system (string)
     - artifact (string)
     - start_time and/or end_time (at least one required)
-  Accepted input format: JSON array or newline-delimited JSON (JSONL)
+  Accepted input format: JSON array
 EOF
 echo "::grinder-help-end::"
 }
@@ -65,7 +65,7 @@ fail_if_unset() {
 }
 
 check_binaries() {
-  for bin in /opt/docker/bin/goatrodeo /usr/bin/ginger /usr/bin/jq; do
+  for bin in /opt/docker/bin/goatrodeo /usr/bin/ginger ; do
     [[ -x "$bin" ]] || {
       echo "Error: required binary $bin not found or not executable"
       exit 1
@@ -169,18 +169,10 @@ upload_deployment_events() {
   [[ "$quiet" == false ]] && echo "📦 Uploading deployment events... this may take some time."
   start_spinner
 
-  temp_json="$(mktemp "/tmp/deploy_events_XXXXXX").json"
+  temp_json="$(mktemp "/tmp/deploy_events_XXXXXX.json")"
 
-  if jq -e type | grep -q array; then
-    cat > "$temp_json"
-  else
-    if ! jq -s . > "$temp_json"; then
-      stop_spinner
-      echo "❌ Failed to convert input to JSON"
-      rm -f "$temp_json"
-      exit 1
-    fi
-  fi
+  # copy stdin directly to temp file until ginger has support for stdin
+  cat > "$temp_json"
 
   if [[ "$verbose" == true ]]; then
     /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE"
