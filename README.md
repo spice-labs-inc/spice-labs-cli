@@ -29,7 +29,7 @@ SPICE_PASS=... ./grinder.sh --command run --input ./my-artifacts
 | `run` *(default)*            | Scan and upload in one step                     |
 | `scan-artifacts`             | Run `goatrodeo` only                            |
 | `upload-adgs`                | Upload a pre-scanned ADG directory              |
-| `upload-deployment-events`   | Upload JSONL deployment event logs from stdin   |
+| `upload-deployment-events`   | Upload JSON deployment event logs from stdin   |
 
 #### Options
 
@@ -53,7 +53,7 @@ SPICE_PASS=... ./grinder.sh --command upload-adgs --input ./out --ci
 
 Upload deployment events:
 ```bash
-cat deploy.jsonl | SPICE_PASS=... ./grinder.sh --command upload-deployment-events
+cat deploy.json | SPICE_PASS=... ./grinder.sh --command upload-deployment-events
 ```
 
 ---
@@ -80,7 +80,7 @@ docker run --rm -e SPICE_PASS=... -v "$PWD/output:/mnt/input" \
 
 Upload deployment events:
 ```bash
-cat deploy.jsonl | docker run -i --rm -e SPICE_PASS=... \
+cat deploy.json | docker run -i --rm -e SPICE_PASS=... \
   ghcr.io/spice-labs-inc/grinder:latest --command upload-deployment-events
 ```
 

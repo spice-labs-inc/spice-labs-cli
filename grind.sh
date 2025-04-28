@@ -47,7 +47,7 @@ Deployment Event Format:
     - system (string)
     - artifact (string)
     - start_time and/or end_time (at least one required)
-  Accepted input format: JSON array or newline-delimited JSON (JSONL)
+  Accepted input format: JSON array
 EOF
 echo "::grinder-help-end::"
 }
