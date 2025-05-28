@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-DOCKER_IMAGE="ghcr.io/spice-labs-inc/grinder:latest"
+DOCKER_IMAGE="ghcr.io/spice-labs-inc/spice-labs-cli:latest"
 ci_mode=false
 pull_latest=true
 
@@ -13,7 +13,7 @@ extra_args=()
 
 show_help() {
   cat <<EOF
-Usage: grinder.sh --command <cmd> [--input <path>] [--output <path>] [--ci] [--quiet|--verbose]
+Usage: spice-labs-cli.sh --command <cmd> [--input <path>] [--output <path>] [--ci] [--quiet|--verbose]
 
 Commands:
   run                     Scan artifacts and upload ADGs (default)
@@ -122,16 +122,16 @@ volumes=(-v "$input:/mnt/input")
 flags=(-e SPICE_PASS --rm)
 [[ "$command" == "upload-deployment-events" ]] && flags+=(-i)
 
-echo "🚀 Running grinder with command: $command"
+echo "🚀 Running spice-labs-cli with command: $command"
 echo "📁 Mounting input:  $input"
 [[ -n "$output" ]] && echo "📁 Mounting output: $output"
 
 # Run and filter output
 docker run "${flags[@]}" "${volumes[@]}" "$DOCKER_IMAGE" "${args[@]}" "${extra_args[@]}" \
-  > >(sed 's/\bgrind\.sh\b/grinder.sh/g' | sed '/::grinder-help-start::/,/::grinder-help-end::/d') \
+  > >(sed 's/\bspicelabs\.sh\b/spice-labs-cli.sh/g' | sed '/::spice-labs-cli-help-start::/,/::spice-labs-cli-help-end::/d') \
   2> >(tee /dev/stderr) || {
     echo
-    echo "❌ Grinder failed."
+    echo "❌ The Spice Labs CLI failed."
     show_help
     exit 1
   }

@@ -19,10 +19,10 @@ spinner_pid=""
 # Help                                      #
 #############################################
 show_help() {
-  echo "::grinder-help-start::"
+  echo "::spice-labs-cli-help-start::"
   cat << EOF
 
-Usage: grind.sh --command <cmd> [--input <path>] [--output <path>] [--verbose|--quiet]
+Usage: spicelabs.sh --command <cmd> [--input <path>] [--output <path>] [--verbose|--quiet]
 
 Commands:
   run                     Scan artifacts and upload ADGs (default)
@@ -49,7 +49,7 @@ Deployment Event Format:
     - start_time and/or end_time (at least one required)
   Accepted input format: JSON array
 EOF
-echo "::grinder-help-end::"
+echo "::spice-labs-cli-help-end::"
 }
 
 #############################################
@@ -266,7 +266,7 @@ check_binaries
 if [[ "$verbose" == true ]]; then
   echo "Executing command: $command"
 elif [[ "$quiet" == false ]]; then
-  echo "🚀 Running Spice Grinder..."
+  echo "🚀 Running The Spice Labs CLI..."
 fi
 
 case "$command" in
