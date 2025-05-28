@@ -1,1 +1,1 @@
-**Frequently Asked Questions/Situations With Grinder**
+**Frequently Asked Questions/Situations With The Spice Labs CLI**

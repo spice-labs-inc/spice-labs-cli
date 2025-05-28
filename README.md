@@ -1,6 +1,6 @@
-# Spice Grinder
+# The Spice Labs CLI
 
-Spice Grinder is a containerized CLI tool for scanning your systems and uploading results to a Spice Labs server.  
+The Spice Labs CLI is a containerized CLI tool for scanning your systems and uploading results to a Spice Labs server.  
 It wraps two tools:
 - [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo): generates ADGs (Artifact Dependency Graphs)
 - [`ginger`](https://github.com/spice-labs-inc/ginger): uploads ADGs or deployment events
@@ -9,19 +9,19 @@ It wraps two tools:
 
 ## 🚀 Quick Start
 
-### 🔹 Using `grinder.sh` (recommended)
+### 🔹 Using `spice-labs-cli.sh` (recommended)
 
-[`grinder.sh`](grinder.sh) is a lightweight wrapper that runs the container for you.  
-It detects your environment, mounts input/output directories, and passes arguments to `grind.sh`.
+[`spice-labs-cli.sh`](spice-labs-cli.sh) is a lightweight wrapper that runs the container for you.  
+It detects your environment, mounts input/output directories, and passes arguments to `spicelabs.sh`.
 
 ```bash
-SPICE_PASS=... ./grinder.sh --command run --input ./my-artifacts
+SPICE_PASS=... ./spice-labs-cli.sh --command run --input ./my-artifacts
 ```
 
 ### 🔹 Usage Modes
 
 ```bash
-./grinder.sh [--command <cmd>] [--input <path>] [--output <path>] [--ci] [--quiet|--verbose]
+./spice-labs-cli.sh [--command <cmd>] [--input <path>] [--output <path>] [--ci] [--quiet|--verbose]
 ```
 
 | Command                      | Description                                     |
@@ -43,45 +43,45 @@ SPICE_PASS=... ./grinder.sh --command run --input ./my-artifacts
 
 Scan and upload:
 ```bash
-SPICE_PASS=... ./grinder.sh --command run --input ./src
+SPICE_PASS=... ./spice-labs-cli.sh --command run --input ./src
 ```
 
 CI usage:
 ```bash
-SPICE_PASS=... ./grinder.sh --command upload-adgs --input ./out --ci
+SPICE_PASS=... ./spice-labs-cli.sh --command upload-adgs --input ./out --ci
 ```
 
 Upload deployment events:
 ```bash
-cat deploy.json | SPICE_PASS=... ./grinder.sh --command upload-deployment-events
+cat deploy.json | SPICE_PASS=... ./spice-labs-cli.sh --command upload-deployment-events
 ```
 
 ---
 
 ## 🐳 Docker-Only Usage
 
-You can also run everything directly using Docker and `grind.sh` inside the container.
+You can also run everything directly using Docker and `spicelabs.sh` inside the container.
 
 ```bash
 docker run --rm \
   -e SPICE_PASS=... \
   -v "$PWD/input:/mnt/input" \
   -v "$PWD/output:/mnt/output" \
-  ghcr.io/spice-labs-inc/grinder:latest \
+  ghcr.io/spice-labs-inc/spice-labs-cli:latest \
   --command run --input /mnt/input --output /mnt/output
 ```
 
 Upload only:
 ```bash
 docker run --rm -e SPICE_PASS=... -v "$PWD/output:/mnt/input" \
-  ghcr.io/spice-labs-inc/grinder:latest \
+  ghcr.io/spice-labs-inc/spice-labs-cli:latest \
   --command upload-adgs --input /mnt/input
 ```
 
 Upload deployment events:
 ```bash
 cat deploy.json | docker run -i --rm -e SPICE_PASS=... \
-  ghcr.io/spice-labs-inc/grinder:latest --command upload-deployment-events
+  ghcr.io/spice-labs-inc/spice-labs-cli:latest --command upload-deployment-events
 ```
 
 ---
@@ -92,7 +92,7 @@ This tool is maintained by [Spice Labs](https://github.com/spice-labs-inc).
 
 - [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo)
 - [`ginger`](https://github.com/spice-labs-inc/ginger)
-- [`grinder`](https://github.com/spice-labs-inc/grinder)
+- [`spice-labs-cli`](https://github.com/spice-labs-inc/spice-labs-cli)
 
 ---
 
