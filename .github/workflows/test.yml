@@ -28,8 +28,5 @@ jobs:
         id: setup-bats
         uses: bats-core/bats-action@3.0.0
 
-      - name: Verify Spice
-        run: ./spice.sh --help
-
       - name: Run Bash smoke tests
         run: bats tests/bash.bats

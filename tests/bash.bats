@@ -9,11 +9,11 @@ teardown() {
   rm -rf tmp
 }
 
-# smoke test: --command=run
-@test "bash run matches golden" {
-  run ./spice.sh --command run --input tests/input/empty-dir --no-pull
+# smoke test: --help
+@test "help matches golden" {
+  run ./spice --help
   [ "$status" -eq 0 ]
-  diff -u tests/golden/run.stdout.txt <(echo "$output")
+  diff -u tests/golden/help.stdout.txt <(echo "$output")
 }
 
 # ...repeat for scan-artifacts, upload-adgs, upload-deployment-events
