@@ -19,10 +19,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Verify Docker
         run: docker version
+
+      - name: Setup Bats and bats libs
+        id: setup-bats
+        uses: bats-core/bats-action@3.0.0
 
       - name: Run Bash smoke tests
         run: bats tests/bash.bats
