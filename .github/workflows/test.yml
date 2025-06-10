@@ -11,52 +11,29 @@ jobs:
   smoke-tests:
     strategy:
       matrix:
-        include:
-          # Linux x64
-          - os: ubuntu-latest
-            arch: x64
-          # Linux ARM64 (emulated via QEMU)
-          - os: ubuntu-latest
-            arch: arm64
-          # macOS x64
-          - os: macos-latest
-            arch: x64
-          # Windows x64
-          - os: windows-latest
-            arch: x64
+        os: [
+          ubuntu-24.04,
+          ubuntu-24.04-arm,
+          macos-15,
+          windows-2025
+        ]
 
     runs-on: ${{ matrix.os }}
-    env:
-      # force Docker to pull/run the right platform
-      DOCKER_DEFAULT_PLATFORM: linux/${{ matrix.arch }}
-
     steps:
       - name: Check out code
         uses: actions/checkout@v3
 
-      # On Linux ARM jobs, register QEMU and buildx for emulation
-      - name: Set up QEMU (ARM emulation)
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v2
-        with:
-          platforms: linux/arm64
-
-      - name: Set up Docker Buildx
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-buildx-action@v2
-
-      # Install Docker where needed
-      - name: Install Docker on Ubuntu
-        if: matrix.os == 'ubuntu-latest'
+      - name: Install Docker on Linux
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y docker.io
 
       - name: Install Docker on macOS
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-13-arm64'
         run: |
           brew install --cask docker
-          # ensure Docker.app is running for self-hosted runners
+          # ensure Docker Desktop is running if using a self-hosted preview agent
 
       - name: Install Docker CLI on Windows
         if: matrix.os == 'windows-latest'
