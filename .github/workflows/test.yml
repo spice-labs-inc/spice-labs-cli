@@ -21,12 +21,6 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v3
 
-      - name: Install Docker on Linux
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
-
       - name: Install Docker on macOS
         if: matrix.os == 'macos-15'
         run: |
