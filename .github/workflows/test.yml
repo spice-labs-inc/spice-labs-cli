@@ -38,4 +38,4 @@ jobs:
         uses: bats-core/bats-action@3.0.0
 
       - name: Run Bash smoke tests
-        run: bats --verbose-run -p tests/bash.bats
+        run: bats tests/bash.bats --verbose-run -p
