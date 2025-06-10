@@ -22,7 +22,7 @@ jobs:
       # Only continue if the runner's architecture matches the matrix arch
       - name: Check runner arch matches matrix
         if: ${{ matrix.arch == runner.arch }}
-        run: echo "Runner arch matches matrix arch: ${{ matrix.arch }}"
+        run: echo Running
 
       # Ensure Docker is installed
       - name: Install Docker on Linux
