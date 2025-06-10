@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+    SPICE_PASS: ${{ secrets.SPICE_PASS }}
+
 jobs:
   smoke-tests:
     strategy:
@@ -35,4 +38,4 @@ jobs:
         uses: bats-core/bats-action@3.0.0
 
       - name: Run Bash smoke tests
-        run: bats tests/bash.bats
+        run: bats --verbose-run -p tests/bash.bats
