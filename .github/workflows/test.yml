@@ -30,13 +30,13 @@ jobs:
           sudo apt-get install -y docker.io
 
       - name: Install Docker on macOS
-        if: matrix.os == 'macos-13-arm64'
+        if: matrix.os == 'macos-15'
         run: |
           brew install --cask docker
           # ensure Docker Desktop is running if using a self-hosted preview agent
 
       - name: Install Docker CLI on Windows
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-2025'
         run: choco install docker-cli -y
 
       - name: Verify Docker
