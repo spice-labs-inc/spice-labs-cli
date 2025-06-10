@@ -21,21 +21,8 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v3
 
-      - name: Install Docker on macOS
-        if: matrix.os == 'macos-15'
-        run: |
-          brew install --cask docker
-          # ensure Docker Desktop is running if using a self-hosted preview agent
-
-      - name: Install Docker CLI on Windows
-        if: matrix.os == 'windows-2025'
-        run: choco install docker-cli -y
-
       - name: Verify Docker
         run: docker version
-
-      - name: Make scripts executable
-        run: chmod +x spice spice-labs.sh
 
       - name: Run Bash smoke tests
         run: bats tests/bash.bats
