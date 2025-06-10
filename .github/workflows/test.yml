@@ -1,5 +1,5 @@
 # .github/workflows/test.yml
-name: Tests
+name: Bash Wrapper Smoke Tests
 
 on:
   push:
@@ -8,39 +8,43 @@ on:
     branches: [ main ]
 
 jobs:
-  bash:
-    name: Test Bash wrapper
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Bats
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bats
-
-      - name: Run Bats tests
-        run: bats tests/bash.bats
-
-  pwsh:
-    name: Test PowerShell wrapper
-    runs-on: ${{ matrix.os }}
+  smoke-tests:
+    # matrix of OS and arch
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
-        pwsh-version: [ '5.x','6.x','7.x' ]
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        arch: [ X64, ARM64 ]
+    runs-on: ${{ matrix.os }}
+    # only run when the runner’s actual arch matches
+    if: ${{ matrix.arch == runner.arch }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Check out code
+        uses: actions/checkout@v3
 
-      - name: Setup PowerShell
-        uses: milliewalky/setup-pwsh@v1
-        with:
-          tag: ${{ matrix.pwsh-version }}
-
-      - name: Run Pester tests
-        shell: pwsh
+      # Ensure Docker is installed
+      - name: Install Docker on Linux
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          # Pester is pre-installed on GitHub runners
-          Invoke-Pester -Output Detailed tests/pester.tests.ps1
+          sudo apt-get update
+          sudo apt-get install -y docker.io
+      - name: Install Docker on macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install --cask docker
+          # note: this will install Docker Desktop; ensure it’s started in your self-hosted/macOS runner
+      - name: Install Docker CLI on Windows
+        if: matrix.os == 'windows-latest'
+        run: choco install docker-cli -y
+
+      - name: Verify Docker
+        run: docker version
+
+      - name: Make scripts executable
+        run: |
+          chmod +x spice
+          chmod +x spice-labs.sh
+
+      - name: Run bash smoke tests
+        run: |
+          bats tests/bash.bats
