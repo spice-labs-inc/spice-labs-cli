@@ -6,5 +6,7 @@ COPY --from=ghcr.io/spice-labs-inc/ginger:latest /usr/bin/ginger /usr/bin/ginger
 
 # Copy spicelabs.sh into the final image
 COPY ./spice-labs.sh /opt/spice-labs-cli/spice-labs.sh
+COPY ./spice /opt/spice-labs-cli/spice
+COPY ./spice /opt/spice-labs-cli/spice.ps1
 
 ENTRYPOINT ["/opt/spice-labs-cli/spice-labs.sh"]

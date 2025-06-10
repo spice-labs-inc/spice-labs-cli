@@ -6,6 +6,9 @@ ADG_MIME_TYPE="application/vnd.cc.bigtent"
 DEPLOYMENT_EVENTS_MIME_TYPE="application/vnd.info.deployevent"
 SPICE_PASS_ENV_VAR="SPICE_PASS"
 
+GOAT_RODEO_PATH="${SPICE_LABS_GOAT_RODEO_PATH:=/opt/docker/bin/goatrodeo}"
+GINGER_PATH="${SPICE_LABS_GINGER_PATH:=/usr/bin/ginger}"
+
 # Globals
 command="run"
 input_dir=""
@@ -22,7 +25,7 @@ show_help() {
   echo "::spice-labs-cli-help-start::"
   cat << EOF
 
-Usage: spicelabs.sh --command <cmd> [--input <path>] [--output <path>] [--verbose|--quiet]
+Usage: spice-labs.sh --command <cmd> [--input <path>] [--output <path>] [--verbose|--quiet]
 
 Commands:
   run                     Scan artifacts and upload ADGs (default)
@@ -65,7 +68,7 @@ fail_if_unset() {
 }
 
 check_binaries() {
-  for bin in /opt/docker/bin/goatrodeo /usr/bin/ginger ; do
+  for bin in "$GOAT_RODEO_PATH" "$GINGER_PATH"; do
     [[ -x "$bin" ]] || {
       echo "Error: required binary $bin not found or not executable"
       exit 1
@@ -137,7 +140,7 @@ scan_artifacts() {
   fi
   rm -f "$output_dir/.write_test"
  
-  if run_cmd /opt/docker/bin/goatrodeo -b "$input_dir" -o "$output_dir"; then
+  if run_cmd "$GOAT_RODEO_PATH" -b "$input_dir" -o "$output_dir"; then
     [[ "$quiet" == false ]] && echo "✅ Scan successful"
   else
     echo "❌ Scan failed"
@@ -153,7 +156,7 @@ upload_adgs() {
 
   [[ "$quiet" == false ]] && echo "📦 Uploading... this may take some time."
   start_spinner
-  if run_cmd /usr/bin/ginger -p "$input_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE"; then
+  if run_cmd "$GINGER_PATH" -p "$input_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE"; then
     stop_spinner
     [[ "$quiet" == false ]] && echo "✅ Upload successful"
   else
@@ -175,11 +178,11 @@ upload_deployment_events() {
   cat > "$temp_json"
 
   if [[ "$verbose" == true ]]; then
-    /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE"
+    "$GINGER_PATH" -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE"
   elif [[ "$quiet" == true ]]; then
-    /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" > /dev/null 2>&1
+    "$GINGER_PATH" -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" > /dev/null 2>&1
   else
-    /usr/bin/ginger -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" 2>&1 | grep 'Important! SHA256 hash of bundle is' | sed 's/^.*Important/Important/'
+    "$GINGER_PATH" -p "$temp_json" -j "$SPICE_PASS" -m "$DEPLOYMENT_EVENTS_MIME_TYPE" 2>&1 | grep 'Important! SHA256 hash of bundle is' | sed 's/^.*Important/Important/'
   fi
 
   rm -f "$temp_json"
@@ -193,22 +196,22 @@ run_combined() {
   temp_dir=$(mktemp -d)
 
   if [[ "$verbose" == true ]]; then
-    /opt/docker/bin/goatrodeo -b "$input_dir" -o "$temp_dir"
+    "$GOAT_RODEO_PATH" -b "$input_dir" -o "$temp_dir"
   elif [[ "$quiet" == true ]]; then
-    /opt/docker/bin/goatrodeo -b "$input_dir" -o "$temp_dir" > /dev/null 2>&1
+    "$GOAT_RODEO_PATH" -b "$input_dir" -o "$temp_dir" > /dev/null 2>&1
   else
-    /opt/docker/bin/goatrodeo -b "$input_dir" -o "$temp_dir" > /dev/null 2>&1
+    "$GOAT_RODEO_PATH" -b "$input_dir" -o "$temp_dir" > /dev/null 2>&1
   fi
 
   [[ "$quiet" == false ]] && echo "✅ Scan complete"
   [[ "$quiet" == false ]] && echo "📦 Uploading... this may take some time."
   start_spinner
   if [[ "$verbose" == true ]]; then
-    /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE"
+    "$GINGER_PATH" -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE"
   elif [[ "$quiet" == true ]]; then
-    /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" > /dev/null 2>&1
+    "$GINGER_PATH" -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" > /dev/null 2>&1
   else
-    /usr/bin/ginger -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" 2>&1 | grep 'Important! SHA256 hash of bundle is' | sed 's/^.*Important/Important/'
+    "$GINGER_PATH" -p "$temp_dir" -j "$SPICE_PASS" -m "$ADG_MIME_TYPE" 2>&1 | grep 'Important! SHA256 hash of bundle is' | sed 's/^.*Important/Important/'
   fi
   stop_spinner
   [[ "$quiet" == false ]] && echo "✅ Upload complete"
