@@ -1,3 +1,4 @@
+# .github/workflows/test.yml
 name: Bash Wrapper Smoke Tests
 
 on:
@@ -8,43 +9,44 @@ on:
 
 jobs:
   smoke-tests:
+    # matrix of OS and arch
     strategy:
       matrix:
-        include:
-          # GitHub-hosted x64 runners
-          - os: ubuntu-latest
-            arch: X64
-          - os: macos-latest
-            arch: X64
-          - os: windows-latest
-            arch: X64
-          # (Optional) self-hosted or future ARM64 runners
-          - os: ubuntu-latest
-            arch: ARM64
-          - os: macos-latest
-            arch: ARM64
-
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        arch: [ X64, ARM64 ]
     runs-on: ${{ matrix.os }}
-    # skip ARM jobs on hosted until you have ARM runners
-    if: ${{ matrix.arch == runner.arch }}
 
     steps:
-      - name: Checkout code
+      - name: Check out code
         uses: actions/checkout@v3
+      # Only continue if the runner's architecture matches the matrix arch
+      - name: Check runner arch matches matrix
+        if: ${{ matrix.arch == runner.arch }}
+        run: echo "Runner arch matches matrix arch: ${{ matrix.arch }}"
 
-      - name: Install Docker
+      # Ensure Docker is installed
+      - name: Install Docker on Linux
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          case "${{ runner.os }}" in
-            Linux)   sudo apt-get update && sudo apt-get install -y docker.io;;
-            macOS)   brew install --cask docker;;
-            Windows) choco install docker-cli -y;;
-          esac
+          sudo apt-get update
+          sudo apt-get install -y docker.io
+      - name: Install Docker on macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install --cask docker
+          # note: this will install Docker Desktop; ensure it’s started in your self-hosted/macOS runner
+      - name: Install Docker CLI on Windows
+        if: matrix.os == 'windows-latest'
+        run: choco install docker-cli -y
 
       - name: Verify Docker
         run: docker version
 
       - name: Make scripts executable
-        run: chmod +x spice spice-labs.sh
+        run: |
+          chmod +x spice
+          chmod +x spice-labs.sh
 
-      - name: Run Bats smoke tests
-        run: bats tests/bash.bats
+      - name: Run bash smoke tests
+        run: |
+          bats tests/bash.bats
