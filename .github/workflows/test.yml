@@ -23,6 +23,11 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Install Docker on macOS
+        if: matrix.os == 'macos-15'
+        run: |
+          brew install --cask docker
+
       - name: Verify Docker
         run: docker version
 
