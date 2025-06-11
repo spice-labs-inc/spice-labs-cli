@@ -1,0 +1,41 @@
+# .github/workflows/test.yml
+name: Bash Wrapper Smoke Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+    SPICE_PASS: ${{ secrets.SPICE_PASS }}
+
+jobs:
+  smoke-tests:
+    strategy:
+      matrix:
+        os: [
+          ubuntu-24.04,
+          ubuntu-24.04-arm,
+          #macos-15,
+        ]
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Docker on macOS
+        if: matrix.os == 'macos-15'
+        run: |
+          brew install --cask docker
+
+      - name: Verify Docker
+        run: docker version
+
+      - name: Setup Bats and bats libs
+        id: setup-bats
+        uses: bats-core/bats-action@3.0.0
+
+      - name: Run Bash smoke tests
+        run: bats tests/bash.bats --verbose-run

@@ -1,0 +1,8 @@
+🚀 Running spice-labs-cli (Docker mode) with command:
+📁 Mounting input:
+📁 Mounting output:
+🚀 Running The Spice Labs CLI...
+✅ Scan complete
+📦 Uploading... this may take some time.
+Important! SHA256 hash of bundle is
+✅ Upload complete

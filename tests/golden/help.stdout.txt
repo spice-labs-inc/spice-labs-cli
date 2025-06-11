@@ -1,0 +1,17 @@
+Usage: spice --command <cmd> [--input <path>] [--output <path>] [--ci] [--quiet|--verbose] [--no-pull]
+
+Commands:
+  run                      Scan artifacts and upload ADGs (default)
+  scan-artifacts           Generate ADGs only
+  upload-adgs              Upload existing ADGs
+  upload-deployment-events Upload deployment events from stdin
+
+Options:
+  --command CMD            One of: run, scan-artifacts, upload-adgs, upload-deployment-events
+  --input PATH             Path to input directory or file
+  --output PATH            Path for output (only needed for scan-artifacts or run)
+  --ci                     Run in CI/CD mode (non-interactive, implies --quiet unless overridden)
+  --quiet                  Suppress output
+  --verbose                Enable detailed logging
+  --no-pull                Don't pull the latest Docker image
+  --help                   Show this help
