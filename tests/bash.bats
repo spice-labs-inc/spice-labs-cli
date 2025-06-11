@@ -21,4 +21,18 @@ teardown() {
   diff -u tests/golden/run.stdout.txt <(echo "$output" | sed "s/:.*/:/g" | sed "s/ is .*/ is/g")
 }
 
+@test "run no spice pass matches golden" {
+  unset SPICE_PASS
+  run ./spice
+  [ "$status" -eq 1 ]
+  diff -u tests/golden/run.no.spicepass.stdout.txt <(echo "$output")
+}
+
+@test "run invalid spice pass matches golden" {
+  export SPICE_PASS="invalid_spice_pass"
+  run ./spice
+  [ "$status" -eq 1 ]
+  diff -u tests/golden/run.invalid.spicepass.stdout.txt <(echo "$output" | sed "s/input:.*/input:/g" | sed "s/output:.*/output:/g")
+}
+
 # ...repeat for scan-artifacts, upload-adgs, upload-deployment-events

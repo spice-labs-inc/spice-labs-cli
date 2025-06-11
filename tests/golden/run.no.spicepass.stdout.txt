@@ -1,0 +1,1 @@
+❌ SPICE_PASS environment variable must be set for command 'run'
