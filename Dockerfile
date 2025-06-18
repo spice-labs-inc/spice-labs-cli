@@ -1,5 +1,5 @@
 # Base image: Start from goatrodeo
-FROM ghcr.io/spice-labs-inc/goatrodeo:latest
+FROM spicelabs/goatrodeo:latest
 
 # Copy ginger binary directly from ginger image
 COPY --from=spicelabs/ginger:latest /usr/bin/ginger /usr/bin/ginger
