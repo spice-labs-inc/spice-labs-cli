@@ -1,12 +1,22 @@
-# Base image: Start from goatrodeo
-FROM ghcr.io/spice-labs-inc/goatrodeo:latest
+# Stage 1: Build with Maven and run tests
+FROM maven:3.9.6-eclipse-temurin-21 as builder
+WORKDIR /build
 
-# Copy ginger binary directly from ginger image
-COPY --from=ghcr.io/spice-labs-inc/ginger:latest /usr/bin/ginger /usr/bin/ginger
+# Copy project files
+COPY pom.xml .
+COPY src ./src
+COPY spice ./spice
+COPY spice.ps1 ./spice.ps1
 
-# Copy spicelabs.sh into the final image
-COPY ./spice-labs.sh /opt/spice-labs-cli/spice-labs.sh
-COPY ./spice /opt/spice-labs-cli/spice
-COPY ./spice /opt/spice-labs-cli/spice.ps1
+# Build fat jar and run tests
+RUN mvn clean package -Pfatjar
 
-ENTRYPOINT ["/opt/spice-labs-cli/spice-labs.sh"]
+# Stage 2: Runtime image with just the CLI
+FROM eclipse-temurin:21-jre
+WORKDIR /opt/spice-labs-cli
+
+COPY --from=builder /build/target/spice-labs-cli-fat.jar ./spice-labs-cli.jar
+COPY --from=builder /build/spice ./spice
+COPY --from=builder /build/spice.ps1 ./spice.ps1
+
+ENTRYPOINT ["java", "-jar", "/opt/spice-labs-cli/spice-labs-cli.jar"]

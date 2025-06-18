@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.spicelabs</groupId>
+    <artifactId>spice-labs-cli</artifactId>
+    <version>1.0</version>
+    <url>https://github.com/spice-labs-inc/spice-labs-cli</url>
+
+    <organization>
+        <name>Spice Labs, Inc.</name>
+        <url>https://github.com/spice-labs-inc</url>
+    </organization>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <url>https://github.com/spice-labs-inc/spice-labs-cli</url>
+        <connection>scm:git:git://github.com/spice-labs-inc/spice-labs-cli.git</connection>
+        <developerConnection>scm:git:ssh://github.com/spice-labs-inc/spice-labs-cli.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+
+    <developers>
+        <developer>
+            <name>Spice Labs, Inc.</name>
+            <organization>Spice Labs, Inc.</organization>
+            <organizationUrl>https://github.com/spice-labs-inc</organizationUrl>
+        </developer>
+    </developers>
+    <properties>
+        <!-- compiler -->
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+
+        <!-- encoding -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- dependency versions -->
+        <slf4j.version>2.0.17</slf4j.version>
+        <logback.version>1.5.18</logback.version>
+        <picocli.version>4.7.6</picocli.version>
+        <goatrodeo.version>0.7.3-2-8825f62-dirty-SNAPSHOT</goatrodeo.version>
+        <ginger.version>1.0</ginger.version>
+        <junit.jupiter.version>5.13.1</junit.jupiter.version>
+        <mockwebserver.version>4.12.0</mockwebserver.version>
+        <mockito.version>5.3.1</mockito.version>
+    </properties>
+    <dependencies>
+        <!-- picocli for argument parsing -->
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+            <version>${picocli.version}</version>
+        </dependency>
+        <!-- your existing artifacts on the local repo -->
+        <dependency>
+            <groupId>goatrodeo</groupId>
+            <artifactId>goatrodeo_3</artifactId>
+            <version>${goatrodeo.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>ginger-j</artifactId>
+            <version>${ginger.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>${junit.jupiter.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.jupiter.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Copy dependencies for Docker build (thin jar) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>fatjar</id>
+            <build>
+                <plugins>
+                    <!-- Fat jar for standalone CLI use -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>shade</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <finalName>${project.artifactId}-fat</finalName>
+                                    <transformers>
+                                        <transformer
+                                                implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
+                                        </transformer>
+                                    </transformers>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
