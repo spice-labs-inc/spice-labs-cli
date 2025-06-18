@@ -67,21 +67,21 @@ docker run --rm \
   -e SPICE_PASS=... \
   -v "$PWD/input:/mnt/input" \
   -v "$PWD/output:/mnt/output" \
-  ghcr.io/spice-labs-inc/spice-labs-cli:latest \
+  spicelabs/spice-labs-cli:latest \
   --command run --input /mnt/input --output /mnt/output
 ```
 
 Upload only:
 ```bash
 docker run --rm -e SPICE_PASS=... -v "$PWD/output:/mnt/input" \
-  ghcr.io/spice-labs-inc/spice-labs-cli:latest \
+  spicelabs/spice-labs-cli:latest \
   --command upload-adgs --input /mnt/input
 ```
 
 Upload deployment events:
 ```bash
 cat deploy.json | docker run -i --rm -e SPICE_PASS=... \
-  ghcr.io/spice-labs-inc/spice-labs-cli:latest --command upload-deployment-events
+  spicelabs/spice-labs-cli:latest --command upload-deployment-events
 ```
 
 ---

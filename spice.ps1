@@ -11,7 +11,7 @@ $useJvm = ($env:SPICE_LABS_CLI_USE_JVM -eq '1')
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Docker image details
-$dockerImage = 'ghcr.io/spice-labs-inc/spice-labs-cli:latest'
+$dockerImage = "spicelabs/spice-labs-cli:latest"
 
 # Flags for CI mode and pulling
 $ciMode    = $false

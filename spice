@@ -7,7 +7,7 @@ USE_JVM="${SPICE_LABS_CLI_USE_JVM:-0}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-DOCKER_IMAGE="ghcr.io/spice-labs-inc/spice-labs-cli:latest"
+DOCKER_IMAGE="spicelabs/spice-labs-cli:latest"
 ci_mode=false
 pull_latest=true
 
