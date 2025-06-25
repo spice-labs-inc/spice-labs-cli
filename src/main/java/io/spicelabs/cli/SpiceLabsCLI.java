@@ -17,6 +17,7 @@ package io.spicelabs.cli;
 
 import ch.qos.logback.classic.Level;
 import io.spicelabs.ginger.Ginger;
+import io.spicelabs.goatrodeo.GoatRodeo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -172,7 +173,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
       System.setProperty("scala.logging.level", level);
       System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", level);
 
-      goatrodeo.GoatRodeo.builder()
+      GoatRodeo.builder()
           .withPayload(input.toString())
           .withOutput(output.toString())
           .run();

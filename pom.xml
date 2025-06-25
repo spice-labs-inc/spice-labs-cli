@@ -8,6 +8,7 @@
     <groupId>io.spicelabs</groupId>
     <artifactId>spice-labs-cli</artifactId>
     <version>1.0</version>
+    <packaging>jar</packaging>
     <url>https://github.com/spice-labs-inc/spice-labs-cli</url>
 
     <organization>
@@ -37,34 +38,49 @@
             <organizationUrl>https://github.com/spice-labs-inc</organizationUrl>
         </developer>
     </developers>
+
+    <repositories>
+        <repository>
+            <id>github-spice-labs-ginger</id>
+            <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+        </repository>
+        <repository>
+            <id>github-spice-labs-goatrodeo</id>
+            <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+        </repository>
+    </repositories>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli</url>
+        </repository>
+    </distributionManagement>
+
     <properties>
-        <!-- compiler -->
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-
-        <!-- encoding -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <!-- dependency versions -->
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
-        <goatrodeo.version>0.7.3-2-8825f62-dirty-SNAPSHOT</goatrodeo.version>
-        <ginger.version>1.0</ginger.version>
+        <goatrodeo.version>0.1.17</goatrodeo.version>
+        <ginger.version>0.0.19</ginger.version>
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <mockito.version>5.3.1</mockito.version>
     </properties>
+
     <dependencies>
-        <!-- picocli for argument parsing -->
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
             <version>${picocli.version}</version>
         </dependency>
-        <!-- your existing artifacts on the local repo -->
         <dependency>
-            <groupId>goatrodeo</groupId>
+            <groupId>io.spicelabs</groupId>
             <artifactId>goatrodeo_3</artifactId>
             <version>${goatrodeo.version}</version>
         </dependency>
@@ -83,8 +99,6 @@
             <artifactId>logback-classic</artifactId>
             <version>${logback.version}</version>
         </dependency>
-
-        <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
@@ -101,7 +115,11 @@
 
     <build>
         <plugins>
-            <!-- Copy dependencies for Docker build (thin jar) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.1.1</version>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
@@ -124,7 +142,6 @@
             <id>fatjar</id>
             <build>
                 <plugins>
-                    <!-- Fat jar for standalone CLI use -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-shade-plugin</artifactId>
@@ -137,10 +154,9 @@
                                     <goal>shade</goal>
                                 </goals>
                                 <configuration>
-                                    <finalName>${project.artifactId}-fat</finalName>
+                                    <finalName>${project.artifactId}-${project.version}-fat</finalName>
                                     <transformers>
-                                        <transformer
-                                                implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                             <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
                                         </transformer>
                                     </transformers>

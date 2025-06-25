@@ -1,0 +1,129 @@
+name: Publish The Spice Labs CLI Container Images
+
+on:
+  release:
+    types: [published]
+
+env:
+  PLATFORMS: linux/amd64, linux/arm64
+
+jobs:
+  publish_jars:
+    name: Publish CLI JARs to GitHub Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    outputs:
+      version: ${{ steps.validate.outputs.VERSION }}
+
+    steps:
+      - name: Checkout with LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Validate and extract version from tag
+        id: validate
+        run: |
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "Tag does not match semantic version pattern v*.*.*" >&2
+            exit 1
+          fi
+
+      - name: Set up JDK 21 and GitHub Maven auth
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+          server-id: github-spice-labs-goatrodeo,github-spice-labs-ginger
+          server-username: ${{ secrets.GH_USER_SG }}
+          server-password: ${{ secrets.GH_TOKEN }}
+
+      - name: Update version in pom.xml using Maven plugin
+        run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
+
+      - name: Build and deploy Maven artifacts
+        run: mvn --batch-mode deploy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  docker_image:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: publish_jars
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set Up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: ${{ env.PLATFORMS }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download fat jar
+        run: |
+          curl -fL -o spice-labs-cli-fat.jar \
+            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/spice-labs-inc/${{ github.event.repository.name }}
+            spicelabs/${{ github.event.repository.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+          flavor: |
+            latest=true
+
+      - name: Build and Push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          context: .
+          push: false # temporarily disabled for testing
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/spice-labs-inc/${{ github.event.repository.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: false # temporarily disabled for testing
