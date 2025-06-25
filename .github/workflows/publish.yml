@@ -72,12 +72,22 @@ jobs:
           </settings>
           EOF
 
-
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
 
+      - name: Generate deploy-fat-pom.xml
+        run: |
+          cat > target/deploy-fat-pom.xml <<EOF
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>spice-labs-cli</artifactId>
+            <version>${{ steps.validate.outputs.VERSION }}</version>
+          </project>
+          EOF
+
       - name: Publish jars to github packages
-        run: mvn --batch-mode deploy -Pfatjar
+        run: mvn --batch-mode deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
