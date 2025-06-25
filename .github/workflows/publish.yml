@@ -76,8 +76,11 @@ jobs:
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
 
-      - name: Build and deploy Maven artifacts
-        run: mvn --batch-mode deploy
+      - name: Build fat and standard JARs
+        run: mvn --batch-mode package -Pfatjar
+
+      - name: Publish jars to github packages
+        run: mvn --batch-mode deploy -Pfatjar
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 

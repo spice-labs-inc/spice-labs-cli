@@ -121,22 +121,27 @@
                 <version>3.1.1</version>
                 <executions>
                     <execution>
-                        <id>deploy-fat-jar</id>
+                        <id>default-deploy</id>
                         <phase>deploy</phase>
                         <goals>
                             <goal>deploy</goal>
                         </goals>
+                    </execution>
+                    <execution>
+                        <id>deploy-fat-jar</id>
+                        <phase>deploy</phase>
+                        <goals>
+                            <goal>deploy-file</goal>
+                        </goals>
                         <configuration>
-                            <attachPom>true</attachPom>
-                            <files>
-                                <file>target/${project.build.finalName}-fat.jar</file>
-                            </files>
-                            <types>
-                                <type>jar</type>
-                            </types>
-                            <classifiers>
-                                <classifier>fat</classifier>
-                            </classifiers>
+                            <file>${project.build.directory}/${project.build.finalName}-fat.jar</file>
+                            <repositoryId>github</repositoryId>
+                            <url>https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli</url>
+                            <groupId>${project.groupId}</groupId>
+                            <artifactId>${project.artifactId}</artifactId>
+                            <version>${project.version}</version>
+                            <classifier>fat</classifier>
+                            <packaging>jar</packaging>
                         </configuration>
                     </execution>
                 </executions>
@@ -176,6 +181,7 @@
                                 </goals>
                                 <configuration>
                                     <finalName>${project.artifactId}-${project.version}-fat</finalName>
+                                    <classifier>fat</classifier>
                                     <transformers>
                                         <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                             <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
