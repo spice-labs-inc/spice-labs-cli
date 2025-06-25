@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# To Install : `curl -fsSL https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/install.sh | bash`
+# To Install : `curl -sSf https://install.spicelabs.io | bash`
 
 TARGET_DIR="${HOME}/.local/bin"
 SCRIPT_URL="https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice"

@@ -85,6 +85,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
+      - name: Upload wrapper scripts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            spice
+            spice.ps1
+            install.sh
+            install.ps1
+
+
   docker_image:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
@@ -124,22 +134,22 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.GHCR_REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.GH_USERNAME_SG }}
+          password: ${{ secrets.GH_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/${{ github.actor }}/spice-labs-cli
+            ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}
           # spicelabs/${{ github.event.repository.name }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
           flavor: |
-            latest=false #fixme
+            latest=true
 
       - name: Build and Push Docker image
         id: push

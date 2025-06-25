@@ -1,4 +1,4 @@
-#To install : `irm https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/install.ps1 | iex`
+#To install : `irm https://install.spicelabs.io | iex`
 
 $TargetDir = "$env:USERPROFILE\.spice\bin"
 $ScriptUrl = "https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice.ps1"
