@@ -44,11 +44,9 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <!-- plugin versions -->
         <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
         <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
 
-        <!-- dependency versions -->
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
@@ -101,7 +99,6 @@
 
     <build>
         <plugins>
-            <!-- Fat JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -117,7 +114,6 @@
                 </executions>
             </plugin>
 
-            <!-- Attach fat.jar as classified artifact -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
@@ -140,7 +136,6 @@
                 </executions>
             </plugin>
 
-            <!-- Sources -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
@@ -154,7 +149,6 @@
                 </executions>
             </plugin>
 
-            <!-- Javadoc -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
@@ -170,22 +164,18 @@
         </plugins>
     </build>
 
-    <distributionManagement>
-        <repositories>
-            <repository>
-                <id>github-spice-labs-ginger</id>
-                <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-            </repository>
-            <repository>
-                <id>github-spice-labs-goatrodeo</id>
-                <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-            </repository>
-        </repositories>
-    </distributionManagement>
-
+    <repositories>
+        <repository>
+            <id>github-spice-labs-ginger</id>
+            <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+        </repository>
+        <repository>
+            <id>github-spice-labs-goatrodeo</id>
+            <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+        </repository>
+    </repositories>
 
     <profiles>
-        <!-- Default: GitHub Packages -->
         <profile>
             <id>github</id>
             <distributionManagement>
@@ -197,7 +187,6 @@
             </distributionManagement>
         </profile>
 
-        <!-- Optional: Maven Central (manual trigger) -->
         <profile>
             <id>maven-central</id>
             <distributionManagement>
