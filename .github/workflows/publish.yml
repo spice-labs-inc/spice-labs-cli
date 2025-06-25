@@ -95,15 +95,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      - name: Deploy fat jar manually
-        run: |
-          mvn --batch-mode org.apache.maven.plugins:maven-deploy-plugin:3.1.1:deploy-file \
-            -DpomFile=target/deploy-fat-pom.xml \
-            -Dfile=target/spice-labs-cli-${{ steps.validate.outputs.VERSION }}-fat.jar \
-            -DrepositoryId=github \
-            -Durl=https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
   docker_image:
     name: Build and Push Docker Image
