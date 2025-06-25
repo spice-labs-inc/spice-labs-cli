@@ -63,6 +63,11 @@ jobs:
                 <username>${{ secrets.GH_USERNAME_SG }}</username>
                 <password>${{ secrets.GH_TOKEN }}</password>
               </server>
+              <server>
+                <id>github</id>
+                <username>${{ secrets.GH_USER }}</username>
+                <password>${{ secrets.GH_TOKEN }}</password>
+              </server>
             </servers>
           </settings>
           EOF
