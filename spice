@@ -11,11 +11,15 @@ if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
   fi
   exec java -jar "$FAT_JAR" "$@"
 else
+  # Allow override of image name and tag
+  IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
+  TAG="${SPICE_IMAGE_TAG:-latest}"
+
   # Mount CWD as both input and output, propagate SPICE_PASS
   exec docker run --rm \
     -v "$PWD":/mnt/input \
     -v "$PWD":/mnt/output \
     -e SPICE_PASS="${SPICE_PASS:-}" \
-    spicelabs/spice-labs-cli:latest \
+    "${IMAGE}:${TAG}" \
     "$@"
 fi

@@ -6,6 +6,8 @@ on:
 
 env:
   PLATFORMS: linux/amd64, linux/arm64
+  GHCR_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   publish_jars:
@@ -121,8 +123,8 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ secrets.GH_USERNAME_SG }}
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GH_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Docker
@@ -130,7 +132,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/spice-labs-inc/${{ github.event.repository.name }}
+            ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}
           # spicelabs/${{ github.event.repository.name }}
           tags: |
             type=semver,pattern={{version}}
@@ -138,7 +140,6 @@ jobs:
             type=semver,pattern={{major}}
           flavor: |
             latest=false #fixme
-            suffix=test #removeme
 
       - name: Build and Push Docker image
         id: push
