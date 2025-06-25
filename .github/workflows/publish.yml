@@ -75,11 +75,12 @@ jobs:
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
 
-      - name: Generate target directory
-        run: mkdir -p target
+      - name: Build jars
+        run: mvn --batch-mode clean package
 
       - name: Generate deploy-fat-pom.xml
         run: |
+          mkdir -p target
           cat <<EOF > target/deploy-fat-pom.xml
           <project xmlns="http://maven.apache.org/POM/4.0.0">
             <modelVersion>4.0.0</modelVersion>
@@ -89,8 +90,18 @@ jobs:
           </project>
           EOF
 
-      - name: Publish jars to github packages
+      - name: Publish regular jars
         run: mvn --batch-mode deploy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Deploy fat jar manually
+        run: |
+          mvn --batch-mode org.apache.maven.plugins:maven-deploy-plugin:3.1.1:deploy-file \
+            -DpomFile=target/deploy-fat-pom.xml \
+            -Dfile=target/spice-labs-cli-${{ steps.validate.outputs.VERSION }}-fat.jar \
+            -DrepositoryId=github \
+            -Durl=https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
