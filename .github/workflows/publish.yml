@@ -94,7 +94,7 @@ jobs:
             -Dversion=${{ steps.validate.outputs.VERSION }} \
             -Dpackaging=jar \
             -Dclassifier=fat \
-            -DgeneratePom=true
+            -DgeneratePom=false
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
