@@ -65,7 +65,7 @@ jobs:
               </server>
               <server>
                 <id>github</id>
-                <username>${{ secrets.GH_USER }}</username>
+                <username>${{ secrets.GH_USERNAME_SG }}</username>
                 <password>${{ secrets.GH_TOKEN }}</password>
               </server>
             </servers>
@@ -78,23 +78,25 @@ jobs:
       - name: Build jars
         run: mvn --batch-mode clean package
 
-      - name: Generate deploy-fat-pom.xml
-        run: |
-          mkdir -p target
-          cat <<EOF > target/deploy-fat-pom.xml
-          <project xmlns="http://maven.apache.org/POM/4.0.0">
-            <modelVersion>4.0.0</modelVersion>
-            <groupId>io.spicelabs</groupId>
-            <artifactId>spice-labs-cli</artifactId>
-            <version>${{ steps.validate.outputs.VERSION }}</version>
-          </project>
-          EOF
-
-      - name: Publish regular jars
+      - name: Publish regular jar
         run: mvn --batch-mode deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
+      - name: Publish fat jar with classifier
+        run: |
+          mvn --batch-mode deploy:deploy-file \
+            -Dfile=target/spice-labs-cli-${{ steps.validate.outputs.VERSION }}-fat.jar \
+            -DrepositoryId=github \
+            -Durl=https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli \
+            -DgroupId=io.spicelabs \
+            -DartifactId=spice-labs-cli \
+            -Dversion=${{ steps.validate.outputs.VERSION }} \
+            -Dpackaging=jar \
+            -Dclassifier=fat \
+            -DgeneratePom=true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
   docker_image:
     name: Build and Push Docker Image
@@ -158,7 +160,7 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           context: .
-          push: false # temporarily disabled for testing
+          push: false # change to true when ready
           provenance: mode=max
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -169,4 +171,4 @@ jobs:
         with:
           subject-name: ghcr.io/spice-labs-inc/${{ github.event.repository.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: false # temporarily disabled for testing
+          push-to-registry: false
