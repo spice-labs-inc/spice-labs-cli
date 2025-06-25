@@ -19,7 +19,7 @@ jobs:
           java-version: '21'
           cache: 'maven'
           server-id: github-spice-labs-goatrodeo,github-spice-labs-ginger
-          server-username: ${{ secrets.GH_USER_SG }}
+          server-username: ${{ secrets.GH_USERNAME_SG }}
           server-password: ${{ secrets.GH_TOKEN }}
 
       - name: Install Dependencies and Build
