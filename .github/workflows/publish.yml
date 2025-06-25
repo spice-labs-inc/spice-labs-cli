@@ -75,26 +75,8 @@ jobs:
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
 
-      - name: Build jars
-        run: mvn --batch-mode clean package
-
-      - name: Publish regular jar
-        run: mvn --batch-mode deploy
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-
-      - name: Publish fat jar with classifier
-        run: |
-          mvn --batch-mode deploy:deploy-file \
-            -Dfile=target/spice-labs-cli-${{ steps.validate.outputs.VERSION }}-fat.jar \
-            -DrepositoryId=github \
-            -Durl=https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli \
-            -DgroupId=io.spicelabs \
-            -DartifactId=spice-labs-cli \
-            -Dversion=${{ steps.validate.outputs.VERSION }} \
-            -Dpackaging=jar \
-            -Dclassifier=fat \
-            -DgeneratePom=false
+      - name: Build and publish all jars (regular + fat)
+        run: mvn --batch-mode clean deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -160,7 +142,7 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           context: .
-          push: false # change to true when ready
+          push: false # set to true when you're ready
           provenance: mode=max
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}
