@@ -186,7 +186,7 @@
                                     <goal>deploy-file</goal>
                                 </goals>
                                 <configuration>
-                                    <file>${project.build.directory}/${project.build.finalName}.jar</file>
+                                    <file>${project.build.directory}/${project.build.finalName}-fat.jar</file>
                                     <repositoryId>github</repositoryId>
                                     <url>https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli</url>
                                     <groupId>${project.groupId}</groupId>
@@ -195,6 +195,7 @@
                                     <classifier>fat</classifier>
                                     <packaging>jar</packaging>
                                     <generatePom>false</generatePom>
+                                    <uniqueVersion>false</uniqueVersion>
                                 </configuration>
                             </execution>
                         </executions>
