@@ -130,6 +130,10 @@ public class SpiceLabsCLI implements Callable<Integer> {
   public void run() throws Exception {
     configureLogging();
 
+    if (command == null) {
+      command = Command.run;
+    }
+
     if (input == null)
       input = Paths.get(System.getProperty("user.dir"));
 

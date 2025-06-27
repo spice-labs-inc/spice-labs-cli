@@ -18,3 +18,13 @@ if [[ ":$PATH:" != *":$TARGET_DIR:"* ]]; then
 else
   echo "✅ spice installed and ready to use"
 fi
+
+if [[ -z "${SPICE_PASS:-}" ]]; then
+  echo "⚠️  SPICE_PASS is not set. Set it in your shell env to use the CLI:"
+  echo "  export SPICE_PASS=\"your-secret-token\""
+fi
+
+if ! command -v docker &> /dev/null; then
+  echo "⚠️  Docker is not installed or not in PATH. The spice CLI uses Docker unless JVM mode is enabled."
+  echo "  → Install Docker from https://docs.docker.com/get-docker/"
+fi
