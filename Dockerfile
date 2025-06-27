@@ -1,12 +1,10 @@
-# Base image: Start from goatrodeo
-FROM spicelabs/goatrodeo:latest
+# Stage: Runtime image with prebuilt CLI JAR
+FROM eclipse-temurin:21-jre
+WORKDIR /opt/spice-labs-cli
 
-# Copy ginger binary directly from ginger image
-COPY --from=spicelabs/ginger:latest /usr/bin/ginger /usr/bin/ginger
+# Copy in the pre-downloaded fat JAR and CLI wrappers
+COPY spice-labs-cli-fat.jar ./spice-labs-cli.jar
+COPY spice ./spice
+COPY spice.ps1 ./spice.ps1
 
-# Copy spicelabs.sh into the final image
-COPY ./spice-labs.sh /opt/spice-labs-cli/spice-labs.sh
-COPY ./spice /opt/spice-labs-cli/spice
-COPY ./spice /opt/spice-labs-cli/spice.ps1
-
-ENTRYPOINT ["/opt/spice-labs-cli/spice-labs.sh"]
+ENTRYPOINT ["java", "-jar", "/opt/spice-labs-cli/spice-labs-cli.jar"]
