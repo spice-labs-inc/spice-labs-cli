@@ -52,8 +52,8 @@
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
-        <goatrodeo.version>0.1.43</goatrodeo.version>
-        <ginger.version>0.0.25</ginger.version>
+        <goatrodeo.version>0.8.1</goatrodeo.version>
+        <ginger.version>0.1.0</ginger.version>
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <mockito.version>5.3.1</mockito.version>
@@ -241,7 +241,7 @@
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
-                            <autoPublish>false</autoPublish>
+                            <autoPublish>true</autoPublish>
                             <checksums>all</checksums>
                         </configuration>
                     </plugin>
