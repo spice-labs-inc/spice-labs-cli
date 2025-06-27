@@ -9,6 +9,11 @@ if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
 else
   IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
   TAG="${SPICE_IMAGE_TAG:-latest}"
+
+  if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
+    docker pull "${IMAGE}:${TAG}" || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+  fi
+
   exec docker run --rm \
     -v "$PWD":/mnt/input \
     -v "$PWD":/mnt/output \
