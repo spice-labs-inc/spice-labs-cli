@@ -1,101 +1,140 @@
-# The Spice Labs CLI
+# 🔩 Spice Labs CLI
 
-The Spice Labs CLI is a containerized CLI tool for scanning your systems and uploading results to a Spice Labs server.  
-It wraps two tools:
-- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo): generates ADGs (Artifact Dependency Graphs)
-- [`ginger`](https://github.com/spice-labs-inc/ginger): uploads ADGs or deployment events
+[![Maven Central](https://img.shields.io/maven-central/v/io.spicelabs/spice-labs-cli?label=Maven%20Central)](https://central.sonatype.com/artifact/io.spicelabs/spice-labs-cli)
+[![GitHub Release](https://img.shields.io/github/v/release/spice-labs-inc/spice-labs-cli?label=GitHub%20Release)](https://github.com/spice-labs-inc/spice-labs-cli/releases)
+[![GitHub Package](https://img.shields.io/badge/GitHub-Packages-blue?logo=github)](https://github.com/spice-labs-inc/spice-labs-cli/packages/)
+[![Docker Image Version (latest by date)](https://img.shields.io/docker/v/spicelabs/spice-labs-cli?sort=date&label=Docker%20Hub)](https://hub.docker.com/r/spicelabs/spice-labs-cli)
+
+The **Spice Labs CLI** is a JVM-based and containerized CLI that scans software artifacts to generate encrypted **Artifact Dependency Graphs (ADGs)** and uploads them securely to Spice Labs.
 
 ---
 
 ## 🚀 Quick Start
 
-### 🔹 Using `spice-labs-cli.sh` (recommended)
+### 🧪 Recommended: Installer Script
 
-[`spice-labs-cli.sh`](spice-labs-cli.sh) is a lightweight wrapper that runs the container for you.  
-It detects your environment, mounts input/output directories, and passes arguments to `spicelabs.sh`.
+#### 🐧 macOS/Linux
 
 ```bash
-SPICE_PASS=... ./spice-labs-cli.sh --command run --input ./my-artifacts
+curl -sSf https://install.spicelabs.io | bash
 ```
 
-### 🔹 Usage Modes
+#### 🪟 Windows PowerShell
 
-```bash
-./spice-labs-cli.sh [--command <cmd>] [--input <path>] [--output <path>] [--ci] [--quiet|--verbose]
+```powershell
+irm https://install.spicelabs.io | iex
 ```
 
-| Command                      | Description                                     |
-|------------------------------|-------------------------------------------------|
-| `run` *(default)*            | Scan and upload in one step                     |
-| `scan-artifacts`             | Run `goatrodeo` only                            |
-| `upload-adgs`                | Upload a pre-scanned ADG directory              |
-| `upload-deployment-events`   | Upload JSON deployment event logs from stdin   |
+Once installed:
 
-#### Options
-
-- `--input` : path to scan or upload (defaults to `./`)
-- `--output`: output path (for scan only)
-- `--quiet` / `--verbose`: control logging
-- `--ci`    : CI/CD mode (auto-silent unless overridden)
-- `SPICE_PASS`: required environment variable for authentication
-
-### 🔹 Examples
-
-Scan and upload:
 ```bash
-SPICE_PASS=... ./spice-labs-cli.sh --command run --input ./src
-```
-
-CI usage:
-```bash
-SPICE_PASS=... ./spice-labs-cli.sh --command upload-adgs --input ./out --ci
-```
-
-Upload deployment events:
-```bash
-cat deploy.json | SPICE_PASS=... ./spice-labs-cli.sh --command upload-deployment-events
+spice --command run --input ./my-dir --output ./out-dir
 ```
 
 ---
 
-## 🐳 Docker-Only Usage
-
-You can also run everything directly using Docker and `spicelabs.sh` inside the container.
+## ⚙️ CLI Options
 
 ```bash
-docker run --rm \
-  -e SPICE_PASS=... \
-  -v "$PWD/input:/mnt/input" \
-  -v "$PWD/output:/mnt/output" \
-  spicelabs/spice-labs-cli:latest \
-  --command run --input /mnt/input --output /mnt/output
+spice --command run|scan-artifacts|upload-adgs       --input <path>       --output <path>       --log-level debug|info|warn|error       --spice-pass <token or file path>
+```
+
+Default command is `run`, which scans and uploads in one step.
+
+---
+
+## 🐳 Docker Usage *(Advanced)*
+
+```bash
+docker run --rm   -e SPICE_PASS=...   -v "$PWD/input:/mnt/input"   -v "$PWD/output:/mnt/output"   spicelabs/spice-labs-cli   --command run --input /mnt/input --output /mnt/output
 ```
 
 Upload only:
 ```bash
-docker run --rm -e SPICE_PASS=... -v "$PWD/output:/mnt/input" \
-  spicelabs/spice-labs-cli:latest \
-  --command upload-adgs --input /mnt/input
+docker run --rm   -e SPICE_PASS=...   -v "$PWD/output:/mnt/input"   spicelabs/spice-labs-cli   --command upload-adgs --input /mnt/input
 ```
 
-Upload deployment events:
+---
+
+## 🧩 GitHub Actions
+
+Use the [Spice Labs CLI GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-cli-scan) in your workflow:
+
+```yaml
+jobs:
+  spice-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Spice Labs Scan
+        uses: spice-labs-inc/action-spice-labs-cli-scan@v1
+        with:
+          spice-pass: ${{ secrets.SPICE_PASS }}
+          input: ./my-artifact-dir
+```
+
+---
+
+## 👩‍💻 JVM Usage via Maven *(Advanced)*
+
 ```bash
-cat deploy.json | docker run -i --rm -e SPICE_PASS=... \
-  spicelabs/spice-labs-cli:latest --command upload-deployment-events
+mvn exec:java -Dexec.mainClass=io.spicelabs.cli.SpiceLabsCLI   -Dexec.args="--command run --input ./my-dir --output ./out-dir"
+```
+
+---
+
+## 🛠️ Maintainers
+
+### 🔨 Build Locally
+
+```bash
+./mvn package
+```
+
+Fat JAR is output at:
+```
+target/spice-labs-cli-*.jar
+```
+
+Run manually:
+
+```bash
+java -jar target/spice-labs-cli-*.jar --command run --input ./my-dir --output ./out-dir
+```
+
+---
+
+### 🚀 Releasing
+
+1. **Create a GitHub Release**  
+   Use a tag like `v0.2.0`. This triggers GitHub Actions to:
+   - Build the JAR
+   - Publish to GitHub Packages
+   - Push Docker image to GHCR
+   - Upload artifacts to Maven Central (automated)
+
+2. **Monitor Maven Central** (optional)  
+   Visit [https://central.sonatype.com](https://central.sonatype.com) → Deployments  
+   Propagation takes ~40 minutes.
+
+3. **Verify the JAR**
+
+```bash
+mvn dependency:get -Dartifact=io.spicelabs:spice-labs-cli:jar:0.2.0
 ```
 
 ---
 
 ## 📦 Repository
 
-This tool is maintained by [Spice Labs](https://github.com/spice-labs-inc).
+Maintained by [Spice Labs](https://github.com/spice-labs-inc).
 
-- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo)
-- [`ginger`](https://github.com/spice-labs-inc/ginger)
-- [`spice-labs-cli`](https://github.com/spice-labs-inc/spice-labs-cli)
+- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo) — ADG scanner
+- [`ginger`](https://github.com/spice-labs-inc/ginger) — secure uploader
+- [`spice-labs-cli`](https://github.com/spice-labs-inc/spice-labs-cli) — this CLI
 
 ---
 
 ## ⚖️ License
 
-Licensed under the Apache License 2.0. See [`LICENSE`](LICENSE) for details.
+Apache License 2.0. See [`LICENSE`](LICENSE).
