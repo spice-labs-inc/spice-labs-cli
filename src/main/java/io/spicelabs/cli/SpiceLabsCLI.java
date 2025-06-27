@@ -35,7 +35,7 @@ import java.util.Arrays;
 import java.util.concurrent.Callable;
 
 @Command(name = "spice", mixinStandardHelpOptions = true,
-    description = "Spice Labs unified CLI",
+    description = "Spice Labs CLI",
     version = "1.0")
 public class SpiceLabsCLI implements Callable<Integer> {
 
@@ -57,8 +57,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--log-level", description = "all|trace|debug|info[default]|warn|error|fatal|off")
   String logLevel;
 
-  @Option(names = "--jwt", description = "JWT token or path to token file")
-  String jwt;
+  @Option(names = "--spice-pass", description = "Spice Pass or path to file")
+  String spicePass;
 
   public static void main(String[] args) {
     int exitCode;
@@ -104,8 +104,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
     return this;
   }
 
-  public SpiceLabsCLI jwt(String jwt) {
-    this.jwt = jwt;
+  public SpiceLabsCLI spicePass(String spicePass) {
+    this.spicePass = spicePass;
     return this;
   }
 
@@ -136,8 +136,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
     if ((command == Command.run || command == Command.scan_artifacts) && output == null)
       output = Files.createTempDirectory("spice-output-");
 
-    if (command != Command.scan_artifacts && (jwt == null || jwt.isBlank()))
-      throw new IllegalArgumentException("SPICE_PASS must be set via --jwt for command: " + command);
+    if (command != Command.scan_artifacts && (spicePass == null || spicePass.isBlank()))
+      throw new IllegalArgumentException("SPICE_PASS must be set via --spice-pass for command: " + command);
 
     switch (command) {
       case scan_artifacts -> doScan();
@@ -189,7 +189,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
   private void doUploadAdgs() throws Exception {
     log.info("📦 Uploading ADGs...");
     Ginger.builder()
-        .jwt(jwt)
+        .jwt(spicePass)
         .adgDir(input)
         .run();
   }
@@ -202,7 +202,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
     }
     try {
       Ginger.builder()
-          .jwt(jwt)
+          .jwt(spicePass)
           .deploymentEventsFile(tmp)
           .run();
     } finally {

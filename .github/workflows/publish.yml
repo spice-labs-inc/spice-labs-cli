@@ -73,17 +73,33 @@ jobs:
                 <username>${{ secrets.GH_USERNAME_SG }}</username>
                 <password>${{ secrets.GH_TOKEN }}</password>
               </server>
+              <server>
+                <id>central</id>
+                <username>${{ secrets.MAVEN_CENTRAL_USERNAME }}</username>
+                <password>${{ secrets.MAVEN_CENTRAL_PASSWORD }}</password>
+              </server>
             </servers>
           </settings>
           EOF
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
 
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
 
       - name: Build and publish all jars (regular + fat)
-        run: mvn --batch-mode clean deploy
+        run: mvn --batch-mode clean deploy -P github
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
+
+      - name: Build and publish all jars (regular + fat)
+        run: mvn --batch-mode clean deploy -P maven-central
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
       - name: Upload wrapper scripts to GitHub Release
         uses: softprops/action-gh-release@v2

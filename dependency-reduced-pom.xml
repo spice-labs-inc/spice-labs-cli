@@ -31,50 +31,153 @@
   <build>
     <plugins>
       <plugin>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <version>3.6.0</version>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>${maven-jar-plugin.version}</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.0</version>
         <executions>
           <execution>
-            <id>copy-dependencies</id>
             <phase>package</phase>
             <goals>
-              <goal>copy-dependencies</goal>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <finalName>${project.build.finalName}-fat</finalName>
+              <transformers>
+                <transformer>
+                  <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.4.0</version>
+        <executions>
+          <execution>
+            <id>attach-fat-jar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>attach-artifact</goal>
+            </goals>
+            <configuration>
+              <artifacts>
+                <artifact>
+                  <file>${project.build.directory}/${project.build.finalName}-fat.jar</file>
+                  <type>jar</type>
+                  <classifier>fat</classifier>
+                </artifact>
+              </artifacts>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.0</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>jar</goal>
             </goals>
           </execution>
         </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.6.3</version>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-gpg-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>sign-artifacts</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>sign</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <gpgArguments>
+            <arg>--pinentry-mode</arg>
+            <arg>loopback</arg>
+          </gpgArguments>
+          <passphrase>${env.GPG_PASSPHRASE}</passphrase>
+        </configuration>
       </plugin>
     </plugins>
   </build>
   <profiles>
     <profile>
-      <id>fatjar</id>
+      <id>github</id>
+      <distributionManagement>
+        <repository>
+          <id>github</id>
+          <name>GitHub Packages</name>
+          <url>https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli</url>
+        </repository>
+      </distributionManagement>
+    </profile>
+    <profile>
+      <id>maven-central</id>
       <build>
         <plugins>
           <plugin>
-            <artifactId>maven-shade-plugin</artifactId>
-            <version>3.5.0</version>
-            <executions>
-              <execution>
-                <id>shade</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>shade</goal>
-                </goals>
-                <configuration>
-                  <finalName>spice-labs-cli-fat</finalName>
-                  <transformers>
-                    <transformer>
-                      <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
-                    </transformer>
-                  </transformers>
-                </configuration>
-              </execution>
-            </executions>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.8.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>ossrh</publishingServerId>
+              <autoPublish>false</autoPublish>
+              <checksums>all</checksums>
+            </configuration>
           </plugin>
         </plugins>
       </build>
+      <distributionManagement>
+        <repository>
+          <id>ossrh</id>
+          <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
+      </distributionManagement>
     </profile>
   </profiles>
+  <repositories>
+    <repository>
+      <id>github-spice-labs-ginger</id>
+      <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+    </repository>
+    <repository>
+      <id>github-spice-labs-goatrodeo</id>
+      <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+    </repository>
+  </repositories>
   <dependencies>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -114,16 +217,18 @@
     </dependency>
   </dependencies>
   <properties>
-    <ginger.version>1.0</ginger.version>
+    <ginger.version>0.0.25</ginger.version>
     <slf4j.version>2.0.17</slf4j.version>
     <picocli.version>4.7.6</picocli.version>
     <mockwebserver.version>4.12.0</mockwebserver.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <logback.version>1.5.18</logback.version>
-    <goatrodeo.version>0.7.3-2-8825f62-dirty-SNAPSHOT</goatrodeo.version>
+    <goatrodeo.version>0.1.43</goatrodeo.version>
+    <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
     <maven.compiler.source>21</maven.compiler.source>
     <mockito.version>5.3.1</mockito.version>
     <junit.jupiter.version>5.13.1</junit.jupiter.version>
     <maven.compiler.target>21</maven.compiler.target>
+    <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
   </properties>
 </project>
