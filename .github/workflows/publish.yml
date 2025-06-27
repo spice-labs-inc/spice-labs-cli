@@ -6,7 +6,6 @@ on:
 
 env:
   PLATFORMS: linux/amd64, linux/arm64
-  GHCR_REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
@@ -150,9 +149,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}
-          # spicelabs/${{ github.event.repository.name }}
+          images: spicelabs/spice-labs-cli
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
