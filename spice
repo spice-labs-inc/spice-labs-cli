@@ -1,25 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Absolute path to the fat jar if running locally
-FAT_JAR="/opt/spice-labs-cli/spice-labs-cli.jar"
+SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
 
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
-  if [ ! -f "$FAT_JAR" ]; then
-    echo "Error: Fat jar not found at $FAT_JAR"
-    exit 1
-  fi
-  exec java -jar "$FAT_JAR" "$@"
+  [ -f "$SPICE_LABS_CLI_JAR" ] || { echo "Missing: $SPICE_LABS_CLI_JAR"; exit 1; }
+  exec java -jar "$SPICE_LABS_CLI_JAR" "$@"
 else
-  # Allow override of image name and tag
   IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
   TAG="${SPICE_IMAGE_TAG:-latest}"
-
-  # Mount CWD as both input and output, propagate SPICE_PASS
   exec docker run --rm \
     -v "$PWD":/mnt/input \
     -v "$PWD":/mnt/output \
-    -e SPICE_PASS="${SPICE_PASS:-}" \
+    -e SPICE_PASS \
     "${IMAGE}:${TAG}" \
     "$@"
 fi

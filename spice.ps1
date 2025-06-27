@@ -1,27 +1,24 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 
-function Convert-PathForDocker {
-    param ([string]$path)
+$jar = $env:SPICE_LABS_CLI_JAR ?: "/opt/spice-labs-cli/spice-labs-cli.jar"
 
-    if ($IsWindows) {
-        # Convert C:\Path\To\Dir to /c/Path/To/Dir
-        $fullPath = Resolve-Path -Path $path | ForEach-Object { $_.Path }
-        return $fullPath -replace '^([A-Za-z]):', { "/$($args[0].ToLower())" } -replace '\\', '/'
-    } else {
-        return (Resolve-Path -Path $path).Path
-    }
+function Pwd-Docker {
+  $p = (Resolve-Path .).Path
+  if ($IsWindows) { $p -replace '^([A-Za-z]):', { "/$($args[0].ToLower())" } -replace '\\', '/' } else { $p }
 }
 
 if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
-    java -jar "/opt/spice-labs-cli/spice-labs-cli.jar" @Args
+  if (-not (Test-Path $jar)) { Write-Error "Missing: $jar"; exit 1 }
+  java -jar $jar @args
 } else {
-    $dockerPath = Convert-PathForDocker (Get-Location)
-
-    docker run --rm `
-        -v "$dockerPath:/mnt/input" `
-        -v "$dockerPath:/mnt/output" `
-        -e SPICE_PASS `
-        cli:latest `
-        @Args
+  $img = $env:SPICE_IMAGE ?: "spicelabs/spice-labs-cli"
+  $tag = $env:SPICE_IMAGE_TAG ?: "latest"
+  $pwd = Pwd-Docker
+  docker run --rm `
+    -v "$pwd:/mnt/input" `
+    -v "$pwd:/mnt/output" `
+    -e SPICE_PASS `
+    "$img`:$tag" `
+    @args
 }

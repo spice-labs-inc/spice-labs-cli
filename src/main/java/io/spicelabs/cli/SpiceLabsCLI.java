@@ -136,8 +136,12 @@ public class SpiceLabsCLI implements Callable<Integer> {
     if ((command == Command.run || command == Command.scan_artifacts) && output == null)
       output = Files.createTempDirectory("spice-output-");
 
+    if (spicePass == null || spicePass.isBlank())
+      spicePass = System.getenv("SPICE_PASS");
+
     if (command != Command.scan_artifacts && (spicePass == null || spicePass.isBlank()))
-      throw new IllegalArgumentException("SPICE_PASS must be set via --spice-pass for command: " + command);
+      throw new IllegalArgumentException("SPICE_PASS must be set via --spice-pass or the SPICE_PASS env var for command: " + command);
+
 
     switch (command) {
       case scan_artifacts -> doScan();
