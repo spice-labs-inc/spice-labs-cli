@@ -3,6 +3,11 @@ set -euo pipefail
 
 SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
 
+# portable abs path function
+abs_path() {
+  cd "$1" 2>/dev/null && pwd
+}
+
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
   [ -f "$SPICE_LABS_CLI_JAR" ] || { echo "Missing: $SPICE_LABS_CLI_JAR"; exit 1; }
   exec java -jar "$SPICE_LABS_CLI_JAR" "$@"
@@ -10,14 +15,46 @@ else
   IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
   TAG="${SPICE_IMAGE_TAG:-latest}"
 
+  INPUT_DIR=""
+  OUTPUT_DIR=""
+  MODIFIED_ARGS=()
+
+  prev=""
+  for arg in "$@"; do
+    case "$prev" in
+      --input)
+        INPUT_DIR="$arg"
+        MODIFIED_ARGS+=("/mnt/input")
+        prev=""
+        continue
+        ;;
+      --output)
+        OUTPUT_DIR="$arg"
+        MODIFIED_ARGS+=("/mnt/output")
+        prev=""
+        continue
+        ;;
+    esac
+
+    MODIFIED_ARGS+=("$arg")
+    if [ "$arg" = "--input" ] || [ "$arg" = "--output" ]; then
+      prev="$arg"
+    else
+      prev=""
+    fi
+  done
+
+  VOLUMES=()
+  [ -n "$INPUT_DIR" ] && VOLUMES+=("-v" "$(abs_path "$INPUT_DIR"):/mnt/input")
+  [ -n "$OUTPUT_DIR" ] && VOLUMES+=("-v" "$(abs_path "$OUTPUT_DIR"):/mnt/output")
+
   if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
     docker pull "${IMAGE}:${TAG}" || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
   fi
 
   exec docker run --rm \
-    -v "$PWD":/mnt/input \
-    -v "$PWD":/mnt/output \
+    "${VOLUMES[@]}" \
     -e SPICE_PASS \
     "${IMAGE}:${TAG}" \
-    "$@"
+    "${MODIFIED_ARGS[@]}"
 fi

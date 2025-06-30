@@ -16,19 +16,21 @@ The **Spice Labs CLI** is a JVM-based and containerized CLI that scans software 
 #### 🐧 macOS/Linux
 
 ```bash
-curl -sSf https://install.spicelabs.io | bash
+curl -sSLf https://install.spicelabs.io | bash
 ```
 
 #### 🪟 Windows PowerShell
 
 ```powershell
-irm https://install.spicelabs.io | iex
+irm -UseBasicParsing -Uri https://install.spicelabs.io | iex
 ```
 
 Once installed:
 
 ```bash
-spice --command run --input ./my-dir --output ./out-dir
+spice --command run \
+      --input ./my-dir \
+      --output ./out-dir
 ```
 
 ---
@@ -36,7 +38,11 @@ spice --command run --input ./my-dir --output ./out-dir
 ## ⚙️ CLI Options
 
 ```bash
-spice --command run|scan-artifacts|upload-adgs       --input <path>       --output <path>       --log-level debug|info|warn|error       --spice-pass <token or file path>
+spice \
+  --command run|scan-artifacts|upload-adgs \
+  --input <path> \
+  --output <path> \
+  --log-level debug|info|warn|error
 ```
 
 Default command is `run`, which scans and uploads in one step.
@@ -46,12 +52,22 @@ Default command is `run`, which scans and uploads in one step.
 ## 🐳 Docker Usage *(Advanced)*
 
 ```bash
-docker run --rm   -e SPICE_PASS=...   -v "$PWD/input:/mnt/input"   -v "$PWD/output:/mnt/output"   spicelabs/spice-labs-cli   --command run --input /mnt/input --output /mnt/output
+docker run --rm \
+  -e SPICE_PASS=... \
+  -v "$PWD/input:/mnt/input" \
+  -v "$PWD/output:/mnt/output" \
+  spicelabs/spice-labs-cli \
+  --command run --input /mnt/input --output /mnt/output
 ```
 
 Upload only:
+
 ```bash
-docker run --rm   -e SPICE_PASS=...   -v "$PWD/output:/mnt/input"   spicelabs/spice-labs-cli   --command upload-adgs --input /mnt/input
+docker run --rm \
+  -e SPICE_PASS=... \
+  -v "$PWD/output:/mnt/input" \
+  spicelabs/spice-labs-cli \
+  --command upload-adgs --input /mnt/input
 ```
 
 ---
@@ -78,7 +94,9 @@ jobs:
 ## 👩‍💻 JVM Usage via Maven *(Advanced)*
 
 ```bash
-mvn exec:java -Dexec.mainClass=io.spicelabs.cli.SpiceLabsCLI   -Dexec.args="--command run --input ./my-dir --output ./out-dir"
+mvn exec:java \
+  -Dexec.mainClass=io.spicelabs.cli.SpiceLabsCLI \
+  -Dexec.args="--command run --input ./my-dir --output ./out-dir"
 ```
 
 ---
@@ -99,7 +117,10 @@ target/spice-labs-cli-*.jar
 Run manually:
 
 ```bash
-java -jar target/spice-labs-cli-*.jar --command run --input ./my-dir --output ./out-dir
+java -jar target/spice-labs-cli-*.jar \
+     --command run \
+     --input ./my-dir \
+     --output ./out-dir
 ```
 
 ---

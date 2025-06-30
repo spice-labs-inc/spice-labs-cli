@@ -57,7 +57,6 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--log-level", description = "all|trace|debug|info[default]|warn|error|fatal|off")
   String logLevel;
 
-  @Option(names = "--spice-pass", description = "Spice Pass or path to file")
   String spicePass;
 
   public static void main(String[] args) {
@@ -144,7 +143,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
       spicePass = System.getenv("SPICE_PASS");
 
     if (command != Command.scan_artifacts && (spicePass == null || spicePass.isBlank()))
-      throw new IllegalArgumentException("SPICE_PASS must be set via --spice-pass or the SPICE_PASS env var for command: " + command);
+      throw new IllegalArgumentException("SPICE_PASS must be set via SPICE_PASS env var for command: " + command);
 
 
     switch (command) {
@@ -196,10 +195,14 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   private void doUploadAdgs() throws Exception {
     log.info("📦 Uploading ADGs...");
-    Ginger.builder()
+    Ginger ginger = Ginger.builder()
         .jwt(spicePass)
-        .adgDir(input)
-        .run();
+        .adgDir(input);
+
+    if (output != null)
+      ginger.outputDir(output);
+
+    ginger.run();
   }
 
   private void doUploadDeploymentEvents() throws Exception {
