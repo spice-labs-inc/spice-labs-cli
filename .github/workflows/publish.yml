@@ -134,7 +134,8 @@ jobs:
 
       - name: Download fat jar
         run: |
-          curl -fL -o spice-labs-cli-fat.jar \
+          mkdir -p target
+          curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
             -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/octet-stream" \
             "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"

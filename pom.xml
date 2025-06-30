@@ -9,7 +9,7 @@
 
     <groupId>io.spicelabs</groupId>
     <artifactId>spice-labs-cli</artifactId>
-    <version>1.0</version>
+    <version>0.0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
     <url>https://github.com/spice-labs-inc/spice-labs-cli</url>
 
@@ -52,8 +52,10 @@
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
-        <goatrodeo.version>0.8.1</goatrodeo.version>
-        <ginger.version>0.1.0</ginger.version>
+<!--        <goatrodeo.version>0.8.1</goatrodeo.version>-->
+<!--        <ginger.version>0.1.0</ginger.version>-->
+        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>
+        <ginger.version>0.0.1-SNAPSHOT</ginger.version>
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <mockito.version>5.3.1</mockito.version>
