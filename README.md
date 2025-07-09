@@ -39,7 +39,7 @@ spice --command run \
 
 ```bash
 spice \
-  --command run|scan-artifacts|upload-adgs|upload-deployment-events \
+  --command run|scan-artifacts|upload-adgs \
   --input <path> \
   --output <path> \
   --log-level debug|info|warn|error \
@@ -48,7 +48,7 @@ spice \
 ```
 
 - `--threads` — Number of threads to use when scanning (default: `2`)
-- `--maxrecords` — Max number of ADG records to emit (default: `5000`)
+- `--maxrecords` — Max number of ADG records to keep in memory per-batch (default: `5000`)
 
 Default command is `run`, which scans and uploads in one step.
 
