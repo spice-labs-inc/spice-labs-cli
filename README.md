@@ -42,8 +42,13 @@ spice \
   --command run|scan-artifacts|upload-adgs \
   --input <path> \
   --output <path> \
-  --log-level debug|info|warn|error
+  --log-level debug|info|warn|error \
+  --threads <number> \
+  --maxrecords <number>
 ```
+
+- `--threads` — Number of threads to use when scanning (default: `2`)
+- `--maxrecords` — Max number of ADG records to keep in memory per-batch (default: `5000`)
 
 Default command is `run`, which scans and uploads in one step.
 
@@ -69,6 +74,20 @@ docker run --rm \
   spicelabs/spice-labs-cli \
   --command upload-adgs --input /mnt/input
 ```
+
+---
+
+## 📦 Environment Variables
+
+| Variable                  | Description                                                                 | Default                                       |
+|--------------------------|-----------------------------------------------------------------------------|-----------------------------------------------|
+| `SPICE_PASS`             | **Required** for `upload-*` commands. JWT token for Spice Labs auth.        | *(no default)*                                |
+| `SPICE_LABS_CLI_USE_JVM` | Run the CLI using the local JVM instead of Docker (`1` = enable)            | `0`                                           |
+| `SPICE_LABS_CLI_JAR`     | Path to the CLI JAR when using JVM mode                                     | `/opt/spice-labs-cli/spice-labs-cli.jar`      |
+| `SPICE_LABS_JVM_ARGS`    | Custom JVM tuning flags (e.g., `-Xmx512m -XX:+UseG1GC`)                     | `--XX:MaxRAMPercentage=75`                     |
+| `SPICE_IMAGE`            | Docker image to use when not in JVM mode                                    | `spicelabs/spice-labs-cli`                    |
+| `SPICE_IMAGE_TAG`        | Docker image tag                                                            | `latest`                                      |
+| `SPICE_LABS_CLI_SKIP_PULL` | Skip `docker pull` before run (`1` = skip)                               | `0`                                           |
 
 ---
 

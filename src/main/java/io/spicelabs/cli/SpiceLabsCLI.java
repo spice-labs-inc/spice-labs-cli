@@ -57,6 +57,13 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--log-level", description = "all|trace|debug|info[default]|warn|error|fatal|off")
   String logLevel;
 
+  @Option(names = "--threads", description = "Number of threads to use (default: 2)")
+  int threads = 2;
+
+  @Option(names = "--max-records", description = "Max records to process per batch (default: 5000)")
+  int maxRecords = 5000;
+
+
   String spicePass;
 
   public static void main(String[] args) {
@@ -183,6 +190,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
       GoatRodeo.builder()
           .withPayload(input.toString())
           .withOutput(output.toString())
+          .withThreads(threads)
+          .withMaxRecords(maxRecords)
           .run();
     } finally {
       // Restore original log level values
