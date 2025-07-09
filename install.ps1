@@ -1,4 +1,9 @@
-# To install : `irm https://install.spicelabs.io | iex`
+# To install : `irm -UseBasicParsing -Uri https://install.spicelabs.io | iex`
+
+# Ensure USERPROFILE is set (for Linux compatibility)
+if (-not $env:USERPROFILE) {
+    $env:USERPROFILE = $env:HOME
+}
 
 $TargetDir = "$env:USERPROFILE\.spice\bin"
 $ScriptUrl = "https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice.ps1"
