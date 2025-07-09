@@ -21,7 +21,7 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     exit 1
   }
 
-  $jvmArgs = if ($env:SPICE_LABS_JVM_ARGS) { $env:SPICE_LABS_JVM_ARGS } else { "-XX:MaximumHeapSizePercent=75" }
+  $jvmArgs = if ($env:SPICE_LABS_JVM_ARGS) { $env:SPICE_LABS_JVM_ARGS } else { "--XX:MaxRAMPercentage" }
   & java $jvmArgs -jar $jar @args
   exit $LASTEXITCODE
 } else {

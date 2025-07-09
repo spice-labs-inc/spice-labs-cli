@@ -8,5 +8,5 @@ COPY spice ./spice
 COPY spice.ps1 ./spice.ps1
 
 ENTRYPOINT ["sh", "-c", "\
-  JVM_ARGS=\"${SPICE_LABS_JVM_ARGS:--XX:MaximumHeapSizePercent=75}\" && \
+  JVM_ARGS=\"${SPICE_LABS_JVM_ARGS:--XX:MaxRAMPercentage=75}\" && \
   exec java $JVM_ARGS -jar /opt/spice-labs-cli/spice-labs-cli.jar \"$@\"", "--"]

@@ -10,7 +10,7 @@ abs_path() {
 
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
   [ -f "$SPICE_LABS_CLI_JAR" ] || { echo "Missing: $SPICE_LABS_CLI_JAR"; exit 1; }
-  JVM_ARGS="${SPICE_LABS_JVM_ARGS:--XX:MaximumHeapSizePercent=75}"
+  JVM_ARGS="${SPICE_LABS_JVM_ARGS:--XX:MaxRAMPercentage=75}"
   # shellcheck disable=SC2086
   exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" "$@"
 else
