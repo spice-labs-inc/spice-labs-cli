@@ -53,7 +53,7 @@ else
   fi
 
   exec docker run --rm \
-    "${VOLUMES[@]}" \
+    ${VOLUMES+"${VOLUMES[@]}"} \
     -e SPICE_PASS \
     "${IMAGE}:${TAG}" \
     "${MODIFIED_ARGS[@]}"
