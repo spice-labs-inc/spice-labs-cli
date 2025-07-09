@@ -7,7 +7,7 @@ function Get-AbsolutePath($path) {
   return (Resolve-Path -LiteralPath $path).ProviderPath
 }
 
-function To-DockerPath($path) {
+function Convert-ToDockerPath($path) {
   if ($IsWindows) {
     return ($path -replace '^([A-Za-z]):', { "/$($args[0].ToLower())" }) -replace '\\', '/'
   } else {
@@ -20,7 +20,10 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     Write-Error "Missing: $jar"
     exit 1
   }
-  exec java -jar $jar @args
+
+  $jvmArgs = if ($env:SPICE_LABS_JVM_ARGS) { $env:SPICE_LABS_JVM_ARGS } else { "-XX:MaximumHeapSizePercent=75" }
+  & java $jvmArgs -jar $jar @args
+  exit $LASTEXITCODE
 } else {
   $img       = if ($env:SPICE_IMAGE)     { $env:SPICE_IMAGE }     else { "spicelabs/spice-labs-cli" }
   $tag       = if ($env:SPICE_IMAGE_TAG) { $env:SPICE_IMAGE_TAG } else { "latest" }
@@ -52,11 +55,11 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
 
   $volumes = @()
   if ($inputDir) {
-    $absIn = To-DockerPath (Get-AbsolutePath $inputDir)
+    $absIn = Convert-ToDockerPath (Get-AbsolutePath $inputDir)
     $volumes += "-v"; $volumes += "${absIn}:/mnt/input"
   }
   if ($outputDir) {
-    $absOut = To-DockerPath (Get-AbsolutePath $outputDir)
+    $absOut = Convert-ToDockerPath (Get-AbsolutePath $outputDir)
     $volumes += "-v"; $volumes += "${absOut}:/mnt/output"
   }
 
@@ -68,10 +71,17 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     }
   }
 
+  $envArgs = @()
+  if ($env:SPICE_LABS_JVM_ARGS) {
+    $envArgs += "-e"
+    $envArgs += "SPICE_LABS_JVM_ARGS"
+  }
+
   docker run `
     --rm `
     @volumes `
     -e SPICE_PASS `
+    @envArgs `
     "${img}:${tag}" `
     @modifiedArgs
 }

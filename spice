@@ -10,7 +10,9 @@ abs_path() {
 
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
   [ -f "$SPICE_LABS_CLI_JAR" ] || { echo "Missing: $SPICE_LABS_CLI_JAR"; exit 1; }
-  exec java -jar "$SPICE_LABS_CLI_JAR" "$@"
+  JVM_ARGS="${SPICE_LABS_JVM_ARGS:--XX:MaximumHeapSizePercent=75}"
+  # shellcheck disable=SC2086
+  exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" "$@"
 else
   IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
   TAG="${SPICE_IMAGE_TAG:-latest}"
@@ -53,8 +55,10 @@ else
   fi
 
   exec docker run --rm \
-    ${VOLUMES+"${VOLUMES[@]}"} \
-    -e SPICE_PASS \
-    "${IMAGE}:${TAG}" \
-    "${MODIFIED_ARGS[@]}"
+      ${VOLUMES+"${VOLUMES[@]}"} \
+      -e SPICE_PASS \
+      ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
+      "${IMAGE}:${TAG}" \
+      "${MODIFIED_ARGS[@]}"
+
 fi
