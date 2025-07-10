@@ -18,6 +18,7 @@ package io.spicelabs.cli;
 import ch.qos.logback.classic.Level;
 import io.spicelabs.ginger.Ginger;
 import io.spicelabs.goatrodeo.GoatRodeo;
+import io.spicelabs.goatrodeo.GoatRodeoBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -31,8 +32,9 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
+import java.util.*;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 @Command(name = "spice", mixinStandardHelpOptions = true,
     description = "Spice Labs CLI",
@@ -63,6 +65,17 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--max-records", description = "Max records to process per batch (default: 5000)")
   int maxRecords = 5000;
 
+  @Option(names = "--tag", description = "Tag all top level artifacts (files) with the current date and the text of the tag")
+  String tag;
+
+  @Option(
+      names = "--goat-rodeo-args",
+      description = "Additional GoatRodeo builder args in key=value format (e.g. --goat-rodeo-args blockList=ignored,tempDir=/tmp)",
+      split = ","
+  )
+  List<String> goatRodeoArgsRaw;
+
+  protected Map<String, String> goatRodeoArgs = Map.of();
 
   String spicePass;
 
@@ -115,10 +128,22 @@ public class SpiceLabsCLI implements Callable<Integer> {
     return this;
   }
 
+  public SpiceLabsCLI goatRodeoArgs(Map<String, String> args) {
+    this.goatRodeoArgs = args;
+    return this;
+  }
+
   // ── CLI Entrypoint ───────────────────────────
 
   @Override
   public Integer call() throws Exception {
+    if (goatRodeoArgsRaw != null && !goatRodeoArgsRaw.isEmpty()) {
+      goatRodeoArgs = goatRodeoArgsRaw.stream()
+          .map(s -> s.split("=", 2))
+          .filter(kv -> kv.length == 2)
+          .collect(Collectors.toMap(kv -> kv[0], kv -> kv[1]));
+    }
+
     try {
       run();
       return 0;
@@ -147,11 +172,10 @@ public class SpiceLabsCLI implements Callable<Integer> {
       output = Files.createTempDirectory("spice-output-");
 
     if (spicePass == null || spicePass.isBlank())
-      spicePass = System.getenv("SPICE_PASS");
+      spicePass = getSpicePassEnv();
 
     if (command != Command.scan_artifacts && (spicePass == null || spicePass.isBlank()))
       throw new IllegalArgumentException("SPICE_PASS must be set via SPICE_PASS env var for command: " + command);
-
 
     switch (command) {
       case scan_artifacts -> doScan();
@@ -163,6 +187,10 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   // ── Internal Logic ───────────────────────────
 
+  protected String getSpicePassEnv() {
+    return System.getenv("SPICE_PASS");
+  }
+
   private void configureLogging() {
     String levelStr = (logLevel == null) ? "INFO" : logLevel.toUpperCase();
     Level level = Level.toLevel(levelStr, Level.INFO);
@@ -170,31 +198,33 @@ public class SpiceLabsCLI implements Callable<Integer> {
     ch.qos.logback.classic.Logger rootLogger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
     rootLogger.setLevel(level);
 
-    // Also propagate to Scala logging
     System.setProperty("scala.logging.level", levelStr);
   }
 
-  private void doScan() throws Exception {
+  protected void doScan() throws Exception {
     log.info("📦 Scanning artifacts with GoatRodeo...");
 
-    // Save original log level values
     String originalScalaLevel = System.getProperty("scala.logging.level");
     String originalSlf4jLevel = System.getProperty("org.slf4j.simpleLogger.defaultLogLevel");
 
     try {
-      // Map log level to Scala logging expectations  
       String level = (logLevel == null) ? "INFO" : logLevel.toUpperCase();
       System.setProperty("scala.logging.level", level);
       System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", level);
 
-      GoatRodeo.builder()
+      GoatRodeoBuilder builder = GoatRodeo.builder()
           .withPayload(input.toString())
           .withOutput(output.toString())
           .withThreads(threads)
           .withMaxRecords(maxRecords)
-          .run();
+          .withExtraArgs(goatRodeoArgs);
+
+      if (tag != null && !tag.isBlank()) {
+        builder.withTag(tag);
+      }
+
+      builder.run();
     } finally {
-      // Restore original log level values
       if (originalScalaLevel != null)
         System.setProperty("scala.logging.level", originalScalaLevel);
       if (originalSlf4jLevel != null)
