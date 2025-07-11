@@ -44,11 +44,11 @@ spice \
   --output <path> \
   --log-level debug|info|warn|error \
   --threads <number> \
-  --maxrecords <number>
+  --max-records <number>
 ```
 
 - `--threads` — Number of threads to use when scanning (default: `2`)
-- `--maxrecords` — Max number of ADG records to keep in memory per-batch (default: `5000`)
+- `--max-records` — Max number of ADG records to keep in memory per-batch (default: `5000`)
 
 Default command is `run`, which scans and uploads in one step.
 
@@ -62,7 +62,9 @@ docker run --rm \
   -v "$PWD/input:/mnt/input" \
   -v "$PWD/output:/mnt/output" \
   spicelabs/spice-labs-cli \
-  --command run --input /mnt/input --output /mnt/output
+  --command run \
+  --input /mnt/input \
+  --output /mnt/output
 ```
 
 Upload only:
@@ -72,22 +74,23 @@ docker run --rm \
   -e SPICE_PASS=... \
   -v "$PWD/output:/mnt/input" \
   spicelabs/spice-labs-cli \
-  --command upload-adgs --input /mnt/input
+  --command upload-adgs \
+  --input /mnt/input
 ```
 
 ---
 
 ## 📦 Environment Variables
 
-| Variable                  | Description                                                                 | Default                                       |
-|--------------------------|-----------------------------------------------------------------------------|-----------------------------------------------|
-| `SPICE_PASS`             | **Required** for `upload-*` commands. JWT token for Spice Labs auth.        | *(no default)*                                |
-| `SPICE_LABS_CLI_USE_JVM` | Run the CLI using the local JVM instead of Docker (`1` = enable)            | `0`                                           |
-| `SPICE_LABS_CLI_JAR`     | Path to the CLI JAR when using JVM mode                                     | `/opt/spice-labs-cli/spice-labs-cli.jar`      |
-| `SPICE_LABS_JVM_ARGS`    | Custom JVM tuning flags (e.g., `-Xmx512m -XX:+UseG1GC`)                     | `--XX:MaxRAMPercentage=75`                     |
-| `SPICE_IMAGE`            | Docker image to use when not in JVM mode                                    | `spicelabs/spice-labs-cli`                    |
-| `SPICE_IMAGE_TAG`        | Docker image tag                                                            | `latest`                                      |
-| `SPICE_LABS_CLI_SKIP_PULL` | Skip `docker pull` before run (`1` = skip)                               | `0`                                           |
+| Variable                   | Description                                                             | Default                                |
+|---------------------------|-------------------------------------------------------------------------|----------------------------------------|
+| `SPICE_PASS`              | **Required** for `upload-*` commands. JWT token for Spice Labs auth.    | *(no default)*                         |
+| `SPICE_LABS_CLI_USE_JVM`  | Run the CLI using the local JVM instead of Docker (`1` = enable)        | `0`                                    |
+| `SPICE_LABS_CLI_JAR`      | Path to the CLI JAR when using JVM mode                                 | `/opt/spice-labs-cli/spice-labs-cli.jar` |
+| `SPICE_LABS_JVM_ARGS`     | Custom JVM tuning flags (e.g., `-Xmx512m -XX:+UseG1GC`)                 | `--XX:MaxRAMPercentage=75`             |
+| `SPICE_IMAGE`             | Docker image to use when not in JVM mode                                | `spicelabs/spice-labs-cli`             |
+| `SPICE_IMAGE_TAG`         | Docker image tag                                                        | `latest`                               |
+| `SPICE_LABS_CLI_SKIP_PULL`| Skip `docker pull` before run (`1` = skip)                              | `0`                                    |
 
 ---
 
@@ -115,7 +118,9 @@ jobs:
 ```bash
 mvn exec:java \
   -Dexec.mainClass=io.spicelabs.cli.SpiceLabsCLI \
-  -Dexec.args="--command run --input ./my-dir --output ./out-dir"
+  -Dexec.args="--command run \
+               --input ./my-dir \
+               --output ./out-dir"
 ```
 
 ---
@@ -146,21 +151,22 @@ java -jar target/spice-labs-cli-*.jar \
 
 ### 🚀 Releasing
 
-1. **Create a GitHub Release**  
+1. **Create a GitHub Release**
    Use a tag like `v0.2.0`. This triggers GitHub Actions to:
    - Build the JAR
    - Publish to GitHub Packages
    - Push Docker image to GHCR
    - Upload artifacts to Maven Central (automated)
 
-2. **Monitor Maven Central** (optional)  
-   Visit [https://central.sonatype.com](https://central.sonatype.com) → Deployments  
+2. **Monitor Maven Central** (optional)
+   Visit [https://central.sonatype.com](https://central.sonatype.com) → Deployments
    Propagation takes ~40 minutes.
 
 3. **Verify the JAR**
 
 ```bash
-mvn dependency:get -Dartifact=io.spicelabs:spice-labs-cli:jar:0.2.0
+mvn dependency:get \
+  -Dartifact=io.spicelabs:spice-labs-cli:jar:0.2.0
 ```
 
 ---

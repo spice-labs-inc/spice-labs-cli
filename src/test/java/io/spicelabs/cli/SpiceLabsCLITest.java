@@ -61,14 +61,24 @@ class SpiceLabsCLITest {
 
 
   @Test
-  void uploadAdgsWithoutSpicePass_throws() {
-    var ex = assertThrows(RuntimeException.class, () ->
-        SpiceLabsCLI.builder()
-            .command(SpiceLabsCLI.Command.upload_adgs)
-            .input(Path.of("ignored"))
-            .run());
+  void uploadAdgsWithoutSpicePass_throws() throws Exception {
+    Path tmpInput = Files.createTempDirectory("fake-adgs");
+
+    SpiceLabsCLI cli = new SpiceLabsCLI() {
+      @Override
+      protected String getSpicePassEnv() {
+        return null;
+      }
+    };
+
+    cli.command(SpiceLabsCLI.Command.upload_adgs)
+        .input(tmpInput);
+
+    var ex = assertThrows(IllegalArgumentException.class, cli::run);
     assertTrue(ex.getMessage().contains("SPICE_PASS must be set"));
   }
+
+
 
   @Test
   void privateUploadDeploymentEvents_cleansUpTempFile() throws Exception {
@@ -101,4 +111,60 @@ class SpiceLabsCLITest {
       assertEquals(before, after, "No deploy-events-* files should remain");
     }
   }
+
+  static class CapturingGoatRodeoBuilder extends io.spicelabs.goatrodeo.GoatRodeoBuilder {
+    final java.util.Map<String, String> received = new java.util.HashMap<>();
+
+    @Override
+    public io.spicelabs.goatrodeo.GoatRodeoBuilder withExtraArgs(java.util.Map<String, String> args) {
+      received.putAll(args);
+      return super.withExtraArgs(args); // Optional
+    }
+
+    @Override
+    public void run() {
+      // no-op
+    }
+  }
+
+  static class TestableCLI extends SpiceLabsCLI {
+    final CapturingGoatRodeoBuilder builder = new CapturingGoatRodeoBuilder();
+
+    @Override
+    protected void doScan() throws Exception {
+      builder.withPayload(input.toString())
+          .withOutput(output.toString())
+          .withThreads(threads)
+          .withMaxRecords(maxRecords)
+          .withExtraArgs(goatRodeoArgs);
+
+      if (tag != null && !tag.isBlank()) {
+        builder.withTag(tag);
+      }
+
+      builder.run();
+      System.out.println("Args passed: " + builder.received);
+    }
+  }
+
+  @Test
+  void goatRodeoArgs_areParsedAndPassed() throws Exception {
+
+    Path inputDir = Files.createTempDirectory("test-input");
+    Path outputDir = Files.createTempDirectory("test-output");
+
+    TestableCLI cli = new TestableCLI();
+    CommandLine cmd = new CommandLine(cli);
+    cmd.execute(
+        "--command", "scan-artifacts",
+        "--input", inputDir.toString(),
+        "--output", outputDir.toString(),
+        "--goat-rodeo-args", "blockList=/etc/blocklist.txt,tempDir=/tmp/test"
+    );
+
+    assertEquals("/etc/blocklist.txt", cli.builder.received.get("blockList"));
+    assertEquals("/tmp/test", cli.builder.received.get("tempDir"));
+    assertEquals(2, cli.builder.received.size());
+  }
 }
+
