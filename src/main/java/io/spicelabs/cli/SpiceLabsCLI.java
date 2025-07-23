@@ -179,7 +179,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
     switch (command) {
       case scan_artifacts -> doScan();
-      case upload_adgs -> doUploadAdgs();
+      case upload_adgs -> doUploadAdgs(Optional.empty());
       case upload_deployment_events -> doUploadDeploymentEvents();
       case run -> doRunAll();
     }
@@ -232,11 +232,11 @@ public class SpiceLabsCLI implements Callable<Integer> {
     }
   }
 
-  private void doUploadAdgs() throws Exception {
+  private void doUploadAdgs(Optional<Path> gingerInputDir) throws Exception {
     log.info("📦 Uploading ADGs...");
     Ginger ginger = Ginger.builder()
         .jwt(spicePass)
-        .adgDir(input);
+        .adgDir(gingerInputDir.orElse(input));
 
     if (output != null)
       ginger.outputDir(output);
@@ -262,7 +262,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   private void doRunAll() throws Exception {
     doScan();
-    doUploadAdgs();
+    doUploadAdgs(Optional.of(output));
   }
 
   // ── Enums ────────────────────────────────────
