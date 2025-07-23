@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+WRAPPER_VERSION="0.2.11"
+LATEST_VERSION=$(curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+
+if [[ "$LATEST_VERSION" != "$WRAPPER_VERSION" && "$LATEST_VERSION" != "" ]]; then
+  echo "⚠️  A newer spice script ($LATEST_VERSION) is available. Run:"
+  echo "    curl -sSf https://install.spicelabs.io | bash"
+fi
+
 SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
 
 # portable abs path function
@@ -21,33 +29,41 @@ else
   OUTPUT_DIR=""
   MODIFIED_ARGS=()
 
-  prev=""
   for arg in "$@"; do
-    case "$prev" in
-      --input)
-        INPUT_DIR="$arg"
-        MODIFIED_ARGS+=("/mnt/input")
-        prev=""
-        continue
+    case "$arg" in
+      --input=*)
+        INPUT_DIR="${arg#--input=}"
+        MODIFIED_ARGS+=("--input" "/mnt/input")
         ;;
-      --output)
-        OUTPUT_DIR="$arg"
-        MODIFIED_ARGS+=("/mnt/output")
-        prev=""
-        continue
+      --output=*)
+        OUTPUT_DIR="${arg#--output=}"
+        MODIFIED_ARGS+=("--output" "/mnt/output")
+        ;;
+      --input|--output)
+        prev="$arg"
+        ;;
+      *)
+        if [ "${prev:-}" = "--input" ]; then
+          INPUT_DIR="$arg"
+          MODIFIED_ARGS+=("/mnt/input")
+          unset prev
+        elif [ "${prev:-}" = "--output" ]; then
+          OUTPUT_DIR="$arg"
+          MODIFIED_ARGS+=("/mnt/output")
+          unset prev
+        else
+          MODIFIED_ARGS+=("$arg")
+        fi
         ;;
     esac
-
-    MODIFIED_ARGS+=("$arg")
-    if [ "$arg" = "--input" ] || [ "$arg" = "--output" ]; then
-      prev="$arg"
-    else
-      prev=""
-    fi
   done
 
-  VOLUMES=()
-  [ -n "$INPUT_DIR" ] && VOLUMES+=("-v" "$(abs_path "$INPUT_DIR"):/mnt/input")
+  if [ -z "$INPUT_DIR" ]; then
+    INPUT_DIR="."
+    MODIFIED_ARGS+=("--input" "/mnt/input")
+  fi
+
+  VOLUMES=("-v" "$(abs_path "$INPUT_DIR"):/mnt/input")
   [ -n "$OUTPUT_DIR" ] && VOLUMES+=("-v" "$(abs_path "$OUTPUT_DIR"):/mnt/output")
 
   if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
@@ -55,10 +71,9 @@ else
   fi
 
   exec docker run --rm \
-      ${VOLUMES+"${VOLUMES[@]}"} \
-      -e SPICE_PASS \
-      ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-      "${IMAGE}:${TAG}" \
-      "${MODIFIED_ARGS[@]}"
-
+    ${VOLUMES+"${VOLUMES[@]}"} \
+    -e SPICE_PASS \
+    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
+    "${IMAGE}:${TAG}" \
+    "${MODIFIED_ARGS[@]}"
 fi

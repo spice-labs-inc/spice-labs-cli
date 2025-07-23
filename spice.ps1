@@ -1,6 +1,21 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 
+$WRAPPER_VERSION = "0.2.11"
+
+try {
+  $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -UseBasicParsing
+  $LATEST_VERSION = $latest.tag_name
+} catch {
+  $LATEST_VERSION = ""
+}
+
+if ($LATEST_VERSION -and $LATEST_VERSION -ne $WRAPPER_VERSION) {
+  Write-Warning "⚠️  A newer spice script ($LATEST_VERSION) is available. Run:"
+  Write-Warning "    curl -sSf https://install.spicelabs.io | bash"
+}
+
+
 $jar = if ($env:SPICE_LABS_CLI_JAR) { $env:SPICE_LABS_CLI_JAR } else { "/opt/spice-labs-cli/spice-labs-cli.jar" }
 
 function Get-AbsolutePath($path) {
@@ -21,7 +36,7 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     exit 1
   }
 
-  $jvmArgs = if ($env:SPICE_LABS_JVM_ARGS) { $env:SPICE_LABS_JVM_ARGS } else { "--XX:MaxRAMPercentage" }
+  $jvmArgs = if ($env:SPICE_LABS_JVM_ARGS) { $env:SPICE_LABS_JVM_ARGS } else { "--XX:MaxRAMPercentage=75" }
   & java $jvmArgs -jar $jar @args
   exit $LASTEXITCODE
 } else {
@@ -30,34 +45,51 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
   $inputDir  = ""
   $outputDir = ""
   $modifiedArgs = @()
+  $prev = ""
 
-  for ($i = 0; $i -lt $args.Count; $i++) {
-    switch ($args[$i]) {
-      "--input" {
-        $inputDir = $args[$i + 1]
-        $modifiedArgs += "--input"
-        $modifiedArgs += "/mnt/input"
-        $i++
-        continue
-      }
-      "--output" {
-        $outputDir = $args[$i + 1]
-        $modifiedArgs += "--output"
-        $modifiedArgs += "/mnt/output"
-        $i++
-        continue
-      }
-      default {
-        $modifiedArgs += $args[$i]
-      }
+  foreach ($arg in $args) {
+    if ($arg -like "--input=*") {
+      $inputDir = $arg -replace "^--input=", ""
+      $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
+      continue
+    }
+    if ($arg -like "--output=*") {
+      $outputDir = $arg -replace "^--output=", ""
+      $modifiedArgs += "--output"; $modifiedArgs += "/mnt/output"
+      continue
+    }
+
+    if ($prev -eq "--input") {
+      $inputDir = $arg
+      $modifiedArgs += "/mnt/input"
+      $prev = ""
+      continue
+    }
+    if ($prev -eq "--output") {
+      $outputDir = $arg
+      $modifiedArgs += "/mnt/output"
+      $prev = ""
+      continue
+    }
+
+    if ($arg -eq "--input" -or $arg -eq "--output") {
+      $modifiedArgs += $arg
+      $prev = $arg
+    } else {
+      $modifiedArgs += $arg
+      $prev = ""
     }
   }
 
-  $volumes = @()
-  if ($inputDir) {
-    $absIn = Convert-ToDockerPath (Get-AbsolutePath $inputDir)
-    $volumes += "-v"; $volumes += "${absIn}:/mnt/input"
+  if (-not $inputDir) {
+    $inputDir = "."
+    $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
   }
+
+  $volumes = @()
+  $absIn = Convert-ToDockerPath (Get-AbsolutePath $inputDir)
+  $volumes += "-v"; $volumes += "${absIn}:/mnt/input"
+
   if ($outputDir) {
     $absOut = Convert-ToDockerPath (Get-AbsolutePath $outputDir)
     $volumes += "-v"; $volumes += "${absOut}:/mnt/output"
