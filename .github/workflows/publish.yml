@@ -146,6 +146,14 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
+      - name: Check if release is a pre-release
+        id: prerelease
+        run: |
+          IS_PRERELEASE=$(gh release view ${{ github.ref_name }} --json isPrerelease -q '.isPrerelease')
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -156,7 +164,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
           flavor: |
-            latest=true
+            latest=${{ steps.prerelease.outputs.is_prerelease == 'false' }}
 
       - name: Build and Push Docker image
         id: push
