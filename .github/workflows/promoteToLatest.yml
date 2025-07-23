@@ -8,28 +8,15 @@ jobs:
   promote:
     if: github.event.release.prerelease == false
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
-      - name: Check if release is marked as "latest"
-        id: is_latest
-        run: |
-          IS_LATEST=$(gh release view ${{ github.ref_name }} --json isLatest -q '.isLatest')
-          echo "is_latest=$IS_LATEST" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Log in to Docker Hub
-        if: steps.is_latest.outputs.is_latest == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
       - name: Retag and push "latest"
-        if: steps.is_latest.outputs.is_latest == 'true'
         run: |
           VERSION="${{ github.event.release.tag_name }}"
           docker pull spicelabs/spice-labs-cli:$VERSION
