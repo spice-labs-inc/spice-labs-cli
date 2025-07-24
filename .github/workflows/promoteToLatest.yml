@@ -20,11 +20,31 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
+      - name: Derive and validate version
+        id: version
+        shell: bash
+        run: |
+          raw_tag="${{ inputs.tag }}"
+          version="${raw_tag#v}"
+
+          if [[ "$raw_tag" == "$version" ]]; then
+            echo "❌ Input tag must start with 'v' (e.g. v1.2.3)." >&2
+            exit 1
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid tag format: $raw_tag. Must be v<major>.<minor>.<patch>." >&2
+            exit 1
+          fi
+
+          echo "Validated tag: $raw_tag -> Docker tag: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Pull image and tag as latest
         run: |
-          TAG=${{ inputs.tag }}
-          docker pull spicelabs/spice-labs-cli:$TAG
-          docker tag spicelabs/spice-labs-cli:$TAG spicelabs/spice-labs-cli:latest
+          DOCKER_TAG="${{ steps.version.outputs.version }}"
+          docker pull spicelabs/spice-labs-cli:$DOCKER_TAG
+          docker tag spicelabs/spice-labs-cli:$DOCKER_TAG spicelabs/spice-labs-cli:latest
           docker push spicelabs/spice-labs-cli:latest
 
       - name: Find release ID for tag
