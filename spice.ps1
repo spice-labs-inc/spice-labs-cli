@@ -1,18 +1,21 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 
-$WRAPPER_VERSION = "v0.2.13"
+$ScriptPath = $MyInvocation.MyCommand.Path
+$LocalHash = Get-FileHash -Path $ScriptPath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
 
-try {
-  $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -UseBasicParsing
-  $LATEST_VERSION = $latest.tag_name
-} catch {
-  $LATEST_VERSION = ""
-}
+$ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' }
 
-if ($LATEST_VERSION -and $LATEST_VERSION -ne $WRAPPER_VERSION) {
-  Write-Warning "⚠️  A newer spice script ($LATEST_VERSION) is available. Run:"
-  Write-Warning "    curl -sSf https://install.spicelabs.io | bash"
+$Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
+
+if ($Asset -and $Asset.browser_download_url) {
+    $RemoteData = Invoke-WebRequest -Uri $Asset.browser_download_url -UseBasicParsing
+    $RemoteHash = [System.BitConverter]::ToString((New-Object System.Security.Cryptography.SHA256Managed).ComputeHash($RemoteData.Content)).Replace("-", "")
+
+    if ($LocalHash -ne $RemoteHash) {
+        Write-Host "⚠️  A newer version of this script is available. Run:"
+        Write-Host "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
+    }
 }
 
 $jar = if ($env:SPICE_LABS_CLI_JAR) { $env:SPICE_LABS_CLI_JAR } else { "/opt/spice-labs-cli/spice-labs-cli.jar" }
