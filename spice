@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRAPPER_VERSION="0.2.12"
+WRAPPER_VERSION="v0.2.13"
 LATEST_VERSION=$(curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
 
 if [[ "$LATEST_VERSION" != "$WRAPPER_VERSION" && "$LATEST_VERSION" != "" ]]; then
@@ -35,33 +35,29 @@ else
   OUTPUT_DIR=""
   MODIFIED_ARGS=()
 
+  prev=""
   for arg in "$@"; do
-    case "$arg" in
-      --input=*)
-        INPUT_DIR="${arg#--input=}"
-        MODIFIED_ARGS+=("--input" "/mnt/input")
-        ;;
-      --output=*)
-        OUTPUT_DIR="${arg#--output=}"
-        MODIFIED_ARGS+=("--output" "/mnt/output")
-        ;;
-      --input|--output)
-        prev="$arg"
-        ;;
-      *)
-        if [ "${prev:-}" = "--input" ]; then
-          INPUT_DIR="$arg"
-          MODIFIED_ARGS+=("/mnt/input")
-          unset prev
-        elif [ "${prev:-}" = "--output" ]; then
-          OUTPUT_DIR="$arg"
-          MODIFIED_ARGS+=("/mnt/output")
-          unset prev
-        else
-          MODIFIED_ARGS+=("$arg")
-        fi
-        ;;
-    esac
+    if [[ "$arg" == --input=* ]]; then
+      INPUT_DIR="${arg#--input=}"
+      MODIFIED_ARGS+=("--input" "/mnt/input")
+    elif [[ "$arg" == --output=* ]]; then
+      OUTPUT_DIR="${arg#--output=}"
+      MODIFIED_ARGS+=("--output" "/mnt/output")
+    elif [[ "$prev" == "--input" ]]; then
+      INPUT_DIR="$arg"
+      MODIFIED_ARGS+=("/mnt/input")
+      prev=""
+    elif [[ "$prev" == "--output" ]]; then
+      OUTPUT_DIR="$arg"
+      MODIFIED_ARGS+=("/mnt/output")
+      prev=""
+    elif [[ "$arg" == "--input" || "$arg" == "--output" ]]; then
+      MODIFIED_ARGS+=("$arg")
+      prev="$arg"
+    else
+      MODIFIED_ARGS+=("$arg")
+      prev=""
+    fi
   done
 
   if [ -z "$INPUT_DIR" ]; then

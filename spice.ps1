@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 
-$WRAPPER_VERSION = "0.2.12"
+$WRAPPER_VERSION = "v0.2.13"
 
 try {
   $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -UseBasicParsing
@@ -52,15 +52,17 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
   $prev = ""
 
   foreach ($arg in $args) {
-    if ($arg -like "--input=*") {
-      $inputDir = $arg -replace "^--input=", ""
-      $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
-      continue
-    }
-    if ($arg -like "--output=*") {
-      $outputDir = $arg -replace "^--output=", ""
-      $modifiedArgs += "--output"; $modifiedArgs += "/mnt/output"
-      continue
+    switch -Regex ($arg) {
+      "^--input=(.+)" {
+        $inputDir = $matches[1]
+        $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
+        continue
+      }
+      "^--output=(.+)" {
+        $outputDir = $matches[1]
+        $modifiedArgs += "--output"; $modifiedArgs += "/mnt/output"
+        continue
+      }
     }
 
     if ($prev -eq "--input") {
@@ -69,6 +71,7 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
       $prev = ""
       continue
     }
+
     if ($prev -eq "--output") {
       $outputDir = $arg
       $modifiedArgs += "/mnt/output"
