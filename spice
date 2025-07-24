@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRAPPER_VERSION="0.2.11"
+WRAPPER_VERSION="0.2.12"
 LATEST_VERSION=$(curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
 
 if [[ "$LATEST_VERSION" != "$WRAPPER_VERSION" && "$LATEST_VERSION" != "" ]]; then
@@ -13,7 +13,13 @@ SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar
 
 # portable abs path function
 abs_path() {
-  cd "$1" 2>/dev/null && pwd
+  local path="$1"
+  [[ "$path" == ~* ]] && path="${path/#\~/$HOME}"
+  if [ -d "$path" ]; then
+    (cd "$path" && pwd)
+  else
+    (cd "$(dirname "$path")" && echo "$(pwd)/$(basename "$path")")
+  fi
 }
 
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
