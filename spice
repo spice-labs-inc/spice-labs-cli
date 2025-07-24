@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRAPPER_VERSION="v0.2.13"
-LATEST_VERSION=$(curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+LOCAL_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
 
-if [[ "$LATEST_VERSION" != "$WRAPPER_VERSION" && "$LATEST_VERSION" != "" ]]; then
-  echo "⚠️  A newer spice script ($LATEST_VERSION) is available. Run:"
-  echo "    curl -sSf https://install.spicelabs.io | bash"
+LATEST_URL=$(curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest \
+  | jq -r '.assets[] | select(.name == "spice") | .browser_download_url')
+
+if [[ -n "$LATEST_URL" ]]; then
+  REMOTE_HASH=$(curl -fsSL "$LATEST_URL" | sha256sum | awk '{print $1}')
+  if [[ "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
+    echo "⚠️  A newer version of this script is available. Run:"
+    echo "    curl -sSf https://install.spicelabs.io | bash"
+  fi
 fi
 
 SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
