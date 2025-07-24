@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 
-$WRAPPER_VERSION = "0.2.11"
+$WRAPPER_VERSION = "0.2.12"
 
 try {
   $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -UseBasicParsing
@@ -15,10 +15,14 @@ if ($LATEST_VERSION -and $LATEST_VERSION -ne $WRAPPER_VERSION) {
   Write-Warning "    curl -sSf https://install.spicelabs.io | bash"
 }
 
-
 $jar = if ($env:SPICE_LABS_CLI_JAR) { $env:SPICE_LABS_CLI_JAR } else { "/opt/spice-labs-cli/spice-labs-cli.jar" }
 
 function Get-AbsolutePath($path) {
+  if ($path -eq "~") {
+    $path = $HOME
+  } elseif ($path -like "~/*") {
+    $path = Join-Path $HOME ($path -replace "^~\/")
+  }
   return (Resolve-Path -LiteralPath $path).ProviderPath
 }
 
