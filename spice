@@ -11,7 +11,7 @@ if [[ -n "$LATEST_URL" ]]; then
   REMOTE_HASH=$(curl -fsSL "$LATEST_URL" | sha256sum | awk '{print $1}')
   if [[ "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
     echo "⚠️  A newer version of this script is available. Run:"
-    echo "    curl -sSf https://install.spicelabs.io | bash"
+    echo "    curl -sSfL https://install.spicelabs.io | bash"
   fi
 fi
 
