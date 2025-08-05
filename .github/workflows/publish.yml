@@ -39,9 +39,9 @@ jobs:
       - name: Set up JDK 21 and GitHub Maven auth
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'maven'
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
           server-id: github
           server-username: ${{ secrets.GH_USERNAME_SG }}
           server-password: ${{ secrets.GH_TOKEN }}
@@ -67,17 +67,27 @@ jobs:
                 <username>${{ secrets.GH_USERNAME_SG }}</username>
                 <password>${{ secrets.GH_TOKEN }}</password>
               </server>
-              <server>
-                <id>github</id>
-                <username>${{ secrets.GH_USERNAME_SG }}</username>
-                <password>${{ secrets.GH_TOKEN }}</password>
-              </server>
-              <server>
-                <id>central</id>
-                <username>${{ secrets.MAVEN_CENTRAL_USERNAME }}</username>
-                <password>${{ secrets.MAVEN_CENTRAL_PASSWORD }}</password>
-              </server>
             </servers>
+
+            <profiles>
+              <profile>
+                <id>github</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+
+            <activeProfiles>
+              <activeProfile>github</activeProfile>
+            </activeProfiles>
           </settings>
           EOF
 
@@ -108,7 +118,6 @@ jobs:
             spice.ps1
             install.sh
             install.ps1
-
 
   docker_image:
     name: Build and Push Docker Image

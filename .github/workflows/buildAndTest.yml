@@ -15,9 +15,9 @@ jobs:
       - name: Set up JDK 21 and GitHub Maven auth
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'maven'
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
           server-id: github
           server-username: ${{ secrets.GH_USERNAME_SG }}
           server-password: ${{ secrets.GH_TOKEN }}
@@ -41,6 +41,26 @@ jobs:
                 <password>${{ secrets.GH_TOKEN }}</password>
               </server>
             </servers>
+
+            <profiles>
+              <profile>
+                <id>github</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+
+            <activeProfiles>
+              <activeProfile>github</activeProfile>
+            </activeProfiles>
           </settings>
           EOF
 
@@ -49,4 +69,3 @@ jobs:
 
       - name: Test with Maven
         run: mvn --batch-mode --update-snapshots verify
-      

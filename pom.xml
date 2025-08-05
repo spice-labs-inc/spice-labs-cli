@@ -187,17 +187,6 @@
         </plugins>
     </build>
 
-    <repositories>
-        <repository>
-            <id>github-spice-labs-ginger</id>
-            <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-        </repository>
-        <repository>
-            <id>github-spice-labs-goatrodeo</id>
-            <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-        </repository>
-    </repositories>
-
     <profiles>
         <profile>
             <id>github</id>
