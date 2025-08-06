@@ -60,39 +60,75 @@ jobs:
             <servers>
               <server>
                 <id>github-spice-labs-goatrodeo</id>
-                <username>${env.GH_USERNAME_SG}</username>
-                <password>${env.GH_TOKEN}</password>
+                <username>${{ secrets.GH_USERNAME_SG }}</username>
+                <password>${{ secrets.GH_TOKEN }}</password>
               </server>
               <server>
                 <id>github-spice-labs-ginger</id>
-                <username>${env.GH_USERNAME_SG}</username>
-                <password>${env.GH_TOKEN}</password>
+                <username>${{ secrets.GH_USERNAME_SG }}</username>
+                <password>${{ secrets.GH_TOKEN }}</password>
               </server>
               <server>
                 <id>github</id>
-                <username>${env.GH_USERNAME_SG}</username>
-                <password>${env.GH_TOKEN}</password>
+                <username>${{ secrets.GH_USERNAME_SG }}</username>
+                <password>${{ secrets.GH_TOKEN }}</password>
               </server>
               <server>
                 <id>central</id>
-                <username>${env.MAVEN_CENTRAL_USERNAME}</username>
-                <password>${env.MAVEN_CENTRAL_PASSWORD}</password>
+                <username>${{ secrets.MAVEN_CENTRAL_USERNAME }}</username>
+                <password>${{ secrets.MAVEN_CENTRAL_PASSWORD }}</password>
               </server>
             </servers>
 
-            <repositories>
-              <repository>
-                <id>github-spice-labs-goatrodeo</id>
-                <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-              </repository>
-              <repository>
-                <id>github-spice-labs-ginger</id>
-                <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-              </repository>
-            </repositories>
+            <profiles>
+              <profile>
+                <id>github</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                  </repository>
+                </repositories>
+              </profile>
+
+              <profile>
+                <id>maven-central</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                  </repository>
+                </repositories>
+              </profile>
+              
+              <profile>
+                <id>default-repos</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            
+            <activeProfiles>
+              <activeProfile>default-repos</activeProfile>
+            </activeProfiles>
 
           </settings>
-
           EOF
 
 
