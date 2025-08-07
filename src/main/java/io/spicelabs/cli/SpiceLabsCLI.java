@@ -15,26 +15,30 @@ limitations under the License. */
 
 package io.spicelabs.cli;
 
-import ch.qos.logback.classic.Level;
-import io.spicelabs.ginger.Ginger;
-import io.spicelabs.goatrodeo.GoatRodeo;
-import io.spicelabs.goatrodeo.GoatRodeoBuilder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.ITypeConverter;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.TypeConversionException;
-
 import java.io.BufferedInputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import io.spicelabs.ginger.Ginger;
+import io.spicelabs.goatrodeo.GoatRodeo;
+import io.spicelabs.goatrodeo.GoatRodeoBuilder;
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.ITypeConverter;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.TypeConversionException;
 
 @Command(name = "spice", mixinStandardHelpOptions = true,
     description = "Spice Labs CLI",
