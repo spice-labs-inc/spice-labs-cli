@@ -15,20 +15,21 @@ jobs:
       - name: Set up JDK 21 and GitHub Maven auth
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'maven'
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
           server-id: github
           server-username: ${{ secrets.GH_USERNAME_SG }}
           server-password: ${{ secrets.GH_TOKEN }}
 
-      - name: Write settings.xml for GitHub Packages
+      - name: Write settings.xml for GitHub + Maven Central
         run: |
           mkdir -p ~/.m2
           cat <<EOF > ~/.m2/settings.xml
           <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
                     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                     xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
             <servers>
               <server>
                 <id>github-spice-labs-goatrodeo</id>
@@ -40,13 +41,54 @@ jobs:
                 <username>${{ secrets.GH_USERNAME_SG }}</username>
                 <password>${{ secrets.GH_TOKEN }}</password>
               </server>
+              <server>
+                <id>github</id>
+                <username>${{ secrets.GH_USERNAME_SG }}</username>
+                <password>${{ secrets.GH_TOKEN }}</password>
+              </server>
+              <server>
+                <id>central</id>
+                <username>${{ secrets.MAVEN_CENTRAL_USERNAME }}</username>
+                <password>${{ secrets.MAVEN_CENTRAL_PASSWORD }}</password>
+              </server>
             </servers>
+
+            <profiles>
+              <profile>
+                <id>github</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                  </repository>
+                </repositories>
+              </profile>
+
+              <profile>
+                <id>maven-central</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+
           </settings>
           EOF
+
 
       - name: Install Dependencies and Build
         run: mvn --batch-mode --update-snapshots -DskipTests install
 
       - name: Test with Maven
         run: mvn --batch-mode --update-snapshots verify
-      

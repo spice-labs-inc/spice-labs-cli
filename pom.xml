@@ -52,7 +52,7 @@
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
-        <goatrodeo.version>0.8.2</goatrodeo.version>
+        <goatrodeo.version>0.8.12</goatrodeo.version>
         <ginger.version>0.1.4</ginger.version>
 <!--        Use these versions for local dev-->
 <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
@@ -186,17 +186,6 @@
             
         </plugins>
     </build>
-
-    <repositories>
-        <repository>
-            <id>github-spice-labs-ginger</id>
-            <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-        </repository>
-        <repository>
-            <id>github-spice-labs-goatrodeo</id>
-            <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-        </repository>
-    </repositories>
 
     <profiles>
         <profile>
