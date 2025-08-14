@@ -44,6 +44,7 @@ spice \
   --output <path> \
   --log-level debug|info|warn|error \
   --threads <number> \
+  --tag=<tag> \
   --max-records <number>
 ```
 
