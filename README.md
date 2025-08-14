@@ -187,7 +187,7 @@ mvn dependency:get \
 Maintained by [Spice Labs](https://github.com/spice-labs-inc).
 
 - [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo) — ADG scanner
-- [`ginger`](https://github.com/spice-labs-inc/ginger) — secure uploader
+- [`ginger-j`](https://github.com/spice-labs-inc/ginger-j) — secure uploader
 - [`spice-labs-cli`](https://github.com/spice-labs-inc/spice-labs-cli) — this CLI
 
 ---
