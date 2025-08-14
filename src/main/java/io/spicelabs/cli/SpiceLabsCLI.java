@@ -66,11 +66,17 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--threads", description = "Number of threads to use (default: 2)")
   int threads = 2;
 
+  @Option(names = "--use-syft", description = "Augment Goat Rodeo information with Syft")
+  boolean useSyft = true;
+
   @Option(names = "--max-records", description = "Max records to process per batch (default: 5000)")
   int maxRecords = 5000;
 
   @Option(names = "--tag", description = "Tag all top level artifacts (files) with the current date and the text of the tag")
   String tag;
+
+  @Option(names = "--tag-json", description = "Add JSON to any tags")
+  String tagJson;
 
   @Option(
       names = "--goat-rodeo-args",
@@ -221,10 +227,16 @@ public class SpiceLabsCLI implements Callable<Integer> {
           .withOutput(output.toString())
           .withThreads(threads)
           .withMaxRecords(maxRecords)
+          .withSyft(useSyft)
+         
           .withExtraArgs(goatRodeoArgs);
 
       if (tag != null && !tag.isBlank()) {
         builder.withTag(tag);
+      }
+
+      if (tagJson != null && !tagJson.isBlank()) {
+        builder.withTagJson(tagJson);
       }
 
       builder.run();
