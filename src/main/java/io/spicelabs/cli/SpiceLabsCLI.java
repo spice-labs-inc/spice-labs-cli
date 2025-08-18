@@ -16,6 +16,8 @@ limitations under the License. */
 package io.spicelabs.cli;
 
 import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,6 +26,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
@@ -40,9 +43,12 @@ import picocli.CommandLine.ITypeConverter;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.TypeConversionException;
 
-@Command(name = "spice", mixinStandardHelpOptions = true,
+@Command(
+    name = "spice",
+    mixinStandardHelpOptions = true,
     description = "Spice Labs CLI",
-    version = "1.0")
+    versionProvider = SpiceLabsCLI.VersionProvider.class
+)
 public class SpiceLabsCLI implements Callable<Integer> {
 
   private static final Logger log = LoggerFactory.getLogger(SpiceLabsCLI.class);
@@ -72,7 +78,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--max-records", description = "Max records to process per batch (default: 5000)")
   int maxRecords = 5000;
 
-  @Option(names = "--tag", description = "Tag all top level artifacts (files) with the current date and the text of the tag")
+  @Option(names = "--tag", required=true, description = "Tag all top level artifacts (files) with the current date and the text of the tag")
   String tag;
 
   @Option(names = "--tag-json", description = "Add JSON to any tags")
@@ -228,12 +234,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
           .withThreads(threads)
           .withMaxRecords(maxRecords)
           .withSyft(useSyft)
-         
+          .withTag(tag)
           .withExtraArgs(goatRodeoArgs);
-
-      if (tag != null && !tag.isBlank()) {
-        builder.withTag(tag);
-      }
 
       if (tagJson != null && !tagJson.isBlank()) {
         builder.withTagJson(tagJson);
@@ -304,6 +306,28 @@ public class SpiceLabsCLI implements Callable<Integer> {
               Arrays.stream(Command.values()).map(Command::toString).toList());
         }
       }
+    }
+  }
+
+  /**
+   * Provides the CLI version from pom.properties.
+   */
+  public static class VersionProvider implements CommandLine.IVersionProvider {
+    @Override
+    public String[] getVersion() throws Exception {
+      return new String[] { getVersionString() };
+    }
+
+    private static String getVersionString() {
+      try (InputStream is = SpiceLabsCLI.class.getResourceAsStream(
+              "/META-INF/maven/io.spicelabs/spice-labs-cli/pom.properties")) {
+        if (is != null) {
+          Properties props = new Properties();
+          props.load(is);
+          return props.getProperty("version", "unknown");
+        }
+      } catch (IOException ignored) {}
+      return "unknown";
     }
   }
 }

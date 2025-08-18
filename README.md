@@ -47,7 +47,7 @@ spice \
   --tag=<tag> \
   --max-records <number>
 ```
-
+- `--tag` — (Required) Tag all top level artifacts (files) with the current date and the text of the tag
 - `--threads` — Number of threads to use when scanning (default: `2`)
 - `--max-records` — Max number of ADG records to keep in memory per-batch (default: `5000`)
 
