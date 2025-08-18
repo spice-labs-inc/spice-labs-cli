@@ -1,13 +1,5 @@
 package io.spicelabs.cli;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
-
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
@@ -16,6 +8,14 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 class SpiceLabsCLILogLevelTest {
 
@@ -35,6 +35,7 @@ class SpiceLabsCLILogLevelTest {
     rootLogger.addAppender(appender);
 
     SpiceLabsCLI.builder()
+        .tag("test-tag")
         .command(SpiceLabsCLI.Command.scan_artifacts)
         .input(payloadDir)
         .output(outputDir)
@@ -80,6 +81,7 @@ class SpiceLabsCLILogLevelTest {
 
     try {
       new SpiceLabsCLI()
+          .tag("test-tag")
           .command(SpiceLabsCLI.Command.scan_artifacts)
           .input(Path.of(System.getProperty("user.dir")))
           .logLevel("info")
@@ -102,6 +104,7 @@ class SpiceLabsCLILogLevelTest {
 
     try {
       new SpiceLabsCLI()
+          .tag("test-tag")
           .command(SpiceLabsCLI.Command.scan_artifacts)
           .input(Path.of(System.getProperty("user.dir")))
           .logLevel("error")
