@@ -1,9 +1,5 @@
 package io.spicelabs.cli;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import picocli.CommandLine;
-
 import java.io.ByteArrayInputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -16,6 +12,10 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import picocli.CommandLine;
 
 class SpiceLabsCLITest {
 
@@ -53,6 +53,7 @@ class SpiceLabsCLITest {
     Path tmpOutput = Files.createTempDirectory("fake-output");
 
     SpiceLabsCLI.builder()
+        .tag("test-tag")
         .command(SpiceLabsCLI.Command.scan_artifacts)
         .input(tmpInput)
         .output(tmpOutput)
@@ -136,11 +137,8 @@ class SpiceLabsCLITest {
           .withOutput(output.toString())
           .withThreads(threads)
           .withMaxRecords(maxRecords)
+          .withTag(tag)
           .withExtraArgs(goatRodeoArgs);
-
-      if (tag != null && !tag.isBlank()) {
-        builder.withTag(tag);
-      }
 
       builder.run();
       System.out.println("Args passed: " + builder.received);
@@ -156,6 +154,7 @@ class SpiceLabsCLITest {
     TestableCLI cli = new TestableCLI();
     CommandLine cmd = new CommandLine(cli);
     cmd.execute(
+        "--tag", "test-tag",
         "--command", "scan-artifacts",
         "--input", inputDir.toString(),
         "--output", outputDir.toString(),

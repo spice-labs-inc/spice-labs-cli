@@ -35,6 +35,7 @@ class SpiceLabsCLILogLevelTest {
     rootLogger.addAppender(appender);
 
     SpiceLabsCLI.builder()
+        .tag("test-tag")
         .command(SpiceLabsCLI.Command.scan_artifacts)
         .input(payloadDir)
         .output(outputDir)
@@ -102,6 +103,7 @@ class SpiceLabsCLILogLevelTest {
 
     try {
       new SpiceLabsCLI()
+          .tag("test-tag")
           .command(SpiceLabsCLI.Command.scan_artifacts)
           .input(Path.of(System.getProperty("user.dir")))
           .logLevel("error")

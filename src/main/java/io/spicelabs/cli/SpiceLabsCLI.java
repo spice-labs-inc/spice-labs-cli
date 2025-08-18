@@ -114,6 +114,11 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   // ── Java SDK API ─────────────────────────────
 
+  public SpiceLabsCLI tag(String tag) {
+    this.tag = tag;
+    return this;
+  }
+  
   public SpiceLabsCLI command(Command cmd) {
     this.command = cmd;
     return this;
@@ -176,6 +181,10 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   public void run() throws Exception {
     configureLogging();
+
+    if (tag == null || tag.isBlank()) {
+      throw new IllegalArgumentException("Tag must be set");
+    }
 
     if (command == null) {
       command = Command.run;
