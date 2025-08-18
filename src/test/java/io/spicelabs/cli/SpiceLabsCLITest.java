@@ -30,6 +30,7 @@ class SpiceLabsCLITest {
   @Test
   void parse_validCommandAndInput() {
     var parseResult = cmd.parseArgs(
+        "--tag", "test-tag",
         "--command", "scan-artifacts",
         "--input", "some/path"
     );
@@ -73,6 +74,7 @@ class SpiceLabsCLITest {
     };
 
     cli.command(SpiceLabsCLI.Command.upload_adgs)
+        .tag("test-tag")
         .input(tmpInput);
 
     var ex = assertThrows(IllegalArgumentException.class, cli::run);
