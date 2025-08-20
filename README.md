@@ -33,6 +33,13 @@ spice --command run \
       --output ./out-dir
 ```
 
+### Basic Usage
+
+After installation, run the CLI using:
+``` bash
+spice --command run --input ./my-dir --output ./out-dir
+```
+
 ---
 
 ## ⚙️ CLI Options
@@ -53,6 +60,7 @@ spice \
 
 Default command is `run`, which scans and uploads in one step.
 
+
 ---
 
 ## 🐳 Docker Usage _(Advanced)_
@@ -67,6 +75,8 @@ docker run --rm \
   --input /mnt/input \
   --output /mnt/output
 ```
+- `-v "/home/charlie-jayne/testdata:/mnt/input"` Mounts your actual data directory into the container at `"/mnt/input"`
+- The CLI still looks for input at `"/mnt/input"` inside the container, but that now points to `"/home/charlie-jayne/testdata"` on your host
 
 Upload only:
 
