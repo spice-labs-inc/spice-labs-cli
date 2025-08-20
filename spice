@@ -4,8 +4,12 @@ set -euo pipefail
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 LOCAL_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
 
-LATEST_URL=$(curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest \
-  | jq -r '.assets[] | select(.name == "spice") | .browser_download_url')
+LATEST_URL=$(
+  curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest \
+    | sed -nE 's/.*"browser_download_url":[[:space:]]*"([^"]*)".*/\1/p' \
+    | grep 'install.sh' \
+    | head -n1
+)
 
 if [[ -n "$LATEST_URL" ]]; then
   REMOTE_HASH=$(curl -fsSL "$LATEST_URL" | sha256sum | awk '{print $1}')
