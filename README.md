@@ -75,8 +75,8 @@ docker run --rm \
   --input /mnt/input \
   --output /mnt/output
 ```
-- `-v "/home/charlie-jayne/testdata:/mnt/input"` Mounts your actual data directory into the container at `"/mnt/input"`
-- The CLI still looks for input at `"/mnt/input"` inside the container, but that now points to `"/home/charlie-jayne/testdata"` on your host
+- `-v "/home/<username>/testdata:/mnt/input"` Mounts your actual data directory into the container at `"/mnt/input"`
+- The CLI still looks for input at `"/mnt/input"` inside the container, but that now points to `"/home/<username>/testdata"` on your host
 
 Upload only:
 
