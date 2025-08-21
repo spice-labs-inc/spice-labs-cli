@@ -37,9 +37,9 @@ spice --command run \
 
 After installation, run the CLI using:
 ``` bash
-spice --command run --input ./my-dir --output ./out-dir --tag <my-tag>
+spice --command run path/to/my-dir --tag=<my-tag>
 ```
-- `--tag my-tag` is now required.
+- `--tag=<my-tag>` is required.
 
 ---
 
