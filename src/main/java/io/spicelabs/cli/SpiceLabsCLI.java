@@ -72,8 +72,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--threads", description = "Number of threads to use (default: 2)")
   int threads = 2;
 
-  @Option(names = "--use-syft", description = "Augment Goat Rodeo information with Syft")
-  boolean useSyft = true;
+  @Option(names = "--use-static-metadata", description = "Augment Goat Rodeo information with other static metadata")
+  boolean useStaticMetadata = true;
 
   @Option(names = "--max-records", description = "Max records to process per batch (default: 5000)")
   int maxRecords = 5000;
@@ -242,7 +242,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
           .withOutput(output.toString())
           .withThreads(threads)
           .withMaxRecords(maxRecords)
-          .withSyft(useSyft)
+          .withStatisMetadata(useStaticMetadata)
           .withTag(tag)
           .withExtraArgs(goatRodeoArgs);
 
