@@ -121,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Spice Labs Scan
-        uses: spice-labs-inc/action-spice-labs-cli-scan@v1
+        uses: spice-labs-inc/action-spice-labs-cli-scan@v2
         with:
           spice-pass: ${{ secrets.SPICE_PASS }}
           input: ./my-artifact-dir
