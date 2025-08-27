@@ -9,192 +9,132 @@ The **Spice Labs CLI** is a JVM-based and containerized CLI that scans software 
 
 ---
 
-## 🚀 Quick Start
+## Installation
 
-### 🧪 Recommended: Installer Script
-
-#### 🐧 macOS/Linux
-
+### Linux/macOS
 ```bash
-curl -sSLf https://install.spicelabs.io | bash
+curl -sSf https://install.spicelabs.io | bash
+# adds a 'spice' launcher to ~/.local/bin
 ```
 
-#### 🪟 Windows PowerShell
-
+### Windows (PowerShell)
 ```powershell
 irm -UseBasicParsing -Uri https://install.spicelabs.io | iex
+# installs a 'spice.ps1' launcher under %USERPROFILE%\.spice\bin
 ```
 
-Once installed:
-
-```bash
-spice --command run \
-      --input ./my-dir \
-      --output ./out-dir
-```
-
-### Basic Usage
-
-After installation, run the CLI using:
-``` bash
-spice --tag=<my-tag>
-```
-Define input path:
-```bash
-spice --input=path/to/my-dir --tag=<my-tag>
-```
-**`--tag=<my-tag>` is required.**
+Requirements: Docker installed and available on PATH (unless you enable JVM mode).
 
 ---
 
-## ⚙️ CLI Options
+## Quick start
+
+Scan a directory and upload ADGs to your Spice Labs project (default `--command run`).
 
 ```bash
-spice \
-  --command run|scan-artifacts|upload-adgs \
-  --input <path> \
-  --output <path> \
-  --log-level debug|info|warn|error \
-  --threads <number> \
-  --tag=<tag> \
-  --max-records <number>
+export SPICE_PASS="…your JWT…"
+spice --input ./target --tag test-scan
 ```
-- `--tag` — (Required) Tag all top level artifacts (files) with the current date and the text of the tag
-- `--threads` — Number of threads to use when scanning (default: `2`)
-- `--max-records` — Max number of ADG records to keep in memory per-batch (default: `5000`)
 
-Default command is `run`, which scans and uploads in one step.
+Scan only (no upload) and write outputs to a local directory:
 
+```bash
+spice --command scan-artifacts --input ./target --output ./out --tag test-scan
+```
+
+Upload previously generated ADGs from a directory:
+
+```bash
+export SPICE_PASS="…your JWT…"
+spice --command upload-adgs --input ./out --tag wasabi
+```
+
+Run with a different log level:
+
+```bash
+spice --input ./target --tag wasabi --log-level debug
+```
 
 ---
 
-## 🐳 Docker Usage _(Advanced)_
+## Commands
+
+- `run` (default): scans the `--input` directory and uploads the resulting ADGs
+- `scan-artifacts`: scans the `--input` directory and writes results to `--output` (no upload)
+- `upload-adgs`: uploads ADGs found under `--input` (requires `SPICE_PASS`)
+- `upload-deployment-events`: uploads deployment events (for advanced use; subject to change)
+
+---
+
+## Options
+
+| Option                  | Required | Default | Description                                                                 |
+|-------------------------|----------|---------|-----------------------------------------------------------------------------|
+| `--command <cmd>`       | No       | run     | One of: `run`, `scan-artifacts`, `upload-adgs`, `upload-deployment-events` |
+| `--input <dir>`         | Yes      | —       | Directory to scan or read ADGs from                                         |
+| `--output <dir>`        | No       | —       | Where to write local results when scanning                                  |
+| `--tag <tag>`           | Yes      | —       | Tag to associate with the scan/upload (e.g., a service or release name)     |
+| `--log-level <level>`   | No       | info    | Logging level: `error`, `warn`, `info`, `debug`, `trace`                    |
+| `--goat-rodeo-args k=v[,k=v…]` | No | —       | Extra scanner tuning (e.g., `blockList=/etc/blocklist.txt,tempDir=/tmp`)    |
+
+Notes:
+
+- `--tag` is required by the CLI
+- When uploading, the CLI reads the **Spice Pass** from the `SPICE_PASS` environment variable
+
+---
+
+## Environment variables
+
+| Variable                     | Purpose                                                                                       |
+|-----------------------------|-----------------------------------------------------------------------------------------------|
+| `SPICE_PASS`                | Required for uploads.  JWT for your Spice Labs project                                        |
+| `SPICE_LABS_CLI_USE_JVM`    | Set to `1` to run the local JAR instead of Docker                                            |
+| `SPICE_LABS_JVM_ARGS`       | Additional JVM options (e.g., `-XX:MaxRAMPercentage=75`)                                     |
+| `SPICE_LABS_CLI_SKIP_PULL`  | Set to `1` to skip `docker pull` in the launcher                                             |
+
+---
+
+## Docker usage (without the launcher)
 
 ```bash
-docker run --rm \
-  -e SPICE_PASS=... \
-  -v "$PWD/input:/mnt/input" \
-  -v "$PWD/output:/mnt/output" \
-  spicelabs/spice-labs-cli \
-  --command run \
+docker run \
+  --rm \
+  -v "$PWD/target:/mnt/input:ro" \
+  -e SPICE_PASS \
+  spicelabs/spice-labs-cli:latest \
   --input /mnt/input \
-  --output /mnt/output
+  --tag test-scan
 ```
-- `-v "/home/<username>/testdata:/mnt/input"` Mounts your actual data directory into the container at `"/mnt/input"`
-- The CLI still looks for input at `"/mnt/input"` inside the container, but that now points to `"/home/<username>/testdata"` on your host
 
-Upload only:
+You may pin the image for reproducible builds:
 
 ```bash
-docker run --rm \
-  -e SPICE_PASS=... \
-  -v "$PWD/output:/mnt/input" \
-  spicelabs/spice-labs-cli \
-  --command upload-adgs \
-  --input /mnt/input
+spicelabs/spice-labs-cli@sha256:<digest>
 ```
 
 ---
 
-## 📦 Environment Variables
+## GitHub Actions
 
-| Variable                   | Description                                                          | Default                                  |
-| -------------------------- | -------------------------------------------------------------------- | ---------------------------------------- |
-| `SPICE_PASS`               | **Required** for `upload-*` commands. JWT token for Spice Labs auth. | _(no default)_                           |
-| `SPICE_LABS_CLI_USE_JVM`   | Run the CLI using the local JVM instead of Docker (`1` = enable)     | `0`                                      |
-| `SPICE_LABS_CLI_JAR`       | Path to the CLI JAR when using JVM mode                              | `/opt/spice-labs-cli/spice-labs-cli.jar` |
-| `SPICE_LABS_JVM_ARGS`      | Custom JVM tuning flags (e.g., `-Xmx512m -XX:+UseG1GC`)              | `--XX:MaxRAMPercentage=75`               |
-| `SPICE_IMAGE`              | Docker image to use when not in JVM mode                             | `spicelabs/spice-labs-cli`               |
-| `SPICE_IMAGE_TAG`          | Docker image tag                                                     | `latest`                                 |
-| `SPICE_LABS_CLI_SKIP_PULL` | Skip `docker pull` before run (`1` = skip)                           | `0`                                      |
-
----
-
-## 🧩 GitHub Actions
-
-Use the [Spice Labs CLI GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-cli-scan) in your workflow:
+Use the published composite action to scan and upload in a workflow job:
 
 ```yaml
-jobs:
-  spice-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Spice Labs Scan
-        uses: spice-labs-inc/action-spice-labs-cli-scan@v2
-        with:
-          spice-pass: ${{ secrets.SPICE_PASS }}
-          input: ./my-artifact-dir
+- name: Index and upload ADG
+  uses: spice-labs-inc/action-spice-labs-cli-scan@v3
+  with:
+    file_path: ${{ github.workspace }}/target
+    spice_pass: ${{ secrets.SPICE_PASS }}
+    tag: wasabi
 ```
 
 ---
 
-## 🛠️ Maintainers
+## Building from source
 
-### 🔨 Build Locally
-
-Install JDK 21+ and Maven 3.6+.
-
-Set SPICE_PASS in your environment:
-
-```bash
-export SPICE_PASS=your_spice_pass
-```
-
-Clone the repo:
-
-```bash
-git clone https://github.com/spice-labs-inc/spice-labs-cli.git
-cd spice-labs-cli
-```
-
-Build with Maven:
-
-```bash
-mvn clean install
-```
-
-Fat JAR is output at:
-
-```
-target/spice-labs-cli-0.0.1-SNAPSHOT-fat.jar
-```
-
-Run manually (use same args as above):
-
-```bash
-java -jar target/spice-labs-cli-0.0.1-SNAPSHOT-fat.jar --version
-```
-
-Or Run with maven exec:
-
-```bash
-mvn exec:java -Dexec.mainClass="io.spicelabs.cli.SpiceLabsCLI" \
-  -Dexec.args="--command run --input ./my-dir --output ./out-dir --log-level info"
-```
-
----
-
-### 🚀 Releasing
-
-1. **Create a GitHub Release**
-   Use a tag like `v0.2.0`. This triggers GitHub Actions to:
-
-   - Build the JAR
-   - Publish to GitHub Packages
-   - Push Docker image to GHCR
-   - Upload artifacts to Maven Central (automated)
-
-2. **Monitor Maven Central** (optional)
-   Visit [https://central.sonatype.com](https://central.sonatype.com) → Deployments
-   Propagation takes ~40 minutes.
-
-3. **Verify the JAR**
-
-```bash
-mvn dependency:get \
-  -Dartifact=io.spicelabs:spice-labs-cli:jar:0.2.0
-```
+- JDK 21 and Maven are required
+- Package: `mvn -B -DskipTests package`
+- The Docker image embeds the fat JAR and a `spice` launcher script
 
 ---
 
