@@ -8,9 +8,8 @@ $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-i
 
 $Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
 
-if ($Asset -and $Asset.browser_download_url) {
-    $RemoteData = Invoke-WebRequest -Uri $Asset.browser_download_url -UseBasicParsing
-    $RemoteHash = [System.BitConverter]::ToString((New-Object System.Security.Cryptography.SHA256Managed).ComputeHash($RemoteData.Content)).Replace("-", "")
+if ($Asset -and $Asset.digest) {
+    $RemoteHash = $Asset.digest -replace "sha256:", ""
 
     if ($LocalHash -ne $RemoteHash) {
         Write-Host "⚠️  A newer version of this script is available. Run:"
