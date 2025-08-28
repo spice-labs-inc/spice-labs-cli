@@ -4,19 +4,14 @@ set -euo pipefail
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 LOCAL_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
 
-LATEST_URL=$(
+REMOTE_HASH=$(
   curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest \
-    | sed -nE 's/.*"browser_download_url":[[:space:]]*"([^"]*)".*/\1/p' \
-    | grep 'install.sh' \
-    | head -n1
+    | sed -nE '/"name":[[:space:]]*"spice"/{:a;n;/"digest":[[:space:]]*"sha256:/{s/.*"digest":[[:space:]]*"sha256:([^"]*).*/\1/p;b};ba}'
 )
 
-if [[ -n "$LATEST_URL" ]]; then
-  REMOTE_HASH=$(curl -fsSL "$LATEST_URL" | sha256sum | awk '{print $1}')
-  if [[ "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
-    echo "⚠️  A newer version of this script is available. Run:"
-    echo "    curl -sSfL https://install.spicelabs.io | bash"
-  fi
+if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
+  echo "⚠️  A newer version of this script is available. Run:"
+  echo "    curl -sSfL https://install.spicelabs.io | bash"
 fi
 
 SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"

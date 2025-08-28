@@ -53,7 +53,7 @@
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
         <goatrodeo.version>0.12.1</goatrodeo.version>
-        <ginger.version>0.1.4</ginger.version>
+        <ginger.version>0.1.5</ginger.version>
 <!--        Use these versions for local dev-->
 <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
 <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version>-->
@@ -87,6 +87,11 @@
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>${logback.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.18.0</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
