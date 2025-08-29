@@ -7,9 +7,13 @@
 
 The **Spice Labs CLI** is a JVM-based and containerized CLI that scans software artifacts to generate encrypted **Artifact Dependency Graphs (ADGs)** and uploads them securely to Spice Labs.
 
----
 
 ## 🚀 Quick Start
+
+## ⚡️ Prerequisites
+
+- **Docker** must be installed and running on your system.  
+  [Get Docker](https://docs.docker.com/get-docker/)
 
 ### 🧪 Recommended: Installer Script
 
@@ -25,25 +29,22 @@ curl -sSLf https://install.spicelabs.io | bash
 irm -UseBasicParsing -Uri https://install.spicelabs.io | iex
 ```
 
-Once installed:
-
-```bash
-spice --command run \
-      --input ./my-dir \
-      --output ./out-dir
-```
-
 ### Basic Usage
+
+After installation, **add it to your PATH as instructed by the installer**.
+
+Also, set your `SPICE_PASS` environment variable.  
+Your Spice Pass can be downloaded from your Spice Labs project dashboard's settings page.
 
 After installation, run the CLI using:
 ``` bash
-spice --tag=<my-tag>
+spice --tag=my-module-name
 ```
-Define input path:
+Define input path (defaults to current directory):
 ```bash
-spice --input=path/to/my-dir --tag=<my-tag>
+spice --input=path/to/my-dir --tag=my-module-name
 ```
-**`--tag=<my-tag>` is required.**
+**`--tag=my-module-name` is required.  It is used for grouping scans of the same systems over time.**
 
 ---
 
@@ -51,20 +52,19 @@ spice --input=path/to/my-dir --tag=<my-tag>
 
 ```bash
 spice \
-  --command run|scan-artifacts|upload-adgs \
-  --input <path> \
-  --output <path> \
-  --log-level debug|info|warn|error \
-  --threads <number> \
+  --command=run|scan-artifacts|upload-adgs \
+  --input=<path> \
+  --output=<path> \
+  --log-level=debug|info|warn|error|all \
+  --threads=<number> \
   --tag=<tag> \
-  --max-records <number>
+  --max-records=<number>
 ```
 - `--tag` — (Required) Tag all top level artifacts (files) with the current date and the text of the tag
 - `--threads` — Number of threads to use when scanning (default: `2`)
 - `--max-records` — Max number of ADG records to keep in memory per-batch (default: `5000`)
 
 Default command is `run`, which scans and uploads in one step.
-
 
 ---
 
@@ -76,9 +76,9 @@ docker run --rm \
   -v "$PWD/input:/mnt/input" \
   -v "$PWD/output:/mnt/output" \
   spicelabs/spice-labs-cli \
-  --command run \
-  --input /mnt/input \
-  --output /mnt/output
+  --command=run \
+  --input=/mnt/input \
+  --output=/mnt/output
 ```
 - `-v "/home/<username>/testdata:/mnt/input"` Mounts your actual data directory into the container at `"/mnt/input"`
 - The CLI still looks for input at `"/mnt/input"` inside the container, but that now points to `"/home/<username>/testdata"` on your host
@@ -90,8 +90,8 @@ docker run --rm \
   -e SPICE_PASS=... \
   -v "$PWD/output:/mnt/input" \
   spicelabs/spice-labs-cli \
-  --command upload-adgs \
-  --input /mnt/input
+  --command=upload-adgs \
+  --input=/mnt/input
 ```
 
 ---
@@ -125,6 +125,7 @@ jobs:
         with:
           spice-pass: ${{ secrets.SPICE_PASS }}
           input: ./my-artifact-dir
+          tag: my-module-name
 ```
 
 ---
@@ -170,7 +171,7 @@ Or Run with maven exec:
 
 ```bash
 mvn exec:java -Dexec.mainClass="io.spicelabs.cli.SpiceLabsCLI" \
-  -Dexec.args="--command run --input ./my-dir --output ./out-dir --log-level info"
+  -Dexec.args="--command=run --input=./my-dir --output=./out-dir --log-level=all"
 ```
 
 ---
@@ -202,8 +203,8 @@ mvn dependency:get \
 
 Maintained by [Spice Labs](https://github.com/spice-labs-inc).
 
-- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo) — ADG scanner
-- [`ginger-j`](https://github.com/spice-labs-inc/ginger-j) — secure uploader
+- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo) — ADG scanner used by this CLI
+- [`ginger-j`](https://github.com/spice-labs-inc/ginger-j) — secure uploader used by this CLI
 - [`spice-labs-cli`](https://github.com/spice-labs-inc/spice-labs-cli) — this CLI
 
 ---
