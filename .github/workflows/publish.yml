@@ -1,53 +1,96 @@
 name: Publish The Spice Labs CLI Container Images
 
 on:
+  push:
+    tags: [ 'v*.*.*' ]   
   release:
-    types: [published]
+    types: [published]  
+  workflow_dispatch: {}  
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
 
 env:
-  PLATFORMS: linux/amd64, linux/arm64
-  IMAGE_NAME: ${{ github.repository }}
+  REPO: ${{ github.event.repository.name }}
+  PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   publish_jars:
-    name: Publish CLI JARs to GitHub Packages
+    name: Publish CLI JARs to GitHub Packages & Maven Central
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
       id-token: write
     outputs:
-      version: ${{ steps.validate.outputs.VERSION }}
+      version: ${{ steps.tag.outputs.version }}
       release_timestamp: ${{ steps.release-notification.outputs.timestamp }}
       release_channel_id: ${{ steps.release-notification.outputs.channel_id }}
 
     steps:
-      - name: Notify release
+      - name: Checkout (with LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      # Hybrid version resolver (works for tag-push or UI release)
+      - name: Compute version
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            RAW="${{ github.event.release.tag_name }}"
+          else
+            RAW="${{ github.ref_name }}"
+          fi
+          if [[ ! "$RAW" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
+            echo "❌ Tag '$RAW' is not semver (v*.*.*)"; exit 1
+          fi
+          echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
+
+      # Create Release only for tag-push runs (UI releases already exist)
+      - name: Create GitHub Release from tag
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Wait so Slack doesn't read a previous release
+      - name: Wait for release propagation
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set +e
+          TAG="${{ github.ref_name }}"
+          for i in {1..20}; do
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null 2>&1 && break
+            echo "Release for ${TAG} not visible yet; retry ${i}/20"
+            sleep 3
+          done
+
+      - name: Notify release (Slack)
         id: release-notification
         uses: spice-labs-inc/action-release-notification@main
+        continue-on-error: true
         with:
           type: release
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           username-mapping: ${{ secrets.GH_SLACK_USERNAME_MAPPING }}
           github-token: ${{ github.token }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Checkout with LFS
-        uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - name: Validate and extract version from tag
-        id: validate
-        run: |
-          if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          else
-            echo "Tag does not match semantic version pattern v*.*.*" >&2
-            exit 1
-          fi
-
-      - name: Set up JDK 21 and GitHub Maven auth
+      - name: Set up JDK 21 and Maven cache
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -56,70 +99,41 @@ jobs:
           server-id: github
           server-username: ${{ secrets.GH_USERNAME_SG }}
           server-password: ${{ secrets.GH_TOKEN }}
-          token: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+          token: ${{ github.token }}
           gpg-private-key: ${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}
           gpg-passphrase: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
       - name: Write settings.xml for GitHub + Maven Central
+        shell: bash
         run: |
           mkdir -p ~/.m2
-          cat <<EOF > ~/.m2/settings.xml
+          cat > ~/.m2/settings.xml <<'EOF'
           <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
                     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                     xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-
             <servers>
               <server>
                 <id>github-spice-labs-goatrodeo</id>
-                <username>${{ secrets.GH_USERNAME_SG }}</username>
-                <password>${{ secrets.GH_TOKEN }}</password>
+                <username>${env.GH_USERNAME_SG}</username>
+                <password>${env.GH_TOKEN}</password>
               </server>
               <server>
                 <id>github-spice-labs-ginger</id>
-                <username>${{ secrets.GH_USERNAME_SG }}</username>
-                <password>${{ secrets.GH_TOKEN }}</password>
+                <username>${env.GH_USERNAME_SG}</username>
+                <password>${env.GH_TOKEN}</password>
               </server>
               <server>
                 <id>github</id>
-                <username>${{ secrets.GH_USERNAME_SG }}</username>
-                <password>${{ secrets.GH_TOKEN }}</password>
+                <username>${env.GH_USERNAME_SG}</username>
+                <password>${env.GH_TOKEN}</password>
               </server>
               <server>
                 <id>central</id>
-                <username>${{ secrets.MAVEN_CENTRAL_USERNAME }}</username>
-                <password>${{ secrets.MAVEN_CENTRAL_PASSWORD }}</password>
+                <username>${env.MAVEN_CENTRAL_USERNAME}</username>
+                <password>${env.MAVEN_CENTRAL_PASSWORD}</password>
               </server>
             </servers>
-
             <profiles>
-              <profile>
-                <id>github</id>
-                <repositories>
-                  <repository>
-                    <id>github-spice-labs-goatrodeo</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-                  </repository>
-                  <repository>
-                    <id>github-spice-labs-ginger</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-                  </repository>
-                </repositories>
-              </profile>
-
-              <profile>
-                <id>maven-central</id>
-                <repositories>
-                  <repository>
-                    <id>github-spice-labs-goatrodeo</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-                  </repository>
-                  <repository>
-                    <id>github-spice-labs-ginger</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-                  </repository>
-                </repositories>
-              </profile>
-              
               <profile>
                 <id>default-repos</id>
                 <repositories>
@@ -134,35 +148,67 @@ jobs:
                 </repositories>
               </profile>
             </profiles>
-            
             <activeProfiles>
               <activeProfile>default-repos</activeProfile>
             </activeProfiles>
-
           </settings>
           EOF
-
+        env:
+          GH_USERNAME_SG: ${{ secrets.GH_USERNAME_SG }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
 
       - name: Import GPG key
+        shell: bash
         run: |
           echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
 
-      - name: Update version in pom.xml using Maven plugin
-        run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
+      - name: Update version in pom.xml
+        run: mvn --batch-mode versions:set -DnewVersion=${{ steps.tag.outputs.version }} -DgenerateBackupPoms=false
 
-      - name: Build and publish all jars (regular + fat)
-        id: build-jars-github
+      # Publish to GitHub Packages
+      - name: Build and publish JARs (GitHub Packages)
         run: mvn --batch-mode clean deploy -P github
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
-      - name: Build and publish all jars (regular + fat)
-        id: build-jars-maven-central
+      # Publish to Maven Central
+      - name: Build and publish JARs (Maven Central)
         run: mvn --batch-mode clean deploy -P maven-central
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
+
+      # Scan the built artifacts with Spice-Labs CLI
+      - name: Scan built artifacts with Spice-Labs CLI
+        shell: bash
+        env:
+          SPICE_PASS: ${{ secrets.SPICE_PASS }}
+        run: |
+          docker run --rm \
+            -v "$PWD/target:/mnt/input:ro" \
+            -e SPICE_PASS \
+            spicelabs/spice-labs-cli:latest \
+            --input /mnt/input \
+            --tag "spice-labs-cli-${{ steps.tag.outputs.version }}"
+
+      - name: Resolve Maven coordinates
+        id: gav
+        run: |
+          GROUP_ID=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.groupId)
+          ARTIFACT_ID=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.artifactId)
+          echo "group_id=$GROUP_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact_id=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Link to Maven Central Deployment
+        if: always()
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          GROUP_ID="${{ steps.gav.outputs.group_id }}"
+          ARTIFACT_ID="${{ steps.gav.outputs.artifact_id }}"
+          echo "Check deployment status in Sonatype Central:"
+          echo "https://central.sonatype.com/publishing/deployments?name=${GROUP_ID}:${ARTIFACT_ID}&version=${VERSION}"
 
       - name: Upload wrapper scripts to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -172,7 +218,6 @@ jobs:
             spice.ps1
             install.sh
             install.ps1
-
 
   docker_image:
     name: Build and Push Docker Image
@@ -188,7 +233,7 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Set Up Docker Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           platforms: ${{ env.PLATFORMS }}
@@ -196,10 +241,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download fat jar
+      - name: Download fat jar from GH Packages
         run: |
           mkdir -p target
-          curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
+          curl -fL -o "target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar" \
             -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/octet-stream" \
             "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
@@ -210,11 +255,25 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
+      # Gate: only push images for semantic tags that are on 'main'
+      - name: Decide Docker push
+        id: gate
+        shell: bash
+        run: |
+          SHOULD=false
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
+            git fetch --no-tags origin main
+            if git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"; then
+              SHOULD=true
+            fi
+          fi
+          echo "should_push=$SHOULD" >> "$GITHUB_OUTPUT"
+
       - name: Check if release is a pre-release
         id: prerelease
         run: |
-          IS_PRERELEASE=$(gh release view ${{ github.ref_name }} --json isPrerelease -q '.isPrerelease')
-          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          IS_PRERELEASE=$(gh release view ${{ github.ref_name }} --json isPrerelease -q '.isPrerelease' || echo "false")
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -236,57 +295,69 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           context: .
-          push: true
+          push: ${{ steps.gate.outputs.should_push == 'true' }}
           provenance: mode=max
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # (Optional) Pull one arch and scan the image when pushed
+      - name: Scan pushed image with Spice-Labs CLI (amd64 only)
+        if: steps.gate.outputs.should_push == 'true'
+        shell: bash
+        env:
+          SPICE_PASS: ${{ secrets.SPICE_PASS }}
+        run: |
+          TAG="$(echo "${{ steps.meta.outputs.tags }}" | head -n1)"
+          docker pull "$TAG"
+          mkdir -p docker-artifacts
+          docker save "$TAG" > docker-artifacts/spice-labs-cli.oci.tar
+          docker run --rm \
+            -v "$PWD/docker-artifacts:/mnt/input:ro" \
+            -e SPICE_PASS \
+            spicelabs/spice-labs-cli:latest \
+            --input /mnt/input \
+            --tag "spice-labs-cli-image-${{ needs.publish_jars.outputs.version }}"
+
+      - name: Generate SLSA Provenance
+        if: steps.gate.outputs.should_push == 'true'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: spicelabs/spice-labs-cli
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   notify:
     needs: [publish_jars, docker_image]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Check deployment status
+      - name: Compute status
         id: deployment-status
         shell: bash
         run: |
-          # Check job outcomes
           JAR_STATUS="${{ needs.publish_jars.result }}"
           DOCKER_STATUS="${{ needs.docker_image.result }}"
-          
-          # Determine overall success
-          if [ "$JAR_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ]; then
-            echo "overall_status=success" >> $GITHUB_OUTPUT
-            echo "message=✅ All components deployed successfully!" >> $GITHUB_OUTPUT
+          if [ "$JAR_STATUS" = "success" ] && [ "$DOCKER_STATUS" = "success" ]; then
+            echo "overall_status=deployment-success" >> "$GITHUB_OUTPUT"
+            echo "workflow_name=Release" >> "$GITHUB_OUTPUT"
           else
-            echo "overall_status=failure" >> $GITHUB_OUTPUT
-            
-            # Build detailed failure message
-            MESSAGE="❌ Deployment failed:"
-            if [ "$JAR_STATUS" != "success" ]; then
-              MESSAGE="$MESSAGE ❌ JAR publishing failed."
-            else
-              MESSAGE="$MESSAGE ✅ JAR publishing succeeded."
-            fi
-            
-            if [ "$DOCKER_STATUS" != "success" ]; then
-              MESSAGE="$MESSAGE ❌ Docker build/push failed."
-            else
-              MESSAGE="$MESSAGE ✅ Docker build/push succeeded."
-            fi
-            
-            echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+            echo "overall_status=deployment-failure" >> "$GITHUB_OUTPUT"
+            echo "workflow_name=Release - Publishing failed" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Notify deployment result
         uses: spice-labs-inc/action-release-notification@main
+        continue-on-error: true
         with:
-          type: ${{ steps.deployment-status.outputs.overall_status == 'success' && 'deployment-success' || 'deployment-failure' }}
+          type: ${{ steps.deployment-status.outputs.overall_status }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           username-mapping: ${{ secrets.GH_SLACK_USERNAME_MAPPING }}
-          workflow-name: ${{ steps.deployment-status.outputs.overall_status == 'success' && 'Release' || format('Release - {0}', steps.deployment-status.outputs.message) }}
+          workflow-name: ${{ steps.deployment-status.outputs.workflow_name }}
           environment: production
           thread-ts: ${{ needs.publish_jars.outputs.release_timestamp }}
           channel-id: ${{ needs.publish_jars.outputs.release_channel_id }}
+          github-token: ${{ github.token }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
