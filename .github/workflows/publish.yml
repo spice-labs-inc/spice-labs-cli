@@ -2,10 +2,10 @@ name: Publish The Spice Labs CLI Container Images
 
 on:
   push:
-    tags: [ 'v*.*.*' ]   
+    tags: [ 'v*.*.*' ]   # semantic version tags only
   release:
-    types: [published]  
-  workflow_dispatch: {}  
+    types: [published]   # supports UI publishes too (hybrid)
+  workflow_dispatch: {}  # manual test runs
 
 permissions:
   contents: write
@@ -29,6 +29,7 @@ jobs:
       version: ${{ steps.tag.outputs.version }}
       release_timestamp: ${{ steps.release-notification.outputs.timestamp }}
       release_channel_id: ${{ steps.release-notification.outputs.channel_id }}
+      maven_should_publish: ${{ steps.maven_gate.outputs.should_publish }}
 
     steps:
       - name: Checkout (with LFS)
@@ -167,18 +168,43 @@ jobs:
       - name: Update version in pom.xml
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.tag.outputs.version }} -DgenerateBackupPoms=false
 
-      # Publish to GitHub Packages
+      # Decide if Maven should publish (same rules as Docker)
+      - name: Decide Maven publish
+        id: maven_gate
+        shell: bash
+        run: |
+          SHOULD=false
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
+            git fetch --no-tags origin main
+            if git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"; then
+              SHOULD=true
+            fi
+          fi
+          echo "should_publish=$SHOULD" >> "$GITHUB_OUTPUT"
+
+      # Always build so we can scan even when we skip publish
+      - name: Build (no tests)
+        run: mvn --batch-mode -DskipTests package
+
+      # GitHub Packages deploy (gated)
       - name: Build and publish JARs (GitHub Packages)
+        if: steps.maven_gate.outputs.should_publish == 'true'
         run: mvn --batch-mode clean deploy -P github
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
-      # Publish to Maven Central
+      # Maven Central deploy (gated)
       - name: Build and publish JARs (Maven Central)
+        if: steps.maven_gate.outputs.should_publish == 'true'
         run: mvn --batch-mode clean deploy -P maven-central
         env:
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
+
+      # Optional: explicit skip message
+      - name: Skipping Maven publish (not a main semver tag)
+        if: steps.maven_gate.outputs.should_publish != 'true'
+        run: echo "Skipping Maven deploy: require semver tag on main"
 
       # Scan the built artifacts with Spice-Labs CLI
       - name: Scan built artifacts with Spice-Labs CLI
@@ -223,6 +249,7 @@ jobs:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
     needs: publish_jars
+    if: needs.publish_jars.outputs.maven_should_publish == 'true'   # skip whole job if Maven-gate is false
     permissions:
       contents: read
       packages: write
@@ -248,26 +275,6 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/octet-stream" \
             "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
-
-      # Gate: only push images for semantic tags that are on 'main'
-      - name: Decide Docker push
-        id: gate
-        shell: bash
-        run: |
-          SHOULD=false
-          if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
-            git fetch --no-tags origin main
-            if git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"; then
-              SHOULD=true
-            fi
-          fi
-          echo "should_push=$SHOULD" >> "$GITHUB_OUTPUT"
 
       - name: Check if release is a pre-release
         id: prerelease
@@ -295,32 +302,13 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           context: .
-          push: ${{ steps.gate.outputs.should_push == 'true' }}
+          push: true
           provenance: mode=max
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # (Optional) Pull one arch and scan the image when pushed
-      - name: Scan pushed image with Spice-Labs CLI (amd64 only)
-        if: steps.gate.outputs.should_push == 'true'
-        shell: bash
-        env:
-          SPICE_PASS: ${{ secrets.SPICE_PASS }}
-        run: |
-          TAG="$(echo "${{ steps.meta.outputs.tags }}" | head -n1)"
-          docker pull "$TAG"
-          mkdir -p docker-artifacts
-          docker save "$TAG" > docker-artifacts/spice-labs-cli.oci.tar
-          docker run --rm \
-            -v "$PWD/docker-artifacts:/mnt/input:ro" \
-            -e SPICE_PASS \
-            spicelabs/spice-labs-cli:latest \
-            --input /mnt/input \
-            --tag "spice-labs-cli-image-${{ needs.publish_jars.outputs.version }}"
-
       - name: Generate SLSA Provenance
-        if: steps.gate.outputs.should_push == 'true'
         uses: actions/attest-build-provenance@v1
         with:
           subject-name: spicelabs/spice-labs-cli
@@ -338,7 +326,10 @@ jobs:
         run: |
           JAR_STATUS="${{ needs.publish_jars.result }}"
           DOCKER_STATUS="${{ needs.docker_image.result }}"
-          if [ "$JAR_STATUS" = "success" ] && [ "$DOCKER_STATUS" = "success" ]; then
+          # Treat 'skipped' as non-failure (policy: only publish on semver tags on main)
+          OK_JAR=$([ "$JAR_STATUS" = "success" ] || [ "$JAR_STATUS" = "skipped" ] && echo true || echo false)
+          OK_DOCKER=$([ "$DOCKER_STATUS" = "success" ] || [ "$DOCKER_STATUS" = "skipped" ] && echo true || echo false)
+          if [ "$OK_JAR" = "true" ] && [ "$OK_DOCKER" = "true" ]; then
             echo "overall_status=deployment-success" >> "$GITHUB_OUTPUT"
             echo "workflow_name=Release" >> "$GITHUB_OUTPUT"
           else
