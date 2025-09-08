@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - main
-      - mj/scan-itself
     tags:
       - "v*.*.*"
-
+      
 permissions:
   contents: write
   packages: write
+  id-token: write
+  attestations: write
   id-token: write
   attestations: write
 
@@ -195,6 +196,16 @@ jobs:
         run: |
           echo "Skipping Maven deploy: require semver tag on main"
 
+      
+      - name: Determine scanner image version (previous release)
+        id: scanner_ver
+        shell: bash
+        run: |
+          CUR="${{ steps.tag.outputs.version }}"
+          PREV="$(git tag -l 'v*.*.*' --sort=-v:refname | sed 's/^v//' | grep -v "^${CUR}$" | head -n1)"
+          if [ -z "$PREV" ]; then PREV="0.2.27"; fi
+          echo "version=$PREV" >> "$GITHUB_OUTPUT"
+
       - name: Scan built artifacts with Spice-Labs CLI
         shell: bash
         env:
@@ -203,7 +214,7 @@ jobs:
           docker run --rm \
             -v "$PWD/target:/mnt/input:ro" \
             -e SPICE_PASS \
-            spicelabs/spice-labs-cli:${{ steps.tag.outputs.version }} \
+            spicelabs/spice-labs-cli:${{ steps.scanner_ver.outputs.version }} \
             --input /mnt/input \
             --tag "spice-labs-cli-${{ steps.tag.outputs.version }}"
 
@@ -338,5 +349,4 @@ jobs:
           github-token: ${{ github.token }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
-
 
