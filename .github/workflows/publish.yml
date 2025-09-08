@@ -12,8 +12,6 @@ permissions:
   packages: write
   id-token: write
   attestations: write
-  id-token: write
-  attestations: write
 
 env:
   REPO: ${{ github.event.repository.name }}
