@@ -2,7 +2,11 @@ name: Publish The Spice Labs CLI Container Images
 
 on:
   push:
-    tags: [ 'v*.*.*' ]   # semantic version tags only
+    branches:
+      - main
+      - mj/scan-itself  	# temporary test branch
+    tags:
+      - 'v*.*.*'
   release:
     types: [published]   # supports UI publishes too (hybrid)
 
