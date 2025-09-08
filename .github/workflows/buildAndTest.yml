@@ -3,6 +3,9 @@ name: Java Build and Test the Spice Labs CLI
 on:
   push:
     branches: ["**"]
+  pull_request:
+    branches: 
+      - "main"
 
 jobs:
   build:

@@ -4,9 +4,9 @@ on:
   push:
     branches:
       - main
-      - mj/scan-itself  	# temporary test branch
+      - mj/scan-itself
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   release:
     types: [published]   # supports UI publishes too (hybrid)
 
