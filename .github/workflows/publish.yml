@@ -7,8 +7,6 @@ on:
       - mj/scan-itself
     tags:
       - "v*.*.*"
-  release:
-    types: [published]   # supports UI publishes too (hybrid)
 
 permissions:
   contents: write
@@ -23,7 +21,7 @@ env:
 jobs:
   publish_jars:
     name: Publish CLI JARs to GitHub Packages & Maven Central
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       packages: write
@@ -205,7 +203,7 @@ jobs:
           docker run --rm \
             -v "$PWD/target:/mnt/input:ro" \
             -e SPICE_PASS \
-            spicelabs/spice-labs-cli:latest \
+            spicelabs/spice-labs-cli:${{ steps.tag.outputs.version }} \
             --input /mnt/input \
             --tag "spice-labs-cli-${{ steps.tag.outputs.version }}"
 
@@ -237,7 +235,7 @@ jobs:
 
   docker_image:
     name: Build and Push Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: publish_jars
     if: needs.publish_jars.outputs.maven_should_publish == 'true'
     permissions:
@@ -308,7 +306,7 @@ jobs:
   notify:
     needs: [publish_jars, docker_image]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Compute status
         id: deployment-status
@@ -340,4 +338,5 @@ jobs:
           github-token: ${{ github.token }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
 
