@@ -5,7 +5,6 @@ on:
     tags: [ 'v*.*.*' ]   # semantic version tags only
   release:
     types: [published]   # supports UI publishes too (hybrid)
-  workflow_dispatch: {}  # manual test runs
 
 permissions:
   contents: write
