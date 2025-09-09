@@ -1,8 +1,12 @@
 name: Publish The Spice Labs CLI Container Images
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - main
+      - mj/self-scan
+    tags:
+      - "v*.*.*"
 
 env:
   PLATFORMS: linux/amd64, linux/arm64
