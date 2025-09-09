@@ -241,13 +241,6 @@ jobs:
             echo "on_main=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Log in to Docker Hub
-        if: steps.onmain.outputs.on_main == 'true'
-        uses: docker/login-action@v3
-        with:
-          username: "${{ secrets.DOCKER_USERNAME }}"
-          password: "${{ secrets.DOCKER_TOKEN }}"
-
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -258,12 +251,31 @@ jobs:
           flavor: |
             latest=false
 
+      - name: Download fat jar
+        if: steps.onmain.outputs.on_main == 'true'
+        run: |
+          mkdir -p target
+          curl -fL -o "target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar" \
+            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
+
+      - name: Prepare minimal Docker build context
+        if: steps.onmain.outputs.on_main == 'true'
+        run: |
+          rm -rf docker_build
+          mkdir -p docker_build/target
+          cp Dockerfile docker_build/
+          if [ -f spice ]; then cp spice docker_build/; fi
+          if [ -f spice.ps1 ]; then cp spice.ps1 docker_build/; fi
+          cp "target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar" docker_build/target/
+
       - name: Build and Push Docker image
         id: push
         uses: docker/build-push-action@v6
         with:
+          context: ./docker_build
           platforms: ${{ env.PLATFORMS }}
-          context: .
           push: ${{ steps.onmain.outputs.on_main == 'true' }}
           provenance: true
           sbom: true
