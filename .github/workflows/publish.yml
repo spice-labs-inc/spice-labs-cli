@@ -10,6 +10,7 @@ on:
 
 env:
   PLATFORMS: linux/amd64, linux/arm64
+  IMAGE_NAME: "spicelabs/spice-labs-cli"
 
 jobs:
   publish_jars:
@@ -52,10 +53,6 @@ jobs:
             echo "Tag does not match semantic version pattern v*.*.*" >&2
             exit 1
           fi
-
-      - name: Show parsed version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: echo "Parsed VERSION=${{ steps.validate.outputs.VERSION }}"
 
       - name: Ensure tag commit is on main
         id: onmain
@@ -244,14 +241,6 @@ jobs:
             echo "on_main=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Download fat jar
-        run: |
-          mkdir -p target
-          curl -fL -o "target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar" \
-            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
-
       - name: Log in to Docker Hub
         if: steps.onmain.outputs.on_main == 'true'
         uses: docker/login-action@v3
@@ -263,7 +252,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: spicelabs/spice-labs-cli
+          images: "${{ env.IMAGE_NAME }}"
           tags: |
             type=semver,pattern={{version}}
           flavor: |
@@ -281,15 +270,16 @@ jobs:
           tags: "${{ steps.meta.outputs.tags }}"
           labels: "${{ steps.meta.outputs.labels }}"
 
-      - name: Extract image for scanning
-        uses: spice-labs-inc/action-extract-image@v1
-        with:
-          username: "${{ secrets.DOCKER_USERNAME }}"
-          password: "${{ secrets.DOCKER_TOKEN }}"
-          registry: "docker.io"
-          image_name: "spicelabs/spice-labs-cli"
-          tag: "${{ needs.publish_jars.outputs.version }}"
-          path: "target"
+      - name: Pull released image
+        if: steps.onmain.outputs.on_main == 'true'
+        run: |
+          docker pull "${{ env.IMAGE_NAME }}:${{ needs.publish_jars.outputs.version }}"
+
+      - name: Save image as OCI tar
+        if: steps.onmain.outputs.on_main == 'true'
+        run: |
+          mkdir -p target
+          docker save "${{ env.IMAGE_NAME }}:${{ needs.publish_jars.outputs.version }}" > "target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}.oci.tar"
 
       - name: Scan JARs and image artifacts
         env:
@@ -301,7 +291,7 @@ jobs:
             -e SPICE_PASS \
             spicelabs/spice-labs-cli:0.2.27 \
             --input /mnt/input \
-            --tag "${{ github.event.repository.name }}"
+            --tag "${{ github.event.repository.name }}"  # e.g., "spice-labs-cli"
 
   notify:
     needs: [publish_jars, docker_image]
