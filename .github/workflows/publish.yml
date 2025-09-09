@@ -74,11 +74,11 @@ jobs:
           java-version: "21"
           cache: "maven"
           server-id: github
-          server-username: ${{ secrets.GH_USERNAME_SG }}
-          server-password: ${{ secrets.GH_TOKEN }}
-          token: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
-          gpg-private-key: ${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}
-          gpg-passphrase: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
+          server-username: "${{ secrets.GH_USERNAME_SG }}"
+          server-password: "${{ secrets.GH_TOKEN }}"
+          token: "${{ secrets.MAVEN_CENTRAL_TOKEN }}"
+          gpg-private-key: "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}"
+          gpg-passphrase: "${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}"
 
       - name: Write settings.xml for GitHub + Maven Central
         run: |
@@ -272,11 +272,12 @@ jobs:
 
       - name: Build and Push Docker image
         id: push
+        if: steps.onmain.outputs.on_main == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./docker_build
           platforms: ${{ env.PLATFORMS }}
-          push: ${{ steps.onmain.outputs.on_main == 'true' }}
+          push: true
           provenance: true
           sbom: true
           tags: "${{ steps.meta.outputs.tags }}"
@@ -294,6 +295,7 @@ jobs:
           docker save "${{ env.IMAGE_NAME }}:${{ needs.publish_jars.outputs.version }}" > "target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}.oci.tar"
 
       - name: Scan JARs and image artifacts
+        if: steps.onmain.outputs.on_main == 'true'
         env:
           SPICE_PASS: "${{ secrets.SPICE_PASS }}"
         shell: bash
