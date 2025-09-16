@@ -6,7 +6,15 @@ LOCAL_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
 
 REMOTE_HASH=$(
   curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest \
-    | sed -nE '/"name":[[:space:]]*"spice"/{:a;n;/"digest":[[:space:]]*"sha256:/{s/.*"digest":[[:space:]]*"sha256:([^"]*).*/\1/p;b};ba}'
+    | awk '
+      BEGIN { found_spice = 0 }
+      /"name":[[:space:]]*"spice"/ { found_spice = 1 }
+      found_spice && /"digest":[[:space:]]*"sha256:/ {
+        gsub(/.*"digest":[[:space:]]*"sha256:/, "")
+        gsub(/".*/, "")
+        print
+        exit
+      }'
 )
 
 if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
