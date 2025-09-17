@@ -250,15 +250,6 @@ jobs:
           flavor: |
             latest=false
 
-      - name: Download fat jar
-        if: steps.onmain.outputs.on_main == 'true'
-        run: |
-          mkdir -p target
-          curl -fL -o "target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar" \
-            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
-
       - name: Prepare minimal Docker build context
         if: steps.onmain.outputs.on_main == 'true'
         run: |
@@ -281,30 +272,6 @@ jobs:
           sbom: true
           tags: "${{ steps.meta.outputs.tags }}"
           labels: "${{ steps.meta.outputs.labels }}"
-
-      - name: Pull released image
-        if: steps.onmain.outputs.on_main == 'true'
-        run: |
-          docker pull "${{ env.IMAGE_NAME }}:${{ needs.publish_jars.outputs.version }}"
-
-      - name: Save image as OCI tar
-        if: steps.onmain.outputs.on_main == 'true'
-        run: |
-          mkdir -p target
-          docker save "${{ env.IMAGE_NAME }}:${{ needs.publish_jars.outputs.version }}" > "target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}.oci.tar"
-
-      - name: Scan JARs and image artifacts
-        if: steps.onmain.outputs.on_main == 'true'
-        env:
-          SPICE_PASS: "${{ secrets.SPICE_PASS }}"
-        shell: bash
-        run: |
-          docker run --rm \
-            -v "$PWD/target:/mnt/input:ro" \
-            -e SPICE_PASS \
-            spicelabs/spice-labs-cli:0.2.27 \
-            --input /mnt/input \
-            --tag "${{ github.event.repository.name }}"  # e.g., "spice-labs-cli"
 
   notify:
     needs: [publish_jars, docker_image]
