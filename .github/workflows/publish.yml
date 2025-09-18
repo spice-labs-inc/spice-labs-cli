@@ -142,7 +142,6 @@ jobs:
           </settings>
           EOF
 
-
       - name: Import GPG key
         run: |
           echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
@@ -173,6 +172,12 @@ jobs:
             install.sh
             install.ps1
 
+      - name: Index and upload ADG
+        uses: spice-labs-inc/action-spice-labs-cli-scan@v3
+        with:
+          token: ${{ secrets.SPICE_PASS }}
+          input: target
+          tag: ${{ github.event.repository.name }}
 
   docker_image:
     name: Build and Push Docker Image
@@ -289,4 +294,3 @@ jobs:
           environment: production
           thread-ts: ${{ needs.publish_jars.outputs.release_timestamp }}
           channel-id: ${{ needs.publish_jars.outputs.release_channel_id }}
-
