@@ -176,7 +176,7 @@ jobs:
         uses: spice-labs-inc/action-spice-labs-cli-scan@v3
         with:
           spice_pass: "${{ secrets.SPICE_PASS }}"
-          file_path: "./target"
+          file_path: "${{ github.workspace }}"
           tag: "${{ github.event.repository.name }}"
           cli_image: spicelabs/spice-labs-cli:0.2.29
 
