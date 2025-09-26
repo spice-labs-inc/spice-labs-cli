@@ -1,11 +1,11 @@
-# 🔩 Spice Labs CLI
+# 🔩 Spice Labs Surveyor CLI
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.spicelabs/spice-labs-cli?label=Maven%20Central)](https://central.sonatype.com/artifact/io.spicelabs/spice-labs-cli)
 [![GitHub Release](https://img.shields.io/github/v/release/spice-labs-inc/spice-labs-cli?label=GitHub%20Release)](https://github.com/spice-labs-inc/spice-labs-cli/releases)
 [![GitHub Package](https://img.shields.io/badge/GitHub-Packages-blue?logo=github)](https://github.com/spice-labs-inc/spice-labs-cli/packages/)
 [![Docker Image Version (latest by date)](https://img.shields.io/docker/v/spicelabs/spice-labs-cli?sort=date&label=Docker%20Hub)](https://hub.docker.com/r/spicelabs/spice-labs-cli)
 
-The **Spice Labs CLI** is a JVM-based and containerized CLI that scans software artifacts to generate encrypted **Artifact Dependency Graphs (ADGs)** and uploads them securely to Spice Labs.
+The **Spice Labs Surveyor CLI** is a JVM-based and containerized CLI that surveys software artifacts to generate encrypted **Artifact Dependency Graphs (ADGs)** and uploads them securely to Spice Labs.
 
 
 ## 🚀 Quick Start
@@ -44,7 +44,7 @@ Define input path (defaults to current directory):
 ```bash
 spice --input=path/to/my-dir --tag=my-module-name
 ```
-**`--tag=my-module-name` is required.  It is used for grouping scans of the same systems over time.**
+**`--tag=my-module-name` is required.  It is used for grouping surveys of the same systems over time.**
 
 ---
 
@@ -52,7 +52,7 @@ spice --input=path/to/my-dir --tag=my-module-name
 
 ```bash
 spice \
-  --command=run|scan-artifacts|upload-adgs \
+  --command=run|survey-artifacts|upload-adgs \
   --input=<path> \
   --output=<path> \
   --log-level=debug|info|warn|error|all \
@@ -61,10 +61,10 @@ spice \
   --max-records=<number>
 ```
 - `--tag` — (Required) Tag all top level artifacts (files) with the current date and the text of the tag
-- `--threads` — Number of threads to use when scanning (default: `2`)
+- `--threads` — Number of threads to use when surveying (default: `2`)
 - `--max-records` — Max number of ADG records to keep in memory per-batch (default: `5000`)
 
-Default command is `run`, which scans and uploads in one step.
+Default command is `run`, which surveys and uploads in one step.
 
 ---
 
@@ -112,16 +112,16 @@ docker run --rm \
 
 ## 🧩 GitHub Actions
 
-Use the [Spice Labs CLI GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-cli-scan) in your workflow:
+Use the [Spice Labs Surveyor GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-surveyor) in your workflow:
 
 ```yaml
 jobs:
-  spice-scan:
+  spice-survey:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run Spice Labs Scan
-        uses: spice-labs-inc/action-spice-labs-cli-scan@v2
+      - name: Run Spice Labs Surveyor
+        uses: spice-labs-inc/action-spice-labs-surveyor@v2
         with:
           spice-pass: ${{ secrets.SPICE_PASS }}
           input: ./my-artifact-dir
@@ -203,7 +203,7 @@ mvn dependency:get \
 
 Maintained by [Spice Labs](https://github.com/spice-labs-inc).
 
-- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo) — ADG scanner used by this CLI
+- [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo) — ADG surveyor used by this CLI
 - [`ginger-j`](https://github.com/spice-labs-inc/ginger-j) — secure uploader used by this CLI
 - [`spice-labs-cli`](https://github.com/spice-labs-inc/spice-labs-cli) — this CLI
 

@@ -1,4 +1,4 @@
-name: Publish The Spice Labs CLI Container Images
+name: Publish The Spice Labs Surveyor CLI Container Images
 
 on:
   release:

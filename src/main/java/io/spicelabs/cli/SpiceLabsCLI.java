@@ -46,14 +46,14 @@ import picocli.CommandLine.TypeConversionException;
 @Command(
     name = "spice",
     mixinStandardHelpOptions = true,
-    description = "Spice Labs CLI",
+    description = "Spice Labs Surveyor CLI",
     versionProvider = SpiceLabsCLI.VersionProvider.class
 )
 public class SpiceLabsCLI implements Callable<Integer> {
 
   private static final Logger log = LoggerFactory.getLogger(SpiceLabsCLI.class);
 
-  @Option(names = "--command", description = "run[default - scans and uploads adgs]|scan-artifacts|upload-adgs|upload-deployment-events",
+  @Option(names = "--command", description = "run[default - surveys and uploads adgs]|survey-artifacts|upload-adgs",
       converter = Command.Converter.class)
   Command command;
 
@@ -193,17 +193,17 @@ public class SpiceLabsCLI implements Callable<Integer> {
     if (input == null)
       input = Paths.get(System.getProperty("user.dir"));
 
-    if ((command == Command.run || command == Command.scan_artifacts) && output == null)
+    if ((command == Command.run || command == Command.survey_artifacts) && output == null)
       output = Files.createTempDirectory("spice-output-");
 
     if (spicePass == null || spicePass.isBlank())
       spicePass = getSpicePassEnv();
 
-    if (command != Command.scan_artifacts && (spicePass == null || spicePass.isBlank()))
+    if (command != Command.survey_artifacts && (spicePass == null || spicePass.isBlank()))
       throw new IllegalArgumentException("SPICE_PASS must be set via SPICE_PASS env var for command: " + command);
 
     switch (command) {
-      case scan_artifacts -> doScan();
+      case survey_artifacts -> doSurvey();
       case upload_adgs -> doUploadAdgs(Optional.empty());
       case upload_deployment_events -> doUploadDeploymentEvents();
       case run -> doRunAll();
@@ -226,8 +226,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
     System.setProperty("scala.logging.level", levelStr);
   }
 
-  protected void doScan() throws Exception {
-    log.info("📦 Scanning artifacts with GoatRodeo...");
+  protected void doSurvey() throws Exception {
+    log.info("📦 Surveying artifacts with GoatRodeo...");
 
     String originalScalaLevel = System.getProperty("scala.logging.level");
     String originalSlf4jLevel = System.getProperty("org.slf4j.simpleLogger.defaultLogLevel");
@@ -288,7 +288,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
   }
 
   private void doRunAll() throws Exception {
-    doScan();
+    doSurvey();
     doUploadAdgs(Optional.of(output));
   }
 
@@ -296,7 +296,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   public enum Command {
     run,
-    scan_artifacts,
+    survey_artifacts,
     upload_adgs,
     upload_deployment_events;
 

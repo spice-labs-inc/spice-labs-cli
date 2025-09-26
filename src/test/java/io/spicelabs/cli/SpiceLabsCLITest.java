@@ -31,11 +31,11 @@ class SpiceLabsCLITest {
   void parse_validCommandAndInput() {
     var parseResult = cmd.parseArgs(
         "--tag", "test-tag",
-        "--command", "scan-artifacts",
+        "--command", "survey-artifacts",
         "--input", "some/path"
     );
     SpiceLabsCLI app = parseResult.commandSpec().commandLine().getCommand();
-    assertEquals(SpiceLabsCLI.Command.scan_artifacts, app.command);
+    assertEquals(SpiceLabsCLI.Command.survey_artifacts, app.command);
     assertEquals(Path.of("some/path"), app.input);
   }
 
@@ -46,7 +46,7 @@ class SpiceLabsCLITest {
   }
 
   @Test
-  void scanArtifacts_doesNotThrow() throws Exception {
+  void surveyArtifacts_doesNotThrow() throws Exception {
     Path tmpInput = Files.createTempDirectory("fake-input");
     Path dummyJar = tmpInput.resolve("foo.jar");
     Files.createFile(dummyJar);
@@ -55,7 +55,7 @@ class SpiceLabsCLITest {
 
     SpiceLabsCLI.builder()
         .tag("test-tag")
-        .command(SpiceLabsCLI.Command.scan_artifacts)
+        .command(SpiceLabsCLI.Command.survey_artifacts)
         .input(tmpInput)
         .output(tmpOutput)
         .run();
@@ -134,7 +134,7 @@ class SpiceLabsCLITest {
     final CapturingGoatRodeoBuilder builder = new CapturingGoatRodeoBuilder();
 
     @Override
-    protected void doScan() throws Exception {
+    protected void doSurvey() throws Exception {
       builder.withPayload(input.toString())
           .withOutput(output.toString())
           .withThreads(threads)
@@ -157,7 +157,7 @@ class SpiceLabsCLITest {
     CommandLine cmd = new CommandLine(cli);
     cmd.execute(
         "--tag", "test-tag",
-        "--command", "scan-artifacts",
+        "--command", "survey-artifacts",
         "--input", inputDir.toString(),
         "--output", outputDir.toString(),
         "--goat-rodeo-args", "blockList=/etc/blocklist.txt,tempDir=/tmp/test"
