@@ -17,8 +17,8 @@ class SpiceLabsCLICommandConverterTest {
   }
 
   @Test
-  void convert_scanArtifacts_dashed() throws Exception {
-    assertEquals(SpiceLabsCLI.Command.scan_artifacts, conv.convert("scan-artifacts"));
+  void convert_surveyArtifacts_dashed() throws Exception {
+    assertEquals(SpiceLabsCLI.Command.survey_artifacts, conv.convert("survey-artifacts"));
   }
 
   @Test
@@ -36,7 +36,7 @@ class SpiceLabsCLICommandConverterTest {
   void convert_caseInsensitive() throws Exception {
     // because you set setCaseInsensitiveEnumValuesAllowed(true) on the CommandLine
     assertEquals(SpiceLabsCLI.Command.run, conv.convert("RUN"));
-    assertEquals(SpiceLabsCLI.Command.scan_artifacts, conv.convert("Scan-Artifacts"));
+    assertEquals(SpiceLabsCLI.Command.survey_artifacts, conv.convert("Survey-Artifacts"));
   }
 
   @Test
