@@ -112,7 +112,7 @@ docker run --rm \
 
 ## 🧩 GitHub Actions
 
-Use the [Spice Labs CLI GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-surveyor) in your workflow:
+Use the [Spice Labs Surveyor GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-surveyor) in your workflow:
 
 ```yaml
 jobs:
