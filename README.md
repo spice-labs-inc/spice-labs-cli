@@ -112,7 +112,7 @@ docker run --rm \
 
 ## 🧩 GitHub Actions
 
-Use the [Spice Labs CLI GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-cli-scan) in your workflow:
+Use the [Spice Labs Surveyor GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-surveyor) in your workflow:
 
 ```yaml
 jobs:
@@ -121,10 +121,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Spice Labs Scan
-        uses: spice-labs-inc/action-spice-labs-cli-scan@v2
+        uses: spice-labs-inc/action-spice-labs-surveyor@v3
         with:
           spice-pass: ${{ secrets.SPICE_PASS }}
-          input: ./my-artifact-dir
+          file_path: ./my-artifact-dir
           tag: my-module-name
 ```
 
