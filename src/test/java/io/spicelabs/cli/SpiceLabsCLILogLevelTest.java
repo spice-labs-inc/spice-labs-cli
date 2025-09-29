@@ -36,7 +36,7 @@ class SpiceLabsCLILogLevelTest {
 
     SpiceLabsCLI.builder()
         .tag("test-tag")
-        .command(SpiceLabsCLI.Command.scan_artifacts)
+        .command(SpiceLabsCLI.Command.survey_artifacts)
         .input(payloadDir)
         .output(outputDir)
         .logLevel(logLevel)
@@ -67,7 +67,7 @@ class SpiceLabsCLILogLevelTest {
   void logLevelDebug_includesVerbose() throws Exception {
     List<ILoggingEvent> logs = captureLogs("debug");
     assertTrue(
-        logs.stream().anyMatch(e -> e.getFormattedMessage().toLowerCase().contains("scanning")),
+        logs.stream().anyMatch(e -> e.getFormattedMessage().toLowerCase().contains("surveying")),
         "Should include verbose GoatRodeo logs at DEBUG level"
     );
   }
@@ -82,7 +82,7 @@ class SpiceLabsCLILogLevelTest {
     try {
       new SpiceLabsCLI()
           .tag("test-tag")
-          .command(SpiceLabsCLI.Command.scan_artifacts)
+          .command(SpiceLabsCLI.Command.survey_artifacts)
           .input(Path.of(System.getProperty("user.dir")))
           .logLevel("info")
           .run();
@@ -93,7 +93,7 @@ class SpiceLabsCLILogLevelTest {
     }
 
     String output = buffer.toString();
-    assertTrue(output.contains("📦 Scanning artifacts"), "Expected info-level CLI log on stdout");
+    assertTrue(output.contains("📦 Surveying artifacts"), "Expected info-level CLI log on stdout");
   }
 
   @Test
@@ -105,7 +105,7 @@ class SpiceLabsCLILogLevelTest {
     try {
       new SpiceLabsCLI()
           .tag("test-tag")
-          .command(SpiceLabsCLI.Command.scan_artifacts)
+          .command(SpiceLabsCLI.Command.survey_artifacts)
           .input(Path.of(System.getProperty("user.dir")))
           .logLevel("error")
           .run();
@@ -116,7 +116,7 @@ class SpiceLabsCLILogLevelTest {
     }
 
     String output = buffer.toString();
-    assertFalse(output.contains("📦 Scanning artifacts"), "Info logs should not be printed at error level");
+    assertFalse(output.contains("📦 Survying artifacts"), "Info logs should not be printed at error level");
   }
 
 }

@@ -1,1 +1,1 @@
-**Frequently Asked Questions/Situations With The Spice Labs CLI**
+**Frequently Asked Questions/Situations With The Spice Labs Surveyor CLI**
