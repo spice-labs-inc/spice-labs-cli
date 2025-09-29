@@ -122,10 +122,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run Spice Labs Surveyor
         uses: spice-labs-inc/action-spice-labs-surveyor@v2
-        with:
-          spice-pass: ${{ secrets.SPICE_PASS }}
-          input: ./my-artifact-dir
-          tag: my-module-name
+
 ```
 
 ---
