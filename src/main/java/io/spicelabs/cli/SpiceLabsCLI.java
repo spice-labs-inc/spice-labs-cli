@@ -263,6 +263,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
     String levelStr = (logLevel == null) ? "INFO" : logLevel.toUpperCase();
     Level level = Level.toLevel(levelStr, Level.INFO);
 
+    // Lots of casting and fully qualified class names here to get to the root logger and change its pattern
     ch.qos.logback.classic.Logger rootLogger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
 
     // Change log pattern based on level
