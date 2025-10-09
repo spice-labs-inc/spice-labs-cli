@@ -46,6 +46,13 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
   & java $jvmArgs -jar $jar @args
   exit $LASTEXITCODE
 } else {
+  # Check if docker is installed
+  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Error "❌ Docker is not installed or not in PATH"
+    Write-Host "   Please install Docker: https://docs.docker.com/get-docker/"
+    exit 1
+  }
+
   $img       = if ($env:SPICE_IMAGE)     { $env:SPICE_IMAGE }     else { "spicelabs/spice-labs-cli" }
   $tag       = if ($env:SPICE_IMAGE_TAG) { $env:SPICE_IMAGE_TAG } else { "latest" }
   $inputDir  = ""
@@ -104,9 +111,24 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     $volumes += "-v"; $volumes += "${absOut}:/mnt/output"
   }
 
+  # Check if we're in debug/trace mode
+  $debugMode = $false
+  foreach ($arg in $args) {
+    if ($arg -match '^--log-level=(debug|trace|all)$' -or $arg -match '^--log-level=(DEBUG|TRACE|ALL)$') {
+      $debugMode = $true
+      break
+    }
+  }
+
   if ($env:SPICE_LABS_CLI_SKIP_PULL -ne "1") {
     try {
-      docker pull "${img}:${tag}"
+      if ($debugMode) {
+        Write-Host "📦 Checking for updates to Spice Labs Surveyor CLI..."
+        docker pull "${img}:${tag}"
+      } else {
+        Write-Host "📦 Checking for updates to Spice Labs Surveyor CLI..."
+        docker pull --quiet "${img}:${tag}" | Out-Null
+      }
     } catch {
       Write-Warning "⚠️  Failed to pull ${img}:${tag}, using local copy if available"
     }
@@ -118,8 +140,15 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     $envArgs += "SPICE_LABS_JVM_ARGS"
   }
 
+  # Use --pull=never if skip pull is set, otherwise use default pull behavior
+  $pullFlag = @()
+  if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
+    $pullFlag += "--pull=never"
+  }
+
   docker run `
     --rm `
+    @pullFlag `
     @volumes `
     -e SPICE_PASS `
     @envArgs `

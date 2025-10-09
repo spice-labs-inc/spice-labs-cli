@@ -53,7 +53,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   private static final Logger log = LoggerFactory.getLogger(SpiceLabsCLI.class);
 
-  @Option(names = "--command", description = "run[default - surveys and uploads adgs]|survey-artifacts|upload-adgs",
+  @Option(names = "--command", description = "run[default - surveys and uploads adgs]|survey-artifacts|upload-adgs|decode-spice-pass",
       converter = Command.Converter.class)
   Command command;
 
@@ -69,8 +69,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--log-level", description = "all|trace|debug|info[default]|warn|error|fatal|off")
   String logLevel;
 
-  @Option(names = "--threads", description = "Number of threads to use (default: 2)")
-  int threads = 2;
+  @Option(names = "--threads", description = "Number of threads to use (default: half of available CPU cores)")
+  Integer threads;
 
   @Option(names = "--use-static-metadata", description = "Augment Goat Rodeo information with other static metadata")
   boolean useStaticMetadata = true;
@@ -78,7 +78,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--max-records", description = "Max records to process per batch (default: 5000)")
   int maxRecords = 5000;
 
-  @Option(names = "--tag", required=true, description = "Tag all top level artifacts (files) with the current date and the text of the tag")
+  @Option(names = "--tag", description = "Tag all top level artifacts (files) with the current date and the text of the tag")
   String tag;
 
   @Option(names = "--tag-json", description = "Add JSON to any tags")
@@ -98,9 +98,19 @@ public class SpiceLabsCLI implements Callable<Integer> {
   public static void main(String[] args) {
     int exitCode;
     try {
-      exitCode = new CommandLine(new SpiceLabsCLI())
-          .setCaseInsensitiveEnumValuesAllowed(true)
-          .execute(args);
+      CommandLine cmd = new CommandLine(new SpiceLabsCLI())
+          .setCaseInsensitiveEnumValuesAllowed(true);
+
+      cmd.setParameterExceptionHandler(new CommandLine.IParameterExceptionHandler() {
+        @Override
+        public int handleParseException(CommandLine.ParameterException ex, String[] args) {
+          log.error("❌ {}", ex.getMessage());
+          log.info("Use -h or --help for usage information.");
+          return cmd.getCommandSpec().exitCodeOnInvalidInput();
+        }
+      });
+
+      exitCode = cmd.execute(args);
     } catch (Exception e) {
       log.error("Fatal error: {}", e.getMessage(), e);
       exitCode = 1;
@@ -158,6 +168,9 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   @Override
   public Integer call() throws Exception {
+    // Configure logging only when used from CLI
+    configureLogging();
+
     if (goatRodeoArgsRaw != null && !goatRodeoArgsRaw.isEmpty()) {
       goatRodeoArgs = goatRodeoArgsRaw.stream()
           .map(s -> s.split("=", 2))
@@ -168,6 +181,10 @@ public class SpiceLabsCLI implements Callable<Integer> {
     try {
       run();
       return 0;
+    } catch (IllegalArgumentException ex) {
+      log.error("❌ {}", ex.getMessage());
+      log.info("Use -h or --help for usage information.");
+      return 1;
     } catch (Exception ex) {
       log.error("❌ {}", ex.getMessage());
       if (log.isDebugEnabled()) {
@@ -180,14 +197,19 @@ public class SpiceLabsCLI implements Callable<Integer> {
   // ── Unified Runner ───────────────────────────
 
   public void run() throws Exception {
-    configureLogging();
-
-    if (tag == null || tag.isBlank()) {
-      throw new IllegalArgumentException("Tag must be set");
-    }
-
     if (command == null) {
       command = Command.run;
+    }
+
+    // Tag is only required for run and survey_artifacts commands
+    if ((command == Command.run || command == Command.survey_artifacts) && (tag == null || tag.isBlank())) {
+      throw new IllegalArgumentException("--tag= must be set for command: " + command);
+    }
+
+    if (threads == null) {
+      int availableCores = Runtime.getRuntime().availableProcessors();
+      threads = Math.max(1, Math.round(availableCores / 2.0f));
+      log.info("Using {} threads (half of {} available CPU cores)", threads, availableCores);
     }
 
     if (input == null)
@@ -202,10 +224,31 @@ public class SpiceLabsCLI implements Callable<Integer> {
     if (command != Command.survey_artifacts && (spicePass == null || spicePass.isBlank()))
       throw new IllegalArgumentException("SPICE_PASS must be set via SPICE_PASS env var for command: " + command);
 
+    // Log project info for run and upload_adgs commands
+    if ((command == Command.run || command == Command.upload_adgs) && spicePass != null && !spicePass.isBlank()) {
+      try {
+        SpicePassDecoder decoder = new SpicePassDecoder(spicePass);
+        String projectId = decoder.getProjectId();
+        if (projectId != null) {
+          log.info("Project ID: {}", projectId);
+        }
+
+        java.time.Instant expiresAt = decoder.getExpiresAt();
+        if (expiresAt != null) {
+          log.info("Spice Pass Expires At: {}", expiresAt);
+        }
+
+        log.info("Spice Pass Status: {}", decoder.getStatus());
+      } catch (Exception e) {
+        log.warn("Failed to decode SPICE_PASS: {}", e.getMessage());
+      }
+    }
+
     switch (command) {
       case survey_artifacts -> doSurvey();
       case upload_adgs -> doUploadAdgs(Optional.empty());
       case upload_deployment_events -> doUploadDeploymentEvents();
+      case decode_spice_pass -> doDecodeSpicePass();
       case run -> doRunAll();
     }
   }
@@ -221,7 +264,33 @@ public class SpiceLabsCLI implements Callable<Integer> {
     Level level = Level.toLevel(levelStr, Level.INFO);
 
     ch.qos.logback.classic.Logger rootLogger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+
+    // Change log pattern based on level
+    ch.qos.logback.classic.LoggerContext loggerContext = (ch.qos.logback.classic.LoggerContext) LoggerFactory.getILoggerFactory();
+    ch.qos.logback.core.ConsoleAppender<?> consoleAppender = (ch.qos.logback.core.ConsoleAppender<?>) rootLogger.getAppender("STDOUT");
+
+    if (consoleAppender != null && consoleAppender.getEncoder() instanceof ch.qos.logback.classic.encoder.PatternLayoutEncoder) {
+      ch.qos.logback.classic.encoder.PatternLayoutEncoder encoder = (ch.qos.logback.classic.encoder.PatternLayoutEncoder) consoleAppender.getEncoder();
+      encoder.stop();
+
+      if (level.levelInt <= Level.DEBUG.levelInt) {
+        // Debug or lower: show timestamp and abbreviated logger
+        encoder.setPattern("%d{HH:mm:ss.SSS} %highlight(%-5level) %logger{36} - %msg%n");
+      } else {
+        // Info or higher: simple format
+        encoder.setPattern("%highlight(%-5level) %msg%n");
+      }
+
+      encoder.setContext(loggerContext);
+      encoder.start();
+    }
+
     rootLogger.setLevel(level);
+
+    // Only log the level if it was explicitly set (not default)
+    if (logLevel != null) {
+      log.info("Logging level set to {}", level);
+    }
 
     System.setProperty("scala.logging.level", levelStr);
   }
@@ -292,13 +361,19 @@ public class SpiceLabsCLI implements Callable<Integer> {
     doUploadAdgs(Optional.of(output));
   }
 
+  private void doDecodeSpicePass() throws Exception {
+    SpicePassDecoder decoder = new SpicePassDecoder(spicePass);
+    decoder.printFullInfo();
+  }
+
   // ── Enums ────────────────────────────────────
 
   public enum Command {
     run,
     survey_artifacts,
     upload_adgs,
-    upload_deployment_events;
+    upload_deployment_events,
+    decode_spice_pass;
 
     @Override
     public String toString() {
