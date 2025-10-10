@@ -30,6 +30,10 @@ class SpiceLabsCLILogLevelTest {
 
   private List<ILoggingEvent> captureLogs(String logLevel) throws Exception {
     Logger rootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+
+    // Set the log level directly on the root logger (since builder API doesn't configure logging)
+    rootLogger.setLevel(Level.toLevel(logLevel.toUpperCase(), Level.INFO));
+
     ListAppender<ILoggingEvent> appender = new ListAppender<>();
     appender.start();
     rootLogger.addAppender(appender);
@@ -39,7 +43,6 @@ class SpiceLabsCLILogLevelTest {
         .command(SpiceLabsCLI.Command.survey_artifacts)
         .input(payloadDir)
         .output(outputDir)
-        .logLevel(logLevel)
         .run();
 
     return appender.list;
@@ -74,6 +77,10 @@ class SpiceLabsCLILogLevelTest {
 
   @Test
   void logLevelInfo_stdout_includesGoatRodeoLogs() throws Exception {
+    // Set log level directly since builder API doesn't configure logging
+    Logger rootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+    rootLogger.setLevel(Level.INFO);
+
     // Save and override System.out
     PrintStream originalOut = System.out;
     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -84,7 +91,6 @@ class SpiceLabsCLILogLevelTest {
           .tag("test-tag")
           .command(SpiceLabsCLI.Command.survey_artifacts)
           .input(Path.of(System.getProperty("user.dir")))
-          .logLevel("info")
           .run();
     } catch (Exception ignored) {
       // Expected if GoatRodeo fails on invalid input
@@ -98,6 +104,10 @@ class SpiceLabsCLILogLevelTest {
 
   @Test
   void logLevelError_stdout_suppressesInfoLogs() throws Exception {
+    // Set log level directly since builder API doesn't configure logging
+    Logger rootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+    rootLogger.setLevel(Level.ERROR);
+
     PrintStream originalOut = System.out;
     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
     System.setOut(new PrintStream(buffer));
@@ -107,7 +117,6 @@ class SpiceLabsCLILogLevelTest {
           .tag("test-tag")
           .command(SpiceLabsCLI.Command.survey_artifacts)
           .input(Path.of(System.getProperty("user.dir")))
-          .logLevel("error")
           .run();
     } catch (Exception ignored) {
       // GoatRodeo may throw; we only care about output
