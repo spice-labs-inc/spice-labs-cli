@@ -68,6 +68,9 @@ else
       MODIFIED_ARGS+=("$arg")
       prev="$arg"
     else
+      if [[ "$arg" == -V ]]; then
+        echo "script version ${LOCAL_HASH}"
+      fi
       MODIFIED_ARGS+=("$arg")
       prev=""
     fi

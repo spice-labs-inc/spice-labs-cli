@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <name>Spice Labs Surveyor CLI</name>
     <description>Command-line interface for Spice Labs</description>
@@ -52,11 +51,11 @@
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
-        <goatrodeo.version>0.12.1</goatrodeo.version>
+        <goatrodeo.version>0.13.0</goatrodeo.version>
         <ginger.version>0.1.5</ginger.version>
-<!--        Use these versions for local dev-->
-<!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
-<!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version>-->
+        <!--        Use these versions for local dev-->
+        <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
+        <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version>-->
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <mockito.version>5.3.1</mockito.version>
@@ -114,10 +113,30 @@
                 <version>${maven-jar-plugin.version}</version>
                 <configuration>
                     <archive>
-                    <manifest>
-                        <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
-                    </manifest>
+                        <manifest>
+                            <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
+                        </manifest>
                     </archive>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>9.0.2</version>
+                <executions>
+                    <execution>
+                        <id>get-the-git-infos</id>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                        <phase>initialize</phase>
+                    </execution>
+                </executions>
+                <configuration>
+                    <generateGitPropertiesFile>true</generateGitPropertiesFile>
+                    <generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
+                    <commitIdGenerationMode>full</commitIdGenerationMode>
                 </configuration>
             </plugin>
 
@@ -128,11 +147,14 @@
                 <executions>
                     <execution>
                         <phase>package</phase>
-                        <goals><goal>shade</goal></goals>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
                         <configuration>
                             <finalName>${project.build.finalName}-fat</finalName>
                             <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>io.spicelabs.cli.SpiceLabsCLI</mainClass>
                                 </transformer>
                             </transformers>
@@ -149,11 +171,14 @@
                     <execution>
                         <id>attach-fat-jar</id>
                         <phase>package</phase>
-                        <goals><goal>attach-artifact</goal></goals>
+                        <goals>
+                            <goal>attach-artifact</goal>
+                        </goals>
                         <configuration>
                             <artifacts>
                                 <artifact>
-                                    <file>${project.build.directory}/${project.build.finalName}-fat.jar</file>
+                                    <file>
+                                        ${project.build.directory}/${project.build.finalName}-fat.jar</file>
                                     <type>jar</type>
                                     <classifier>fat</classifier>
                                 </artifact>
@@ -171,7 +196,9 @@
                     <execution>
                         <id>attach-sources</id>
                         <phase>verify</phase>
-                        <goals><goal>jar</goal></goals>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
@@ -184,11 +211,13 @@
                     <execution>
                         <id>attach-javadocs</id>
                         <phase>verify</phase>
-                        <goals><goal>jar</goal></goals>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
-            
+
         </plugins>
     </build>
 
@@ -212,7 +241,9 @@
                             <execution>
                                 <id>sign-artifacts</id>
                                 <phase>verify</phase>
-                                <goals><goal>sign</goal></goals>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
                             </execution>
                         </executions>
                         <configuration>
@@ -250,7 +281,9 @@
                             <execution>
                                 <id>sign-artifacts</id>
                                 <phase>verify</phase>
-                                <goals><goal>sign</goal></goals>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
                             </execution>
                         </executions>
                         <configuration>
