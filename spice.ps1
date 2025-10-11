@@ -85,6 +85,10 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
       $modifiedArgs += $arg
       $prev = $arg
     } else {
+      if ($arg -eq "-V") {
+        Write-Host "Powershell Script hash"
+        Write-Host $LocalHash
+      }
       $modifiedArgs += $arg
       $prev = ""
     }
