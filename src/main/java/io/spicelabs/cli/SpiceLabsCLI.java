@@ -324,7 +324,18 @@ public class SpiceLabsCLI implements Callable<Integer> {
   public static class VersionProvider implements CommandLine.IVersionProvider {
     @Override
     public String[] getVersion() throws Exception {
-      return new String[] { getVersionString() };
+      return new String[] { getVersionString(), getGitCommit() };
+    }
+
+    private static String getGitCommit() {
+      try {
+      Properties properties = new Properties();
+			properties.load(VersionProvider.class.getClassLoader().getResourceAsStream("git.properties"));
+
+			return "https://github.com/spice-labs-inc/spice-labs-cli git commit: "+String.valueOf(properties.get("git.commit.id.full")); 
+      } catch (IOException ignored) {}
+
+      return "unknown-git-version";
     }
 
     private static String getVersionString() {
