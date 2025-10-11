@@ -41,6 +41,13 @@ if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
   # shellcheck disable=SC2086
   exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" "$@"
 else
+  # Check if docker is installed
+  if ! command -v docker &> /dev/null; then
+    echo "❌ Docker is not installed or not in PATH"
+    echo "   Please install Docker: https://docs.docker.com/get-docker/"
+    exit 1
+  fi
+
   IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
   TAG="${SPICE_IMAGE_TAG:-latest}"
 
@@ -84,11 +91,34 @@ else
   VOLUMES=("-v" "$(abs_path "$INPUT_DIR"):/mnt/input")
   [ -n "$OUTPUT_DIR" ] && VOLUMES+=("-v" "$(abs_path "$OUTPUT_DIR"):/mnt/output")
 
+  # Check if we're in debug/trace mode
+  DEBUG_MODE=0
+  for arg in "$@"; do
+    arg_lower=$(echo "$arg" | tr '[:upper:]' '[:lower:]')
+    if [[ "$arg_lower" == --log-level=debug || "$arg_lower" == --log-level=trace || "$arg_lower" == --log-level=all ]]; then
+      DEBUG_MODE=1
+      break
+    fi
+  done
+
   if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
-    docker pull "${IMAGE}:${TAG}" || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+    if [ "$DEBUG_MODE" = "1" ]; then
+      echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
+      docker pull "${IMAGE}:${TAG}" || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+    else
+      echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
+      docker pull --quiet "${IMAGE}:${TAG}" > /dev/null 2>&1 || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+    fi
+  fi
+
+  # Use --pull=never if skip pull is set, otherwise use default pull behavior
+  PULL_FLAG=""
+  if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" = "1" ]; then
+    PULL_FLAG="--pull=never"
   fi
 
   exec docker run --rm \
+    ${PULL_FLAG:+$PULL_FLAG} \
     ${VOLUMES+"${VOLUMES[@]}"} \
     -e SPICE_PASS \
     ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
