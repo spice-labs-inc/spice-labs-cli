@@ -242,7 +242,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
           .withOutput(output.toString())
           .withThreads(threads)
           .withMaxRecords(maxRecords)
-          .withStatisMetadata(useStaticMetadata)
+          .withStaticMetadata(useStaticMetadata)
           .withTag(tag)
           .withExtraArgs(goatRodeoArgs);
 
