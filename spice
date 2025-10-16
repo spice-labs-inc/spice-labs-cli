@@ -13,7 +13,7 @@ REMOTE_HASH=$(
         gsub(/.*"digest":[[:space:]]*"sha256:/, "")
         gsub(/".*/, "")
         print
-        exit
+        # exit
       }'
 )
 
