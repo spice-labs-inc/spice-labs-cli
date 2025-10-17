@@ -118,6 +118,7 @@ else
   fi
 
   exec docker run --rm \
+    --user $(id -u):$(id -g) \
     ${PULL_FLAG:+$PULL_FLAG} \
     ${VOLUMES+"${VOLUMES[@]}"} \
     -e SPICE_PASS \
