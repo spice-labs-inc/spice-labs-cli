@@ -13,9 +13,9 @@ REMOTE_HASH=$(
         gsub(/.*"digest":[[:space:]]*"sha256:/, "")
         gsub(/".*/, "")
         print
-        # exit
+        exit(0)
       }'
-)
+) || true # on Ubuntu, the exit(0) sometimes propagates... this is a no-op that catches the exit and doesn't allow it to shut down the script
 
 if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
   echo "⚠️  A newer version of this script is available. Run:"
@@ -118,6 +118,7 @@ else
   fi
 
   exec docker run --rm \
+    --user $(id -u):$(id -g) \
     ${PULL_FLAG:+$PULL_FLAG} \
     ${VOLUMES+"${VOLUMES[@]}"} \
     -e SPICE_PASS \
