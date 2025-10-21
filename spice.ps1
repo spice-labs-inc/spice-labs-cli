@@ -1,6 +1,11 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 
+# Compatibility shim for Windows PowerShell 5.1
+if (-not (Test-Path variable:IsWindows)) {
+  $IsWindows = $true
+}
+
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalHash = Get-FileHash -Path $ScriptPath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
 
@@ -30,7 +35,11 @@ function Get-AbsolutePath($path) {
 
 function Convert-ToDockerPath($path) {
   if ($IsWindows) {
-    return ($path -replace '^([A-Za-z]):', { "/$($args[0].ToLower())" }) -replace '\\', '/'
+    if ($path -match '^([A-Za-z]):') {
+      $driveLetter = $matches[1].ToLower()
+      $path = $path -replace '^[A-Za-z]:', "/$driveLetter"
+    }
+    return $path -replace '\\', '/'
   } else {
     return $path
   }
