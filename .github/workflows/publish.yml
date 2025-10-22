@@ -172,13 +172,12 @@ jobs:
             install.sh
             install.ps1
 
-      - name: Index and upload ADG
-        uses: spice-labs-inc/action-spice-labs-cli-scan@v3
+      - name: Index and Upload ADG
+        uses: spice-labs-inc/action-spice-labs-surveyor@v4
         with:
           spice_pass: "${{ secrets.SPICE_PASS }}"
-          file_path: "./target"
+          input: "./target"
           tag: "${{ github.event.repository.name }}"
-          cli_image: spicelabs/spice-labs-cli:0.2.29
 
   docker_image:
     name: Build and Push Docker Image
