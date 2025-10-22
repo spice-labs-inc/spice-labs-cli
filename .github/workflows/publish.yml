@@ -178,7 +178,6 @@ jobs:
           spice_pass: "${{ secrets.SPICE_PASS }}"
           input: "./target"
           tag: "${{ github.event.repository.name }}"
-          cli_image: spicelabs/spice-labs-cli:1.0.3
 
   docker_image:
     name: Build and Push Docker Image
