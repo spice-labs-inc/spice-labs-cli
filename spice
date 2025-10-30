@@ -120,6 +120,7 @@ else
   exec docker run --rm \
     --user $(id -u):$(id -g) \
     ${PULL_FLAG:+$PULL_FLAG} \
+    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
     ${VOLUMES+"${VOLUMES[@]}"} \
     -e SPICE_PASS \
     ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
