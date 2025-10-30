@@ -18,17 +18,17 @@ jobs:
       id-token: write
     outputs:
       version: ${{ steps.validate.outputs.VERSION }}
-      release_timestamp: ${{ steps.release-notification.outputs.timestamp }}
-      release_channel_id: ${{ steps.release-notification.outputs.channel_id }}
+      thread-ts: ${{ steps.release-notification.outputs.thread-ts }}
+      channel-id: ${{ steps.release-notification.outputs.channel-id }}
 
     steps:
       - name: Notify release
         id: release-notification
-        uses: spice-labs-inc/action-release-notification@main
+        uses: spice-labs-inc/action-release-notification@v3.1
         with:
           type: release
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          username-mapping: ${{ secrets.GH_SLACK_USERNAME_MAPPING }}
+          username-mapping: ${{ vars.GH_SLACK_USERNAME_MAPPING }}
           github-token: ${{ github.token }}
 
       - name: Checkout with LFS
@@ -50,9 +50,9 @@ jobs:
       - name: Set up JDK 21 and GitHub Maven auth
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'maven'
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
           server-id: github
           server-username: ${{ secrets.GH_USERNAME_SG }}
           server-password: ${{ secrets.GH_TOKEN }}
@@ -260,7 +260,7 @@ jobs:
           # Check job outcomes
           JAR_STATUS="${{ needs.publish_jars.result }}"
           DOCKER_STATUS="${{ needs.docker_image.result }}"
-          
+
           # Determine overall success
           if [ "$JAR_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ]; then
             echo "overall_status=success" >> $GITHUB_OUTPUT
@@ -286,12 +286,11 @@ jobs:
           fi
 
       - name: Notify deployment result
-        uses: spice-labs-inc/action-release-notification@main
+        uses: spice-labs-inc/action-release-notification@v3.1
         with:
           type: ${{ steps.deployment-status.outputs.overall_status == 'success' && 'deployment-success' || 'deployment-failure' }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          username-mapping: ${{ secrets.GH_SLACK_USERNAME_MAPPING }}
-          workflow-name: ${{ steps.deployment-status.outputs.overall_status == 'success' && 'Release' || format('Release - {0}', steps.deployment-status.outputs.message) }}
+          username-mapping: ${{ vars.GH_SLACK_USERNAME_MAPPING }}
           environment: production
-          thread-ts: ${{ needs.publish_jars.outputs.release_timestamp }}
-          channel-id: ${{ needs.publish_jars.outputs.release_channel_id }}
+          thread-ts: ${{ needs.publish_jars.outputs.thread-ts }}
+          channel-id: ${{ needs.publish_jars.outputs.channel-id }}
