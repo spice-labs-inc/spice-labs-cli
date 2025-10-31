@@ -189,8 +189,15 @@ class SpiceLabsCLITest {
     before = snapshotDirectories(surveyorRoot);
 
     // Use the builder to configure and run the CLI (replaces CommandLine.execute)
-    SpiceLabsCLI.builder()
-        .tag("test-tag")
+
+    SpiceLabsCLI cli = new SpiceLabsCLI() {
+      @Override
+      protected String getSpicePassEnv() {
+        return "dummy-pass-for-testing";
+      }
+    };
+    
+    cli.tag("test-tag")
         .command(SpiceLabsCLI.Command.run)
         .input(inputDir)
         .gingerArgs(Map.of("--skip-key","true", "--encrypt-only","true"))
@@ -332,8 +339,14 @@ class SpiceLabsCLITest {
     Set<Path> before = snapshotDirectories(surveyorRoot);
 
     // Use the builder to configure and run the CLI with maxRecords=50
-    SpiceLabsCLI.builder()
-        .tag("test-tag")
+    SpiceLabsCLI cli = new SpiceLabsCLI() {
+      @Override
+      protected String getSpicePassEnv() {
+        return "dummy-pass-for-testing";
+      }
+    };
+
+    cli.tag("test-tag")
         .command(SpiceLabsCLI.Command.run)
         .input(inputDir)
         .gingerArgs(Map.of("--skip-key","true", "--encrypt-only","true"))
