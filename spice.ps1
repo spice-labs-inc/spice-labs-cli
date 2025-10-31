@@ -159,9 +159,15 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     $pullFlag += "--pull=never"
   }
 
+  $dockerFlags = @()
+  if ($env:SPICE_DOCKER_FLAGS) {
+    $dockerFlags = $env:SPICE_DOCKER_FLAGS -split '\s+'
+  }
+
   docker run `
     --rm `
     @pullFlag `
+    @dockerFlags `
     @volumes `
     -e SPICE_PASS `
     @envArgs `
