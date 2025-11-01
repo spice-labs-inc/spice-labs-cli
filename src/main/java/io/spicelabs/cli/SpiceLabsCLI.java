@@ -19,9 +19,12 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -86,12 +89,20 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   @Option(
       names = "--goat-rodeo-args",
-      description = "Additional GoatRodeo builder args in key=value format (e.g. --goat-rodeo-args blockList=ignored,tempDir=/tmp)",
+      description = "Additional GoatRodeo builder args in key=value format (e.g. --goat-rodeo-args=\"blockList=ignored,tempDir=/tmp\")",
       split = ","
   )
   List<String> goatRodeoArgsRaw;
 
+  @Option(
+      names = "--ginger-args",
+      description = "Additional Ginger builder args in key=value format (e.g. --ginger-args=\"--skip-key,--encrypt-only\")",
+      split = ","
+  )
+  List<String> gingerArgsRaw;
+
   protected Map<String, String> goatRodeoArgs = Map.of();
+  protected Map<String, String> gingerArgs = Map.of();
 
   String spicePass;
 
@@ -164,6 +175,15 @@ public class SpiceLabsCLI implements Callable<Integer> {
     return this;
   }
 
+  public SpiceLabsCLI gingerArgs(Map<String, String> args) {
+    this.gingerArgs = args;
+    return this;
+  }
+
+  public SpiceLabsCLI build() {
+    return this;
+  }
+
   // ── CLI Entrypoint ───────────────────────────
 
   @Override
@@ -172,10 +192,11 @@ public class SpiceLabsCLI implements Callable<Integer> {
     configureLogging();
 
     if (goatRodeoArgsRaw != null && !goatRodeoArgsRaw.isEmpty()) {
-      goatRodeoArgs = goatRodeoArgsRaw.stream()
-          .map(s -> s.split("=", 2))
-          .filter(kv -> kv.length == 2)
-          .collect(Collectors.toMap(kv -> kv[0], kv -> kv[1]));
+      goatRodeoArgs = parseKeyValueList(goatRodeoArgsRaw);
+    }
+
+    if (gingerArgsRaw != null && !gingerArgsRaw.isEmpty()) {
+      gingerArgs = parseKeyValueList(gingerArgsRaw);
     }
 
     try {
@@ -215,8 +236,22 @@ public class SpiceLabsCLI implements Callable<Integer> {
     if (input == null)
       input = Paths.get(System.getProperty("user.dir"));
 
-    if ((command == Command.run || command == Command.survey_artifacts) && output == null)
-      output = Files.createTempDirectory("spice-output-");
+    if (command == Command.run || command == Command.survey_artifacts) {
+      
+      if(output == null) {
+        
+        // Always use the user's home directory (~/.spicelabs/surveyor) for output base.
+        Path base = Paths.get(System.getProperty("user.home"), ".spicelabs");
+
+        Files.createDirectories(base);
+        output = base;
+      }
+
+      output = output.resolve("surveyor");
+      Files.createDirectories(output);
+      output = Files.createTempDirectory(output, "survey-");
+      log.debug("Using output directory: {}", output);
+    }
 
     if (spicePass == null || spicePass.isBlank())
       spicePass = getSpicePassEnv();
@@ -302,6 +337,12 @@ public class SpiceLabsCLI implements Callable<Integer> {
     String originalScalaLevel = System.getProperty("scala.logging.level");
     String originalSlf4jLevel = System.getProperty("org.slf4j.simpleLogger.defaultLogLevel");
 
+    // Ensure GoatRodeo writes into a dedicated 'survey' subdirectory under the configured output.
+    Path surveyOutput = output.resolve("survey");
+    Path tmpDir = output.resolve("tmp");
+    Files.createDirectories(surveyOutput);
+    Files.createDirectories(tmpDir);
+    
     try {
       String level = (logLevel == null) ? "INFO" : logLevel.toUpperCase();
       System.setProperty("scala.logging.level", level);
@@ -309,11 +350,12 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
       GoatRodeoBuilder builder = GoatRodeo.builder()
           .withPayload(input.toString())
-          .withOutput(output.toString())
+          .withOutput(surveyOutput.toString())
           .withThreads(threads)
           .withMaxRecords(maxRecords)
           .withStaticMetadata(useStaticMetadata)
           .withTag(tag)
+          .withTempDir(tmpDir.toString())
           .withExtraArgs(goatRodeoArgs);
 
       if (tagJson != null && !tagJson.isBlank()) {
@@ -322,10 +364,13 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
       builder.run();
     } finally {
-      if (originalScalaLevel != null)
+      if (originalScalaLevel != null) {
         System.setProperty("scala.logging.level", originalScalaLevel);
-      if (originalSlf4jLevel != null)
+      }
+      if (originalSlf4jLevel != null) {
         System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", originalSlf4jLevel);
+      }
+      deleteRecursively(tmpDir);
     }
   }
 
@@ -333,7 +378,8 @@ public class SpiceLabsCLI implements Callable<Integer> {
     log.info("📦 Uploading ADGs...");
     Ginger ginger = Ginger.builder()
         .jwt(spicePass)
-        .adgDir(gingerInputDir.orElse(input));
+        .adgDir(gingerInputDir.orElse(input))
+        .extraArgs(gingerArgs);
 
     if (output != null)
       ginger.outputDir(output);
@@ -358,13 +404,68 @@ public class SpiceLabsCLI implements Callable<Integer> {
   }
 
   private void doRunAll() throws Exception {
+    // Run survey first
     doSurvey();
+    // Upload ADGs
     doUploadAdgs(Optional.of(output));
   }
 
   private void doDecodeSpicePass() throws Exception {
     SpicePassDecoder decoder = new SpicePassDecoder(spicePass);
     decoder.printFullInfo();
+  }
+
+  private static void deleteRecursively(Path path) throws IOException {
+    if (path == null || !Files.exists(path)) return;
+
+    Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+      @Override
+      public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+        Files.deleteIfExists(file);
+        return FileVisitResult.CONTINUE;
+      }
+
+      @Override
+      public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+        if (exc != null) throw exc;
+        Files.deleteIfExists(dir);
+        return FileVisitResult.CONTINUE;
+      }
+    });
+  }
+
+  // Parse a List<String> of args into a Map<String,String>.
+  // Supports:
+  //   key=value
+  //   key value   (paired tokens)
+  //   key         (flag => "true")
+  private static Map<String, String> parseKeyValueList(List<String> raw) {
+    Map<String, String> map = new java.util.LinkedHashMap<>();
+    if (raw == null || raw.isEmpty()) return map;
+
+    for (int i = 0; i < raw.size(); i++) {
+      String token = raw.get(i);
+      if (token == null) continue;
+
+      if (token.contains("=")) {
+        String[] kv = token.split("=", 2);
+        String k = kv.length > 0 ? kv[0] : token;
+        String v = kv.length == 2 ? kv[1] : "";
+        map.put(k, v);
+      } else {
+        String value = "true";
+        // If the next token looks like a value (does not start with '-' and does not contain '='), consume it as the value
+        if (i + 1 < raw.size()) {
+          String next = raw.get(i + 1);
+          if (next != null && !next.startsWith("-") && !next.contains("=")) {
+            value = next;
+            i++; // skip consumed token
+          }
+        }
+        map.put(token, value);
+      }
+    }
+    return map;
   }
 
   // ── Enums ────────────────────────────────────
