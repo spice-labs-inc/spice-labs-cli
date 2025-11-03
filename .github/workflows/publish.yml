@@ -290,6 +290,7 @@ jobs:
           type: ${{ steps.deployment-status.outputs.overall_status == 'success' && 'deployment-success' || 'deployment-failure' }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           username-mapping: ${{ vars.GH_SLACK_USERNAME_MAPPING }}
+          github-token: ${{ github.token }}
           environment: production
           thread-ts: ${{ needs.publish_jars.outputs.thread-ts }}
           channel-id: ${{ needs.publish_jars.outputs.channel-id }}
