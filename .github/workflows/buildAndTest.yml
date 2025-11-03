@@ -88,7 +88,7 @@ jobs:
 
 
       - name: Install Dependencies and Build
-        run: mvn --batch-mode --update-snapshots -DskipTests install
+        run: mvn --batch-mode --update-snapshots -DskipTests -Pdefault-repos install
 
       - name: Test with Maven
-        run: mvn --batch-mode --update-snapshots verify
+        run: mvn --batch-mode --update-snapshots -Pdefault-repos verify
