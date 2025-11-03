@@ -52,7 +52,7 @@
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
         <goatrodeo.version>0.13.0</goatrodeo.version>
-        <ginger.version>0.1.11</ginger.version>
+        <ginger.version>0.1.12</ginger.version>
         <!--        Use these versions for local dev-->
         <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
         <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version>-->
