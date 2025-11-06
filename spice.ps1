@@ -70,34 +70,23 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
   $prev = ""
 
   foreach ($arg in $args) {
-    switch -Regex ($arg) {
-      "^--input=(.+)" {
-        $inputDir = $matches[1]
-        $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
-        continue
-      }
-      "^--output=(.+)" {
-        $outputDir = $matches[1]
-        $modifiedArgs += "--output"; $modifiedArgs += "/mnt/output"
-        continue
-      }
-    }
-
-    if ($prev -eq "--input") {
+    if ($arg -match "^--input=(.*)") {
+      $inputDir = $matches[1]
+      $modifiedArgs += "--input"
+      $modifiedArgs += "/mnt/input"
+    } elseif ($arg -match "^--output=(.*)") {
+      $outputDir = $matches[1]
+      $modifiedArgs += "--output"
+      $modifiedArgs += "/mnt/output"
+    } elseif ($prev -eq "--input") {
       $inputDir = $arg
       $modifiedArgs += "/mnt/input"
       $prev = ""
-      continue
-    }
-
-    if ($prev -eq "--output") {
+    } elseif ($prev -eq "--output") {
       $outputDir = $arg
       $modifiedArgs += "/mnt/output"
       $prev = ""
-      continue
-    }
-
-    if ($arg -eq "--input" -or $arg -eq "--output") {
+    } elseif ($arg -eq "--input" -or $arg -eq "--output") {
       $modifiedArgs += $arg
       $prev = $arg
     } else {
