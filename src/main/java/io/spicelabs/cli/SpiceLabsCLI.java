@@ -240,8 +240,20 @@ public class SpiceLabsCLI implements Callable<Integer> {
       
       if(output == null) {
         
-        // Always use the user's home directory (~/.spicelabs/surveyor) for output base.
-        Path base = Paths.get(System.getProperty("user.home"), ".spicelabs");
+        String userHome = System.getProperty("user.home");
+        Path base;
+        if (userHome != null && !userHome.isBlank() && !userHome.equals("/")) {
+          base = Paths.get(userHome, ".spicelabs");
+        } else {
+          Path varTmp = Paths.get("/var/tmp", ".spicelabs");
+          if (Files.isDirectory(Paths.get("/var/tmp")) || Files.exists(Paths.get("/var/tmp"))) {
+            base = varTmp;
+            log.warn("user.home not available, using /var/tmp/.spicelabs");
+          } else {
+            base = Paths.get("/tmp", ".spicelabs");
+            log.warn("user.home and /var/tmp not available, using /tmp/.spicelabs");
+          }
+        }
 
         Files.createDirectories(base);
         output = base;
