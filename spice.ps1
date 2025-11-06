@@ -6,6 +6,47 @@ if (-not (Test-Path variable:IsWindows)) {
   $IsWindows = $true
 }
 
+$logFile = ""
+for ($i = 0; $i -lt $args.Count; $i++) {
+  if ($args[$i] -match "^--log-file=(.*)") {
+    $logFile = $matches[1]
+    break
+  } elseif ($args[$i] -eq "--log-file" -and $i + 1 -lt $args.Count) {
+    $logFile = $args[$i + 1]
+    break
+  }
+}
+
+if ($logFile -and -not $env:__SPICE_LOGGING_ACTIVE) {
+  $env:__SPICE_LOGGING_ACTIVE = "1"
+
+  $filteredArgs = @()
+  $prev = ""
+  foreach ($arg in $args) {
+    if ($arg -match "^--log-file=") {
+      continue
+    } elseif ($prev -eq "--log-file") {
+      $prev = ""
+      continue
+    } elseif ($arg -eq "--log-file") {
+      $prev = $arg
+      continue
+    } else {
+      $filteredArgs += $arg
+      $prev = ""
+    }
+  }
+
+  & $PSCommandPath @filteredArgs 2>&1 | ForEach-Object {
+    $line = "$_"
+    Write-Output $line
+    $cleaned = $line -replace '\x1b\[[0-9;]*[a-zA-Z]', ''
+    Add-Content -Path $logFile -Value $cleaned
+  }
+
+  exit $LASTEXITCODE
+}
+
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalHash = Get-FileHash -Path $ScriptPath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
 
@@ -52,7 +93,25 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
   }
 
   $jvmArgs = if ($env:SPICE_LABS_JVM_ARGS) { $env:SPICE_LABS_JVM_ARGS } else { "--XX:MaxRAMPercentage=75" }
-  & java $jvmArgs -jar $jar @args
+
+  $filteredArgs = @()
+  $prev = ""
+  foreach ($arg in $args) {
+    if ($arg -match "^--log-file=") {
+      continue
+    } elseif ($prev -eq "--log-file") {
+      $prev = ""
+      continue
+    } elseif ($arg -eq "--log-file") {
+      $prev = $arg
+      continue
+    } else {
+      $filteredArgs += $arg
+      $prev = ""
+    }
+  }
+
+  & java $jvmArgs -jar $jar @filteredArgs
   exit $LASTEXITCODE
 } else {
   # Check if docker is installed
@@ -78,6 +137,8 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
       $outputDir = $matches[1]
       $modifiedArgs += "--output"
       $modifiedArgs += "/mnt/output"
+    } elseif ($arg -match "^--log-file=") {
+      continue
     } elseif ($prev -eq "--input") {
       $inputDir = $arg
       $modifiedArgs += "/mnt/input"
@@ -86,9 +147,15 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
       $outputDir = $arg
       $modifiedArgs += "/mnt/output"
       $prev = ""
+    } elseif ($prev -eq "--log-file") {
+      $prev = ""
+      continue
     } elseif ($arg -eq "--input" -or $arg -eq "--output") {
       $modifiedArgs += $arg
       $prev = $arg
+    } elseif ($arg -eq "--log-file") {
+      $prev = $arg
+      continue
     } else {
       if ($arg -eq "-V") {
         Write-Host "Powershell Script hash"
