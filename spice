@@ -1,6 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Early parse for --log-file to capture all output
+LOG_FILE=""
+for arg in "$@"; do
+  if [[ "$arg" == --log-file=* ]]; then
+    LOG_FILE="${arg#--log-file=}"
+    break
+  fi
+done
+
+# Check for --log-file as separate argument
+prev=""
+if [ -z "$LOG_FILE" ]; then
+  for arg in "$@"; do
+    if [[ "$prev" == "--log-file" ]]; then
+      LOG_FILE="$arg"
+      break
+    fi
+    prev="$arg"
+  done
+fi
+
+# Set up logging to both console and file (with ANSI codes stripped for file)
+if [ -n "$LOG_FILE" ]; then
+  exec > >(tee >(sed -u 's/\x1b\[[0-9;]*[a-zA-Z]//g' >> "$LOG_FILE"))
+  exec 2>&1
+fi
+
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 LOCAL_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
 
@@ -38,8 +65,29 @@ abs_path() {
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
   [ -f "$SPICE_LABS_CLI_JAR" ] || { echo "Missing: $SPICE_LABS_CLI_JAR"; exit 1; }
   JVM_ARGS="${SPICE_LABS_JVM_ARGS:--XX:MaxRAMPercentage=75}"
+
+  # Parse arguments to filter out --log-file
+  FILTERED_ARGS=()
+  prev=""
+  for arg in "$@"; do
+    if [[ "$arg" == --log-file=* ]]; then
+      # Skip, already handled at top level
+      continue
+    elif [[ "$prev" == "--log-file" ]]; then
+      # Skip the value, already handled at top level
+      prev=""
+      continue
+    elif [[ "$arg" == "--log-file" ]]; then
+      prev="$arg"
+      continue
+    else
+      FILTERED_ARGS+=("$arg")
+      prev=""
+    fi
+  done
+
   # shellcheck disable=SC2086
-  exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" "$@"
+  exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" "${FILTERED_ARGS[@]}"
 else
   # Check if docker is installed
   if ! command -v docker &> /dev/null; then
@@ -63,6 +111,9 @@ else
     elif [[ "$arg" == --output=* ]]; then
       OUTPUT_DIR="${arg#--output=}"
       MODIFIED_ARGS+=("--output" "/mnt/output")
+    elif [[ "$arg" == --log-file=* ]]; then
+      # Skip, already handled at top level
+      continue
     elif [[ "$prev" == "--input" ]]; then
       INPUT_DIR="$arg"
       MODIFIED_ARGS+=("/mnt/input")
@@ -71,9 +122,16 @@ else
       OUTPUT_DIR="$arg"
       MODIFIED_ARGS+=("/mnt/output")
       prev=""
+    elif [[ "$prev" == "--log-file" ]]; then
+      # Skip the value, already handled at top level
+      prev=""
+      continue
     elif [[ "$arg" == "--input" || "$arg" == "--output" ]]; then
       MODIFIED_ARGS+=("$arg")
       prev="$arg"
+    elif [[ "$arg" == "--log-file" ]]; then
+      prev="$arg"
+      continue
     else
       if [[ "$arg" == -V ]]; then
         echo "script version ${LOCAL_HASH}"

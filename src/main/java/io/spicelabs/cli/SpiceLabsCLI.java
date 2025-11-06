@@ -72,6 +72,9 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--log-level", description = "all|trace|debug|info[default]|warn|error|fatal|off")
   String logLevel;
 
+  @Option(names = "--log-file", description = "Path to log file (output will be appended to both console and file)")
+  String logFile;
+
   @Option(names = "--threads", description = "Number of threads to use (default: half of available CPU cores)")
   Integer threads;
 
