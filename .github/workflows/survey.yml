@@ -52,26 +52,6 @@ jobs:
       - name: Download all Maven artifacts from GitHub Packages
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-
-          gh api \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/packages/maven/io.spicelabs.spice-labs-cli/versions" \
-            --jq ".[] | select(.name == \"$VERSION\") | .id" > version_id.txt
-
-          if [ ! -s version_id.txt ]; then
-            echo "Version $VERSION not found in GitHub Packages"
-            exit 1
-          fi
-
-          VERSION_ID=$(cat version_id.txt)
-
-          gh api \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/packages/maven/io.spicelabs.spice-labs-cli/versions/$VERSION_ID" \
-            --jq '.metadata.container.tags[]' | while read -r file; do
-            echo "Downloading: $file"
-          done
-
           BASE_URL="https://maven.pkg.github.com/${{ github.repository }}/io/spicelabs/spice-labs-cli/$VERSION"
 
           for artifact in \
@@ -92,8 +72,6 @@ jobs:
               -H "Accept: application/octet-stream" \
               "$BASE_URL/$artifact" || echo "  (not found, skipping)"
           done
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download all files from GitHub Release
         run: |
