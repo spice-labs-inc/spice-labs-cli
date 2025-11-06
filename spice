@@ -146,6 +146,10 @@ else
     MODIFIED_ARGS+=("--input" "/mnt/input")
   fi
 
+  if [ -n "$OUTPUT_DIR" ] && [ ! -d "$OUTPUT_DIR" ]; then
+    mkdir -p "$OUTPUT_DIR"
+  fi
+
   VOLUMES=("-v" "$(abs_path "$INPUT_DIR"):/mnt/input")
   [ -n "$OUTPUT_DIR" ] && VOLUMES+=("-v" "$(abs_path "$OUTPUT_DIR"):/mnt/output")
 
