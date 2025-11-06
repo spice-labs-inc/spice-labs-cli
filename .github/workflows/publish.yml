@@ -172,13 +172,6 @@ jobs:
             install.sh
             install.ps1
 
-      - name: Index and Upload ADG
-        uses: spice-labs-inc/action-spice-labs-surveyor@v4
-        with:
-          spice_pass: "${{ secrets.SPICE_PASS }}"
-          input: "./target"
-          tag: "${{ github.event.repository.name }}"
-
   docker_image:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
