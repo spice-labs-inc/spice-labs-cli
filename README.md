@@ -56,11 +56,13 @@ spice \
   --input=<path> \
   --output=<path> \
   --log-level=debug|info|warn|error|all \
+  --log-file=<path> \
   --threads=<number> \
   --tag=<tag> \
   --max-records=<number>
 ```
 - `--tag` — (Required) Tag all top level artifacts (files) with the current date and the text of the tag
+- `--log-file` — Path to log file (output will be appended to both console and file)
 - `--threads` — Number of threads to use when surveying (default: `2`)
 - `--max-records` — Max number of ADG records to keep in memory per-batch (default: `5000`)
 
