@@ -171,6 +171,10 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
   }
 
+  if ($outputDir -and -not (Test-Path $outputDir)) {
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+  }
+
   $volumes = @()
   $absIn = Convert-ToDockerPath (Get-AbsolutePath $inputDir)
   $volumes += "-v"; $volumes += "${absIn}:/mnt/input"
