@@ -369,6 +369,7 @@ public class SpiceLabsCLI implements Callable<Integer> {
           .withThreads(threads)
           .withMaxRecords(maxRecords)
           .withStaticMetadata(useStaticMetadata)
+          .withFsFilePaths(true)
           .withTag(tag)
           .withTempDir(tmpDir.toString())
           .withExtraArgs(goatRodeoArgs);
