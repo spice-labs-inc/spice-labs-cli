@@ -52,10 +52,10 @@
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
         <goatrodeo.version>0.13.3</goatrodeo.version>
-        <ginger.version>0.2.0</ginger.version>
+        <ginger.version>0.2.1</ginger.version>
         <!--        Use these versions for local dev-->
         <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
-        <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version>-->
+        <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version> -->
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <mockito.version>5.3.1</mockito.version>
