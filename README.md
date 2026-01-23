@@ -7,6 +7,7 @@
 
 The **Spice Labs Surveyor CLI** is a JVM-based and containerized CLI that surveys software artifacts to generate encrypted **Artifact Dependency Graphs (ADGs)** and uploads them securely to Spice Labs.
 
+---
 
 ## 🚀 Quick Start
 
@@ -37,7 +38,7 @@ Also, set your `SPICE_PASS` environment variable.
 Your Spice Pass can be downloaded from your Spice Labs project dashboard's settings page.
 
 After installation, run the CLI using:
-``` bash
+```bash
 spice --tag=my-module-name
 ```
 Define input path (defaults to current directory):
@@ -45,6 +46,55 @@ Define input path (defaults to current directory):
 spice --input=path/to/my-dir --tag=my-module-name
 ```
 **`--tag=my-module-name` is required.  It is used for grouping surveys of the same systems over time.**
+
+---
+
+## ⌨️ Bash Tab Completion
+
+To generate a Bash completion script for `spice`, run:
+
+```bash
+./scripts/generate-bash-completion.sh
+```
+
+This generates:
+
+```text
+target/spice.bash
+```
+
+### Enable completion for the current shell
+
+```bash
+source target/spice.bash
+```
+
+Completion will work for both:
+
+- `spice`
+- `./spice` (useful during development)
+
+### Install completion permanently (recommended)
+
+For Debian / Ubuntu (requires the `bash-completion` package):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y bash-completion
+```
+
+Then install the completion file for your user:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+cp target/spice.bash ~/.local/share/bash-completion/completions/spice
+```
+
+Open a new shell (or reload bash):
+
+```bash
+exec bash
+```
 
 ---
 
@@ -135,10 +185,10 @@ jobs:
 
 Install JDK 21+ and Maven 3.6+.
 
-Set SPICE_PASS in your environment:
+Set `SPICE_PASS` in your environment:
 
 ```bash
-export SPICE_PASS=your_spice_pass
+export SPICE_PASS="your_spice_pass"
 ```
 
 Clone the repo:
@@ -175,7 +225,7 @@ mvn exec:java -Dexec.mainClass="io.spicelabs.cli.SpiceLabsCLI" \
 
 ---
 
-### 🚀 Releasing
+## 🚀 Releasing
 
 1. **Create a GitHub Release**
    Use a tag like `v0.2.0`. This triggers GitHub Actions to:

@@ -67,6 +67,15 @@
             <artifactId>picocli</artifactId>
             <version>${picocli.version}</version>
         </dependency>
+
+        <!-- Build-time dependency used to generate shell completion scripts via picocli.AutoComplete -->
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli-codegen</artifactId>
+            <version>${picocli.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>goatrodeo_3</artifactId>
