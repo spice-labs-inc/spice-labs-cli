@@ -7,7 +7,6 @@
 
 The **Spice Labs Surveyor CLI** is a JVM-based and containerized CLI that surveys software artifacts to generate encrypted **Artifact Dependency Graphs (ADGs)** and uploads them securely to Spice Labs.
 
-
 ## 🚀 Quick Start
 
 ## ⚡️ Prerequisites
@@ -37,30 +36,76 @@ Also, set your `SPICE_PASS` environment variable.
 Your Spice Pass can be downloaded from your Spice Labs project dashboard's settings page.
 
 After installation, run the CLI using:
-``` bash
+
+```bash
 spice --tag=my-module-name
 ```
+
 Define input path (defaults to current directory):
+
 ```bash
 spice --input=path/to/my-dir --tag=my-module-name
 ```
-**`--tag=my-module-name` is required.  It is used for grouping surveys of the same systems over time.**
+
+**`--tag=my-module-name` is required. It is used for grouping surveys of the same systems over time.**
+
+---
+
+## ⌨️ Bash Tab Completion
+
+To generate a Bash completion script for `spice`, run:
+
+```bash
+./scripts/generate-bash-completion.sh
+```
+
+This generates:
+
+```text
+target/spice.bash
+```
+
+### Enable completion for the current shell
+
+```bash
+source target/spice.bash
+```
+
+Completion will work for both:
+
+- `spice`
+- `./spice` (useful during development)
+
+### Install completion permanently (recommended)
+
+For Debian / Ubuntu (requires the `bash-completion` package):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y bash-completion
+```
+
+Then install the completion file for your user:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+cp target/spice.bash ~/.local/share/bash-completion/completions/spice
+```
+
+Open a new shell (or reload bash):
+
+```bash
+exec bash
+```
 
 ---
 
 ## ⚙️ CLI Options
 
 ```bash
-spice \
-  --command=run|survey-artifacts|upload-adgs \
-  --input=<path> \
-  --output=<path> \
-  --log-level=debug|info|warn|error|all \
-  --log-file=<path> \
-  --threads=<number> \
-  --tag=<tag> \
-  --max-records=<number>
+spice   --command=run|survey-artifacts|upload-adgs   --input=<path>   --output=<path>   --log-level=debug|info|warn|error|all   --log-file=<path>   --threads=<number>   --tag=<tag>   --max-records=<number>
 ```
+
 - `--tag` — (Required) Tag all top level artifacts (files) with the current date and the text of the tag
 - `--log-file` — Path to log file (output will be appended to both console and file)
 - `--threads` — Number of threads to use when surveying (default: `2`)
@@ -73,27 +118,16 @@ Default command is `run`, which surveys and uploads in one step.
 ## 🐳 Docker Usage _(Advanced)_
 
 ```bash
-docker run --rm \
-  -e SPICE_PASS=... \
-  -v "$PWD/input:/mnt/input" \
-  -v "$PWD/output:/mnt/output" \
-  spicelabs/spice-labs-cli \
-  --command=run \
-  --input=/mnt/input \
-  --output=/mnt/output
+docker run --rm   -e SPICE_PASS=...   -v "$PWD/input:/mnt/input"   -v "$PWD/output:/mnt/output"   spicelabs/spice-labs-cli   --command=run   --input=/mnt/input   --output=/mnt/output
 ```
-- `-v "/home/<username>/testdata:/mnt/input"` Mounts your actual data directory into the container at `"/mnt/input"`
+
+- `-v "/home/<username>/testdata:/mnt/input"` mounts your actual data directory into the container at `"/mnt/input"`
 - The CLI still looks for input at `"/mnt/input"` inside the container, but that now points to `"/home/<username>/testdata"` on your host
 
 Upload only:
 
 ```bash
-docker run --rm \
-  -e SPICE_PASS=... \
-  -v "$PWD/output:/mnt/input" \
-  spicelabs/spice-labs-cli \
-  --command=upload-adgs \
-  --input=/mnt/input
+docker run --rm   -e SPICE_PASS=...   -v "$PWD/output:/mnt/input"   spicelabs/spice-labs-cli   --command=upload-adgs   --input=/mnt/input
 ```
 
 ---
@@ -124,7 +158,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run Spice Labs Surveyor
         uses: spice-labs-inc/action-spice-labs-surveyor@v2
-
 ```
 
 ---
@@ -135,7 +168,7 @@ jobs:
 
 Install JDK 21+ and Maven 3.6+.
 
-Set SPICE_PASS in your environment:
+Set `SPICE_PASS` in your environment:
 
 ```bash
 export SPICE_PASS=your_spice_pass
@@ -156,7 +189,7 @@ mvn clean install
 
 Fat JAR is output at:
 
-```
+```text
 target/spice-labs-cli-0.0.1-SNAPSHOT-fat.jar
 ```
 
@@ -166,34 +199,31 @@ Run manually (use same args as above):
 java -jar target/spice-labs-cli-0.0.1-SNAPSHOT-fat.jar --version
 ```
 
-Or Run with maven exec:
+Or run with Maven exec:
 
 ```bash
-mvn exec:java -Dexec.mainClass="io.spicelabs.cli.SpiceLabsCLI" \
-  -Dexec.args="--command=run --input=./my-dir --output=./out-dir --log-level=all"
+mvn exec:java -Dexec.mainClass="io.spicelabs.cli.SpiceLabsCLI"   -Dexec.args="--command=run --input=./my-dir --output=./out-dir --log-level=all"
 ```
 
 ---
 
 ### 🚀 Releasing
 
-1. **Create a GitHub Release**
+1. **Create a GitHub Release**  
    Use a tag like `v0.2.0`. This triggers GitHub Actions to:
-
    - Build the JAR
    - Publish to GitHub Packages
    - Push Docker image to GHCR
    - Upload artifacts to Maven Central (automated)
 
-2. **Monitor Maven Central** (optional)
-   Visit [https://central.sonatype.com](https://central.sonatype.com) → Deployments
+2. **Monitor Maven Central** (optional)  
+   Visit https://central.sonatype.com → Deployments  
    Propagation takes ~40 minutes.
 
 3. **Verify the JAR**
 
 ```bash
-mvn dependency:get \
-  -Dartifact=io.spicelabs:spice-labs-cli:jar:0.2.0
+mvn dependency:get   -Dartifact=io.spicelabs:spice-labs-cli:jar:0.2.0
 ```
 
 ---
@@ -211,3 +241,4 @@ Maintained by [Spice Labs](https://github.com/spice-labs-inc).
 ## ⚖️ License
 
 Apache License 2.0. See [`LICENSE`](LICENSE).
+
