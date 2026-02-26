@@ -15,9 +15,14 @@ limitations under the License. */
 
 package io.spicelabs.cli;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +34,29 @@ public class SpicePassDecoder {
 
   private static final Logger log = LoggerFactory.getLogger(SpicePassDecoder.class);
   private final DecodedJWT jwt;
+
+  private static final DateTimeFormatter HUMAN_DATE =
+      DateTimeFormatter.ofPattern("EEE MMM dd yyyy, hh:mm:ss a z").withZone(ZoneOffset.UTC);
+
+  private static final Map<String, String> CLAIM_NAMES = new LinkedHashMap<>();
+  static {
+    CLAIM_NAMES.put("x-type", "Token Type");
+    CLAIM_NAMES.put("jti", "JWT ID");
+    CLAIM_NAMES.put("iat", "Issued At");
+    CLAIM_NAMES.put("exp", "Expires At");
+    CLAIM_NAMES.put("nbf", "Not Before");
+    CLAIM_NAMES.put("iss", "Issuer");
+    CLAIM_NAMES.put("sub", "Subject");
+    CLAIM_NAMES.put("aud", "Audience");
+    CLAIM_NAMES.put("x-uuid-org", "Organization ID");
+    CLAIM_NAMES.put("x-uuid-type", "Organization ID");
+    CLAIM_NAMES.put("x-uuid-user", "User ID");
+    CLAIM_NAMES.put("x-uuid-project", "Project ID");
+    CLAIM_NAMES.put("demo", "Demo Project");
+    CLAIM_NAMES.put("x-upload-server", "Upload Server");
+    CLAIM_NAMES.put("x-public-key", "Public Key");
+    CLAIM_NAMES.put("x-challenge", "Challenge");
+  }
 
   public SpicePassDecoder(String spicePass) {
     if (spicePass == null || spicePass.isBlank()) {
@@ -65,48 +93,96 @@ public class SpicePassDecoder {
     log.info("JWT Header:");
     log.info("  Algorithm: {}", jwt.getAlgorithm());
     log.info("  Type: {}", jwt.getType());
+    log.info("");
 
-    log.info("JWT Claims:");
-    log.info("  Issuer: {}", jwt.getIssuer());
-    log.info("  Subject: {}", jwt.getSubject());
-    log.info("  Audience: {}", jwt.getAudience());
+    Map<String, Claim> allClaims = new LinkedHashMap<>(jwt.getClaims());
 
-    String projectId = getProjectId();
-    if (projectId != null) {
-      log.info("  Project ID: {}", projectId);
+    int nameWidth = 18;
+    int claimWidth = 18;
+
+    log.info("Claims:");
+    log.info("  {}{}{}", pad("Name", nameWidth), pad("Claim", claimWidth), "Value");
+    log.info("  {}{}{}",
+        repeat('\u2500', nameWidth - 2) + "  ",
+        repeat('\u2500', claimWidth - 2) + "  ",
+        repeat('\u2500', 50));
+
+    for (Map.Entry<String, String> known : CLAIM_NAMES.entrySet()) {
+      String key = known.getKey();
+      Claim claim = allClaims.remove(key);
+      if (claim == null || claim.isNull()) continue;
+
+      String friendlyName = known.getValue();
+      String value = formatClaimValue(key, claim);
+      log.info("  {}{}{}", pad(friendlyName, nameWidth), pad(key, claimWidth), value);
     }
 
-    if (jwt.getIssuedAt() != null) {
-      log.info("  Issued At: {} ({})", jwt.getIssuedAt(), jwt.getIssuedAt().toInstant());
-    }
-
-    if (jwt.getExpiresAt() != null) {
-      log.info("  Expires At: {} ({})", jwt.getExpiresAt(), jwt.getExpiresAt().toInstant());
-      Instant now = Instant.now();
-      Instant exp = jwt.getExpiresAt().toInstant();
-      if (exp.isBefore(now)) {
-        log.info("  Status: EXPIRED");
-      } else {
-        log.info("  Status: Valid");
-      }
-    }
-
-    if (jwt.getNotBefore() != null) {
-      log.info("  Not Before: {} ({})", jwt.getNotBefore(), jwt.getNotBefore().toInstant());
-    }
-
-    log.info("All Claims:");
-    for (Map.Entry<String, Claim> entry : jwt.getClaims().entrySet()) {
+    for (Map.Entry<String, Claim> entry : allClaims.entrySet()) {
+      String key = entry.getKey();
       Claim claim = entry.getValue();
-      String value;
-      if (claim.isNull()) {
-        value = "null";
-      } else if (claim.asString() != null) {
-        value = claim.asString();
-      } else {
-        value = claim.toString();
-      }
-      log.info("  {}: {}", entry.getKey(), value);
+      if (claim.isNull()) continue;
+
+      String value = formatClaimValue(key, claim);
+      log.info("  {}{}{}", pad(key, nameWidth), pad(key, claimWidth), value);
     }
+
+    log.info("");
+    log.info("  Status: {}", formatStatus());
+  }
+
+  private String formatClaimValue(String key, Claim claim) {
+    if (key.equals("iat") || key.equals("exp") || key.equals("nbf")) {
+      try {
+        long epoch = claim.asLong();
+        Instant instant = Instant.ofEpochSecond(epoch);
+        return epoch + "  (" + HUMAN_DATE.format(instant) + ")";
+      } catch (Exception e) {
+        // fall through
+      }
+    }
+
+    if (key.equals("x-public-key")) {
+      String val = claim.asString();
+      if (val != null && val.length() > 40) {
+        return val.substring(0, 40) + "... (truncated)";
+      }
+    }
+
+    if (claim.asString() != null) {
+      return claim.asString();
+    }
+    if (claim.asLong() != null) {
+      return claim.asLong().toString();
+    }
+    return claim.toString();
+  }
+
+  private String formatStatus() {
+    if (jwt.getExpiresAt() == null) {
+      return "No expiration";
+    }
+    Instant now = Instant.now();
+    Instant exp = jwt.getExpiresAt().toInstant();
+    Duration diff = Duration.between(now, exp).abs();
+    String relative = formatDuration(diff);
+
+    if (exp.isBefore(now)) {
+      return "EXPIRED (" + relative + " ago)";
+    } else {
+      return "Valid (expires in " + relative + ")";
+    }
+  }
+
+  private static String formatDuration(Duration d) {
+    return DurationFormatUtils.formatDurationWords(d.toMillis(), true, true);
+  }
+
+  private static String pad(String s, int width) {
+    if (s.length() >= width) return s + "  ";
+    return s + " ".repeat(width - s.length());
+  }
+
+  private static String repeat(char c, int count) {
+    return String.valueOf(c).repeat(count);
   }
 }
