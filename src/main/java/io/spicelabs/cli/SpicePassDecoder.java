@@ -141,13 +141,6 @@ public class SpicePassDecoder {
       }
     }
 
-    if (key.equals("x-public-key")) {
-      String val = claim.asString();
-      if (val != null && val.length() > 40) {
-        return val.substring(0, 40) + "... (truncated)";
-      }
-    }
-
     if (claim.asString() != null) {
       return claim.asString();
     }
