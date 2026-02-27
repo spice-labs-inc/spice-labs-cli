@@ -228,6 +228,7 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     --rm `
     @pullFlag `
     @dockerFlags `
+    --network host `
     @volumes `
     -e SPICE_PASS `
     @envArgs `
