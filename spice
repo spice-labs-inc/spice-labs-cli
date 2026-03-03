@@ -181,6 +181,7 @@ else
 
   exec docker run --rm \
     --user $(id -u):$(id -g) \
+    --network host \
     ${PULL_FLAG:+$PULL_FLAG} \
     ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
     ${VOLUMES+"${VOLUMES[@]}"} \
