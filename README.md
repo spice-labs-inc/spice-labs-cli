@@ -12,7 +12,7 @@ The **Spice Labs Surveyor CLI** is a JVM-based and containerized CLI that survey
 
 ## ⚡️ Prerequisites
 
-- **Docker** must be installed and running on your system.  
+- **Docker** must be installed and running on your system.
   [Get Docker](https://docs.docker.com/get-docker/)
 
 ### 🧪 Recommended: Installer Script
@@ -29,11 +29,15 @@ curl -sSLf https://install.spicelabs.io | bash
 irm -UseBasicParsing -Uri https://install.spicelabs.io | iex
 ```
 
+#### Optional Tab Completion
+
+If you want to have tab completion avaliable for the CLI https://github.com/spice-labs-inc/tab-complete-cli/releases/latest, extract and follow the instructions
+
 ### Basic Usage
 
 After installation, **add it to your PATH as instructed by the installer**.
 
-Also, set your `SPICE_PASS` environment variable.  
+Also, set your `SPICE_PASS` environment variable.
 Your Spice Pass can be downloaded from your Spice Labs project dashboard's settings page.
 
 After installation, run the CLI using:
