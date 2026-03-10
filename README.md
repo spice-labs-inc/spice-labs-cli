@@ -35,7 +35,7 @@ curl -sSLf https://install.spicelabs.io | bash
 irm -UseBasicParsing -Uri https://install.spicelabs.io | iex
 ```
 
-After installation ensure the CLI is on your `PATH`.
+After installation, ensure the CLI is available in your `PATH`.
 
 ---
 
@@ -57,7 +57,7 @@ Run a survey:
 spice --tag=my-module-name
 ```
 
-Specify an input path (defaults to current directory):
+Specify an input path (defaults to the current directory):
 
 ```bash
 spice --input=path/to/my-dir --tag=my-module-name
@@ -80,7 +80,14 @@ View the full command reference:
 spice --help
 ```
 
-### Main Options
+> **Note**
+>
+> The output of `spice --help` is the authoritative source of truth for CLI options.
+> The documentation below summarizes common usage but may not list every option.
+
+---
+
+## Main Options
 
 | Option | Description |
 |------|-------------|
@@ -91,10 +98,10 @@ spice --help
 | `--log-level=<level>` | Logging verbosity |
 | `--threads=<n>` | Number of worker threads |
 | `--max-records=<n>` | Maximum records processed per batch |
-| `--tag=<tag>` | Tag top level artifacts |
+| `--tag=<tag>` | Tag top-level artifacts |
 | `--tag-json=<json>` | Attach JSON metadata to tags |
 | `--ginger-args=<args>` | Additional Ginger uploader arguments |
-| `--goat-rodeo-args=<args>` | Additional GoatRodeo surveyor arguments |
+| `--goat-rodeo-args=<args>` | Additional Goat Rodeo surveyor arguments |
 | `--ci` | Enable CI mode |
 | `--use-static-metadata` | Augment Goat Rodeo metadata |
 | `-h`, `--help` | Show help |
@@ -108,12 +115,12 @@ The `--command` option supports the following values:
 
 | Command | Description |
 |------|-------------|
-| `run` | Default command. Survey artifacts and upload ADGs |
+| `run` | Default command. Surveys artifacts and uploads ADGs |
 | `survey-artifacts` | Survey artifacts only |
 | `upload-adgs` | Upload ADGs only |
 | `decode-spice-pass` | Decode a Spice Pass |
 
-If `--command` is omitted the default is:
+If `--command` is omitted, the default is:
 
 ```
 run
@@ -187,12 +194,12 @@ docker run --rm \
 | Variable | Description | Default |
 |---------|-------------|--------|
 | `SPICE_PASS` | Required for upload commands. JWT token for Spice Labs authentication | none |
-| `SPICE_LABS_CLI_USE_JVM` | Run CLI using local JVM instead of Docker | `0` |
-| `SPICE_LABS_CLI_JAR` | Path to CLI JAR when using JVM mode | `/opt/spice-labs-cli/spice-labs-cli.jar` |
+| `SPICE_LABS_CLI_USE_JVM` | Run the CLI using the local JVM instead of Docker | `0` |
+| `SPICE_LABS_CLI_JAR` | Path to the CLI JAR when using JVM mode | `/opt/spice-labs-cli/spice-labs-cli.jar` |
 | `SPICE_LABS_JVM_ARGS` | Custom JVM flags | `-XX:MaxRAMPercentage=75` |
 | `SPICE_IMAGE` | Docker image used by the launcher | `spicelabs/spice-labs-cli` |
 | `SPICE_IMAGE_TAG` | Docker image tag | `latest` |
-| `SPICE_LABS_CLI_SKIP_PULL` | Skip docker pull before run | `0` |
+| `SPICE_LABS_CLI_SKIP_PULL` | Skip `docker pull` before running (`1` to skip) | `0` |
 
 ---
 
@@ -271,7 +278,7 @@ This triggers GitHub Actions to:
 
 - Build the JAR
 - Publish to GitHub Packages
-- Push Docker image
+- Push the Docker image
 - Publish to Maven Central
 
 2. Monitor Maven Central propagation:
@@ -284,6 +291,21 @@ https://central.sonatype.com
 mvn dependency:get \
   -Dartifact=io.spicelabs:spice-labs-cli:jar:<version>
 ```
+
+---
+
+# 🔄 Documentation Maintenance
+
+CLI behavior evolves over time. To keep documentation accurate:
+
+1. After any CLI option change, update this README if necessary.
+2. Always verify behavior with:
+
+```bash
+spice --help
+```
+
+3. The `spice --help` output should always be treated as the authoritative reference.
 
 ---
 
@@ -300,3 +322,5 @@ Maintained by Spice Labs.
 # ⚖️ License
 
 Apache License 2.0. See `LICENSE`.
+
+---
