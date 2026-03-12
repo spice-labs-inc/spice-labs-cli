@@ -37,14 +37,17 @@ Also, set your `SPICE_PASS` environment variable.
 Your Spice Pass can be downloaded from your Spice Labs project dashboard's settings page.
 
 After installation, run the CLI using:
-``` bash
+```bash
 spice --tag=my-module-name
 ```
 Define input path (defaults to current directory):
 ```bash
 spice --input=path/to/my-dir --tag=my-module-name
 ```
-**`--tag=my-module-name` is required.  It is used for grouping surveys of the same systems over time.**
+
+> **Note:** `--tag=my-module-name` is recommended for grouping surveys of the same systems over time.
+
+Each time `spice` runs, it automatically checks for updates to the script and will notify you if a newer version is available.
 
 ---
 
@@ -52,21 +55,40 @@ spice --input=path/to/my-dir --tag=my-module-name
 
 ```bash
 spice \
-  --command=run|survey-artifacts|upload-adgs \
-  --input=<path> \
-  --output=<path> \
-  --log-level=debug|info|warn|error|all \
-  --log-file=<path> \
-  --threads=<number> \
-  --tag=<tag> \
-  --max-records=<number>
+  [--ci] \
+  [--command=run|survey-artifacts|upload-adgs|decode-spice-pass] \
+  [--input=<path>] \
+  [--output=<path>] \
+  [--log-level=all|trace|debug|info|warn|error|fatal|off] \
+  [--log-file=<path>] \
+  [--threads=<number>] \
+  [--tag=<tag>] \
+  [--tag-json=<json>] \
+  [--max-records=<number>] \
+  [--use-static-metadata] \
+  [--ginger-args=<key=value>[,<key=value>...]] \
+  [--goat-rodeo-args=<key=value>[,<key=value>...]]
 ```
-- `--tag` — (Required) Tag all top level artifacts (files) with the current date and the text of the tag
-- `--log-file` — Path to log file (output will be appended to both console and file)
-- `--threads` — Number of threads to use when surveying (default: `2`)
-- `--max-records` — Max number of ADG records to keep in memory per-batch (default: `5000`)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--command` | `run` (surveys and uploads ADGs) \| `survey-artifacts` \| `upload-adgs` \| `decode-spice-pass` | `run` |
+| `--input` | Input path | current directory |
+| `--output` | Output path | _(none)_ |
+| `--tag` | Tag all top-level artifacts (files) with the current date and the text of the tag | _(none)_ |
+| `--tag-json` | Add JSON to any tags | _(none)_ |
+| `--log-level` | `all\|trace\|debug\|info\|warn\|error\|fatal\|off` | `info` |
+| `--log-file` | Path to log file (output will be appended to both console and file) | _(none)_ |
+| `--threads` | Number of threads to use when surveying | half of available CPU cores |
+| `--max-records` | Max number of ADG records to process per batch | `5000` |
+| `--use-static-metadata` | Augment Goat Rodeo information with other static metadata | `false` |
+| `--ci` | CI mode | `false` |
+| `--ginger-args` | Additional Ginger builder args in `key=value` format (e.g. `--ginger-args="--skip-key,--encrypt-only"`) | _(none)_ |
+| `--goat-rodeo-args` | Additional GoatRodeo builder args in `key=value` format (e.g. `--goat-rodeo-args="blockList=ignored,tempDir=/tmp"`) | _(none)_ |
 
 Default command is `run`, which surveys and uploads in one step.
+
+> **Note:** `--log-file` is handled by the wrapper script. ANSI color codes are automatically stripped from file output.
 
 ---
 
@@ -74,6 +96,8 @@ Default command is `run`, which surveys and uploads in one step.
 
 ```bash
 docker run --rm \
+  --user $(id -u):$(id -g) \
+  --network host \
   -e SPICE_PASS=... \
   -v "$PWD/input:/mnt/input" \
   -v "$PWD/output:/mnt/output" \
@@ -84,11 +108,14 @@ docker run --rm \
 ```
 - `-v "/home/<username>/testdata:/mnt/input"` Mounts your actual data directory into the container at `"/mnt/input"`
 - The CLI still looks for input at `"/mnt/input"` inside the container, but that now points to `"/home/<username>/testdata"` on your host
+- The wrapper script automatically remaps `--input` and `--output` host paths to `/mnt/input` and `/mnt/output` inside the container
 
 Upload only:
 
 ```bash
 docker run --rm \
+  --user $(id -u):$(id -g) \
+  --network host \
   -e SPICE_PASS=... \
   -v "$PWD/output:/mnt/input" \
   spicelabs/spice-labs-cli \
@@ -105,10 +132,11 @@ docker run --rm \
 | `SPICE_PASS`               | **Required** for `upload-*` commands. JWT token for Spice Labs auth. | _(no default)_                           |
 | `SPICE_LABS_CLI_USE_JVM`   | Run the CLI using the local JVM instead of Docker (`1` = enable)     | `0`                                      |
 | `SPICE_LABS_CLI_JAR`       | Path to the CLI JAR when using JVM mode                              | `/opt/spice-labs-cli/spice-labs-cli.jar` |
-| `SPICE_LABS_JVM_ARGS`      | Custom JVM tuning flags (e.g., `-Xmx512m -XX:+UseG1GC`)              | `--XX:MaxRAMPercentage=75`               |
+| `SPICE_LABS_JVM_ARGS`      | Custom JVM tuning flags (e.g., `-Xmx512m -XX:+UseG1GC`)              | `-XX:MaxRAMPercentage=75`                |
 | `SPICE_IMAGE`              | Docker image to use when not in JVM mode                             | `spicelabs/spice-labs-cli`               |
 | `SPICE_IMAGE_TAG`          | Docker image tag                                                     | `latest`                                 |
 | `SPICE_LABS_CLI_SKIP_PULL` | Skip `docker pull` before run (`1` = skip)                           | `0`                                      |
+| `SPICE_DOCKER_FLAGS`       | Additional flags passed directly to `docker run`                     | _(none)_                                 |
 
 ---
 
@@ -124,7 +152,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run Spice Labs Surveyor
         uses: spice-labs-inc/action-spice-labs-surveyor@v2
-
 ```
 
 ---
@@ -166,7 +193,7 @@ Run manually (use same args as above):
 java -jar target/spice-labs-cli-0.0.1-SNAPSHOT-fat.jar --version
 ```
 
-Or Run with maven exec:
+Or run with Maven exec:
 
 ```bash
 mvn exec:java -Dexec.mainClass="io.spicelabs.cli.SpiceLabsCLI" \
