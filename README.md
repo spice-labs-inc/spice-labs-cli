@@ -47,6 +47,13 @@ spice --input=path/to/my-dir --tag=my-module-name
 
 > **Note:** `--tag=my-module-name` is **required** when using the default `run` command. It is used for grouping surveys of the same systems over time. The shortest valid command is `spice --tag=<tag>`.
 
+> **Note:** `--command` is optional. The default command is `run`, which surveys and uploads ADGs in one step. The following two commands are equivalent:
+> ```bash
+> spice --input=path/to/my-dir --tag=my-module-name
+> spice --command=run --input=path/to/my-dir --tag=my-module-name
+> ```
+> Only specify `--command` when you want to run a command other than `run`, such as `survey-artifacts`, `upload-adgs`, or `decode-spice-pass`.
+
 Each time `spice` runs, it automatically checks for updates to the script and will notify you if a newer version is available.
 
 ---
@@ -72,7 +79,7 @@ spice \
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--command` | `run` (surveys and uploads ADGs) \| `survey-artifacts` \| `upload-adgs` \| `decode-spice-pass` | `run` |
+| `--command` | `run` (surveys and uploads ADGs) \| `survey-artifacts` \| `upload-adgs` \| `decode-spice-pass`. **Optional** — omitting `--command` is the same as `--command=run`. | `run` |
 | `--input` | Input path | current directory |
 | `--output` | Output path | _(none)_ |
 | `--tag` | **Required for `run` command.** Tags all top-level artifacts (files) with the current date and the text of the tag, for grouping surveys of the same systems over time | _(none)_ |
@@ -86,7 +93,7 @@ spice \
 | `--ginger-args` | Additional Ginger builder args in `key=value` format (e.g. `--ginger-args="--skip-key,--encrypt-only"`) | _(none)_ |
 | `--goat-rodeo-args` | Additional GoatRodeo builder args in `key=value` format (e.g. `--goat-rodeo-args="blockList=ignored,tempDir=/tmp"`) | _(none)_ |
 
-Default command is `run`, which surveys and uploads in one step. Note that `--tag` is required when using the `run` command.
+The default command is `run`, which surveys and uploads in one step. `--command` only needs to be specified when running a command other than `run`. Note that `--tag` is required when using the `run` command.
 
 > **Note:** `--log-file` is handled by the wrapper script. ANSI color codes are automatically stripped from file output.
 
