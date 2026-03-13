@@ -12,7 +12,7 @@ The **Spice Labs Surveyor CLI** is a JVM-based and containerized CLI that survey
 
 ## ⚡️ Prerequisites
 
-- **Docker** must be installed and running on your system.  
+- **Docker** must be installed and running on your system.
   [Get Docker](https://docs.docker.com/get-docker/)
 
 ### 🧪 Recommended: Installer Script
@@ -33,7 +33,7 @@ irm -UseBasicParsing -Uri https://install.spicelabs.io | iex
 
 After installation, **add it to your PATH as instructed by the installer**.
 
-Also, set your `SPICE_PASS` environment variable.  
+Also, set your `SPICE_PASS` environment variable.
 Your Spice Pass can be downloaded from your Spice Labs project dashboard's settings page.
 
 After installation, run the CLI using:
@@ -45,7 +45,7 @@ Define input path (defaults to current directory):
 spice --input=path/to/my-dir --tag=my-module-name
 ```
 
-> **Note:** `--tag=my-module-name` is recommended for grouping surveys of the same systems over time.
+> **Note:** `--tag=my-module-name` is **required** when using the default `run` command. It is used for grouping surveys of the same systems over time. The shortest valid command is `spice --tag=<tag>`.
 
 Each time `spice` runs, it automatically checks for updates to the script and will notify you if a newer version is available.
 
@@ -62,7 +62,7 @@ spice \
   [--log-level=all|trace|debug|info|warn|error|fatal|off] \
   [--log-file=<path>] \
   [--threads=<number>] \
-  [--tag=<tag>] \
+  --tag=<tag> \
   [--tag-json=<json>] \
   [--max-records=<number>] \
   [--use-static-metadata] \
@@ -75,7 +75,7 @@ spice \
 | `--command` | `run` (surveys and uploads ADGs) \| `survey-artifacts` \| `upload-adgs` \| `decode-spice-pass` | `run` |
 | `--input` | Input path | current directory |
 | `--output` | Output path | _(none)_ |
-| `--tag` | Tag all top-level artifacts (files) with the current date and the text of the tag | _(none)_ |
+| `--tag` | **Required for `run` command.** Tags all top-level artifacts (files) with the current date and the text of the tag, for grouping surveys of the same systems over time | _(none)_ |
 | `--tag-json` | Add JSON to any tags | _(none)_ |
 | `--log-level` | `all\|trace\|debug\|info\|warn\|error\|fatal\|off` | `info` |
 | `--log-file` | Path to log file (output will be appended to both console and file) | _(none)_ |
@@ -86,7 +86,7 @@ spice \
 | `--ginger-args` | Additional Ginger builder args in `key=value` format (e.g. `--ginger-args="--skip-key,--encrypt-only"`) | _(none)_ |
 | `--goat-rodeo-args` | Additional GoatRodeo builder args in `key=value` format (e.g. `--goat-rodeo-args="blockList=ignored,tempDir=/tmp"`) | _(none)_ |
 
-Default command is `run`, which surveys and uploads in one step.
+Default command is `run`, which surveys and uploads in one step. Note that `--tag` is required when using the `run` command.
 
 > **Note:** `--log-file` is handled by the wrapper script. ANSI color codes are automatically stripped from file output.
 
