@@ -31,8 +31,19 @@ $normalizedTarget = if ($IsWindows) { $TargetDir } else { $TargetDir -replace "\
 if (-not ($env:PATH -split $pathDelimiter | Where-Object { $_ -eq $normalizedTarget })) {
     Write-Host "⚠️  $normalizedTarget is not in your PATH. Add it to your user environment variables:"
     Write-Host "    $normalizedTarget"
+    if (-not $IsWindows) {
+        Write-Host "💡 On Linux/macOS, prepend it so spice.ps1 takes precedence over any existing spice binary:"
+        Write-Host "    `$env:PATH = `"$normalizedTarget`:`$env:PATH`""
+    }
 } else {
-    Write-Host "✅ spice installed and ready to use"
+    # Warn if a conflicting spice binary exists earlier in PATH than spice.ps1
+    $spiceCmd = Get-Command spice -ErrorAction SilentlyContinue
+    if ($spiceCmd -and $spiceCmd.Source -ne "$normalizedTarget/spice.ps1" -and $spiceCmd.Source -ne "$normalizedTarget\spice.ps1") {
+        Write-Host "⚠️  Another 'spice' binary was found at $($spiceCmd.Source) which may shadow spice.ps1."
+        Write-Host "    Ensure $normalizedTarget appears before $([System.IO.Path]::GetDirectoryName($spiceCmd.Source)) in your PATH."
+    } else {
+        Write-Host "✅ spice installed and ready to use"
+    }
 }
 
 if (-not $env:SPICE_PASS) {
