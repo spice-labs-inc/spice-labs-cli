@@ -1,5 +1,10 @@
 # To install : `irm -UseBasicParsing -Uri https://install.spicelabs.io | iex`
 
+# Compatibility shim for Windows PowerShell 5.1 where $IsWindows is not defined
+if (-not (Test-Path variable:IsWindows)) {
+    $IsWindows = $true
+}
+
 # Ensure USERPROFILE is set (for Linux compatibility)
 if (-not $env:USERPROFILE) {
     $env:USERPROFILE = $env:HOME
@@ -21,7 +26,7 @@ Set-Content -Path $ShimPath -Value "@echo off`npowershell -ExecutionPolicy Bypas
 # Add to PATH if not present
 # On Linux/macOS the PATH delimiter is ":" and paths use "/", on Windows it is ";" and "\"
 $pathDelimiter = if ($IsWindows) { ";" } else { ":" }
-$normalizedTarget = $TargetDir -replace "\\", "/"
+$normalizedTarget = if ($IsWindows) { $TargetDir } else { $TargetDir -replace "\\", "/" }
 
 if (-not ($env:PATH -split $pathDelimiter | Where-Object { $_ -eq $normalizedTarget })) {
     Write-Host "⚠️  $normalizedTarget is not in your PATH. Add it to your user environment variables:"
