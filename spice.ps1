@@ -207,6 +207,12 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     }
   }
 
+  # Trim SPICE_PASS to remove any invisible characters (e.g. CRLF, BOM, trailing
+  # whitespace) that Windows may introduce when the value is stored via the
+  # Environment Variables GUI or registry. These are invisible in the UI but
+  # corrupt the Authorization header sent to the upload server.
+  $spicePass = if ($env:SPICE_PASS) { $env:SPICE_PASS.Trim() } else { "" }
+
   $envArgs = @()
   if ($env:SPICE_LABS_JVM_ARGS) {
     $envArgs += "-e"
@@ -230,7 +236,7 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     @dockerFlags `
     --network host `
     @volumes `
-    -e SPICE_PASS `
+    -e "SPICE_PASS=$spicePass" `
     @envArgs `
     "${img}:${tag}" `
     @modifiedArgs
