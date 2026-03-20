@@ -19,9 +19,13 @@ $ShimPath = "$TargetDir\spice.cmd"
 Set-Content -Path $ShimPath -Value "@echo off`npowershell -ExecutionPolicy Bypass -File `"$ScriptPath`" %*"
 
 # Add to PATH if not present
-if (-not ($env:PATH -split ";" | Where-Object { $_ -eq $TargetDir })) {
-    Write-Host "⚠️  $TargetDir is not in your PATH. Add it to your user environment variables:"
-    Write-Host "    $env:USERPROFILE\.spice\bin"
+# On Linux/macOS the PATH delimiter is ":" and paths use "/", on Windows it is ";" and "\"
+$pathDelimiter = if ($IsWindows) { ";" } else { ":" }
+$normalizedTarget = $TargetDir -replace "\\", "/"
+
+if (-not ($env:PATH -split $pathDelimiter | Where-Object { $_ -eq $normalizedTarget })) {
+    Write-Host "⚠️  $normalizedTarget is not in your PATH. Add it to your user environment variables:"
+    Write-Host "    $normalizedTarget"
 } else {
     Write-Host "✅ spice installed and ready to use"
 }
@@ -35,3 +39,4 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Host "⚠️  Docker is not installed or not in PATH. The spice CLI uses Docker unless JVM mode is enabled."
     Write-Host "  → Install Docker from https://docs.docker.com/get-docker/"
 }
+
