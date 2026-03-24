@@ -26,6 +26,7 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -90,6 +91,9 @@ public class SpiceLabsCLI implements Callable<Integer> {
   @Option(names = "--tag-json", description = "Add JSON to any tags")
   String tagJson;
 
+  @Option(names = "--chunk-size", description = "Target chunk size in MB for uploads (default: 64)")
+  Integer chunkSizeMB;
+
   @Option(
       names = "--goat-rodeo-args",
       description = "Additional GoatRodeo builder args in key=value format (e.g. --goat-rodeo-args=\"blockList=ignored,tempDir=/tmp\")",
@@ -140,6 +144,11 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   public SpiceLabsCLI tag(String tag) {
     this.tag = tag;
+    return this;
+  }
+
+  public SpiceLabsCLI chunkSizeMB(Integer chunkSize) {
+    this.chunkSizeMB = chunkSize;
     return this;
   }
   
@@ -392,10 +401,18 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
   private void doUploadAdgs(Optional<Path> gingerInputDir) throws Exception {
     log.info("📦 Uploading ADGs...");
+    
+    // Prepare ginger arguments with chunk size if specified
+    Map<String, String> gingerArgsMap = new HashMap<>(gingerArgs);
+    if (chunkSizeMB != null && chunkSizeMB > 0) {
+      gingerArgsMap.put("--target-chunk-size", chunkSizeMB.toString());
+      log.info("Using target chunk size: {}MB", chunkSizeMB);
+    }
+    
     Ginger ginger = Ginger.builder()
         .jwt(spicePass)
         .adgDir(gingerInputDir.orElse(input))
-        .extraArgs(gingerArgs);
+        .extraArgs(gingerArgsMap);
 
     if (output != null)
       ginger.outputDir(output);
