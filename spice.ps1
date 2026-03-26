@@ -131,8 +131,6 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
   foreach ($arg in $args) {
     if ($arg -match "^--input=(.*)") {
       $inputDir = $matches[1]
-      $modifiedArgs += "--input"
-      $modifiedArgs += "/mnt/input"
     } elseif ($arg -match "^--output=(.*)") {
       $outputDir = $matches[1]
       $modifiedArgs += "--output"
@@ -141,7 +139,6 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
       continue
     } elseif ($prev -eq "--input") {
       $inputDir = $arg
-      $modifiedArgs += "/mnt/input"
       $prev = ""
     } elseif ($prev -eq "--output") {
       $outputDir = $arg
@@ -150,7 +147,9 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     } elseif ($prev -eq "--log-file") {
       $prev = ""
       continue
-    } elseif ($arg -eq "--input" -or $arg -eq "--output") {
+    } elseif ($arg -eq "--input") {
+      $prev = $arg
+    } elseif ($arg -eq "--output") {
       $modifiedArgs += $arg
       $prev = $arg
     } elseif ($arg -eq "--log-file") {
@@ -168,16 +167,27 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
 
   if (-not $inputDir) {
     $inputDir = "."
-    $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
   }
 
   if ($outputDir -and -not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
   }
 
+  # Resolve input path and determine volume mount strategy
+  $absIn = Get-AbsolutePath $inputDir
   $volumes = @()
-  $absIn = Convert-ToDockerPath (Get-AbsolutePath $inputDir)
-  $volumes += "-v"; $volumes += "${absIn}:/mnt/input"
+  if (Test-Path -LiteralPath $absIn -PathType Leaf) {
+    # Single file: mount parent directory, pass file path inside container
+    $parentDir = Convert-ToDockerPath (Split-Path -Parent $absIn)
+    $fileName = Split-Path -Leaf $absIn
+    $volumes += "-v"; $volumes += "${parentDir}:/mnt/input"
+    $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input/$fileName"
+  } else {
+    # Directory (or default): mount directly
+    $dockerIn = Convert-ToDockerPath $absIn
+    $volumes += "-v"; $volumes += "${dockerIn}:/mnt/input"
+    $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
+  }
 
   if ($outputDir) {
     $absOut = Convert-ToDockerPath (Get-AbsolutePath $outputDir)

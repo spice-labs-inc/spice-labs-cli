@@ -366,14 +366,32 @@ public class SpiceLabsCLI implements Callable<Integer> {
     Path tmpDir = output.resolve("tmp");
     Files.createDirectories(surveyOutput);
     Files.createDirectories(tmpDir);
+
+    // If input is a single file, wrap it in a temp directory with a hard link.
+    // GoatRodeo expects a directory as the build root.
+    Path payloadDir = input;
+    Path singleFileDir = null;
     
     try {
+      if (Files.isRegularFile(input)) {
+        log.info("Single file input detected: {}", input.getFileName());
+        singleFileDir = Files.createTempDirectory(input.toAbsolutePath().getParent(), "spice-single-file-");
+        Path target = singleFileDir.resolve(input.getFileName());
+        try {
+          Files.createLink(target, input.toAbsolutePath());
+        } catch (Exception e) {
+          log.debug("Hard link failed ({}), falling back to copy", e.getMessage());
+          Files.copy(input, target);
+        }
+        payloadDir = singleFileDir;
+      }
+
       String level = (logLevel == null) ? "INFO" : logLevel.toUpperCase();
       System.setProperty("scala.logging.level", level);
       System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", level);
 
       GoatRodeoBuilder builder = GoatRodeo.builder()
-          .withPayload(input.toString())
+          .withPayload(payloadDir.toString())
           .withOutput(surveyOutput.toString())
           .withThreads(threads)
           .withMaxRecords(maxRecords)
@@ -389,6 +407,9 @@ public class SpiceLabsCLI implements Callable<Integer> {
 
       builder.run();
     } finally {
+      if (singleFileDir != null) {
+        deleteRecursively(singleFileDir);
+      }
       if (originalScalaLevel != null) {
         System.setProperty("scala.logging.level", originalScalaLevel);
       }
