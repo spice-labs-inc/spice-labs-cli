@@ -107,7 +107,6 @@ else
   for arg in "$@"; do
     if [[ "$arg" == --input=* ]]; then
       INPUT_DIR="${arg#--input=}"
-      MODIFIED_ARGS+=("--input" "/mnt/input")
     elif [[ "$arg" == --output=* ]]; then
       OUTPUT_DIR="${arg#--output=}"
       MODIFIED_ARGS+=("--output" "/mnt/output")
@@ -116,7 +115,6 @@ else
       continue
     elif [[ "$prev" == "--input" ]]; then
       INPUT_DIR="$arg"
-      MODIFIED_ARGS+=("/mnt/input")
       prev=""
     elif [[ "$prev" == "--output" ]]; then
       OUTPUT_DIR="$arg"
@@ -126,7 +124,9 @@ else
       # Skip the value, already handled at top level
       prev=""
       continue
-    elif [[ "$arg" == "--input" || "$arg" == "--output" ]]; then
+    elif [[ "$arg" == "--input" ]]; then
+      prev="$arg"
+    elif [[ "$arg" == "--output" ]]; then
       MODIFIED_ARGS+=("$arg")
       prev="$arg"
     elif [[ "$arg" == "--log-file" ]]; then
@@ -143,6 +143,17 @@ else
 
   if [ -z "$INPUT_DIR" ]; then
     INPUT_DIR="."
+  fi
+
+  # Resolve input path and determine volume mount strategy
+  INPUT_HOST_PATH="$(abs_path "$INPUT_DIR")"
+  if [ -f "$INPUT_HOST_PATH" ]; then
+    # Single file: mount parent directory, pass file path inside container
+    VOLUMES=("-v" "$(dirname "$INPUT_HOST_PATH"):/mnt/input")
+    MODIFIED_ARGS+=("--input" "/mnt/input/$(basename "$INPUT_HOST_PATH")")
+  else
+    # Directory (or default): mount directly
+    VOLUMES=("-v" "${INPUT_HOST_PATH}:/mnt/input")
     MODIFIED_ARGS+=("--input" "/mnt/input")
   fi
 
@@ -150,7 +161,6 @@ else
     mkdir -p "$OUTPUT_DIR"
   fi
 
-  VOLUMES=("-v" "$(abs_path "$INPUT_DIR"):/mnt/input")
   [ -n "$OUTPUT_DIR" ] && VOLUMES+=("-v" "$(abs_path "$OUTPUT_DIR"):/mnt/output")
 
   # Check if we're in debug/trace mode

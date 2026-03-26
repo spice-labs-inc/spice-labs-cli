@@ -43,10 +43,14 @@ The shortest valid command:
 spice --tag=<tag>
 ```
 
-With an explicit input path:
+With an explicit input path (directory or single file):
 
 ```bash
 spice --input=path/to/my-dir --tag=<tag>
+```
+
+```bash
+spice --input=path/to/my-artifact.tar --tag=<tag>
 ```
 
 `--tag` is required when using the default `run` command. It groups surveys of the same system over time.
@@ -64,7 +68,7 @@ spice --command=survey-artifacts --input=path/to/my-dir
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--command` | `run` \| `survey-artifacts` \| `upload-adgs` \| `decode-spice-pass` | `run` |
-| `--input` | Input path | current directory |
+| `--input` | Input path (directory or single file) | current directory |
 | `--output` | Output path | _(none)_ |
 | `--tag` | Tag all top-level artifacts with the current date and the given text. **Required for `run`.** | _(none)_ |
 | `--tag-json` | Add JSON to any tags | _(none)_ |

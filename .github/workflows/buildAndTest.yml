@@ -81,6 +81,20 @@ jobs:
                   </repository>
                 </repositories>
               </profile>
+
+              <profile>
+                <id>default-repos</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                  </repository>
+                </repositories>
+              </profile>
             </profiles>
 
           </settings>
