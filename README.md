@@ -1,4 +1,3 @@
-
 # 🔩 Spice Labs Surveyor CLI
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.spicelabs/spice-labs-cli?label=Maven%20Central)](https://central.sonatype.com/artifact/io.spicelabs/spice-labs-cli)
@@ -73,13 +72,14 @@ spice --command=survey-artifacts --input=path/to/my-dir
 | `--tag` | Tag all top-level artifacts with the current date and the given text. **Required for `run`.** | _(none)_ |
 | `--tag-json` | Add JSON to any tags | _(none)_ |
 | `--log-level` | `all` \| `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `off` | `info` |
-| `--log-file` | Append log output to this file (in addition to console). ANSI codes are stripped. | _(none)_ |
+| `--log-file` | Path to log file (output will be appended to both console and file) | _(none)_ |
 | `--threads` | Number of threads to use | half of available CPU cores |
 | `--max-records` | Max records to process per batch | `5000` |
+| `--chunk-size` | Target chunk size in MB for uploads | `64` |
 | `--use-static-metadata` | Augment Goat Rodeo information with other static metadata | `false` |
 | `--ci` | CI mode | `false` |
-| `--ginger-args` | Additional Ginger builder args (e.g. `--ginger-args="--skip-key,--encrypt-only"`) | _(none)_ |
-| `--goat-rodeo-args` | Additional GoatRodeo builder args (e.g. `--goat-rodeo-args="blockList=ignored,tempDir=/tmp"`) | _(none)_ |
+| `--ginger-args` | Additional Ginger builder args in key=value format (e.g. `--ginger-args="--skip-key,--encrypt-only"`) | _(none)_ |
+| `--goat-rodeo-args` | Additional GoatRodeo builder args in key=value format (e.g. `--goat-rodeo-args="blockList=ignored,tempDir=/tmp"`) | _(none)_ |
 
 ---
 
