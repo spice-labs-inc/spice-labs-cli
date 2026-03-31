@@ -107,10 +107,17 @@ public class SpicePassDecoder {
         repeat('\u2500', claimWidth - 2) + "  ",
         repeat('\u2500', 50));
 
+    String deferredPublicKey = null;
+
     for (Map.Entry<String, String> known : CLAIM_NAMES.entrySet()) {
       String key = known.getKey();
       Claim claim = allClaims.remove(key);
       if (claim == null || claim.isNull()) continue;
+
+      if (key.equals("x-public-key")) {
+        deferredPublicKey = formatClaimValue(key, claim);
+        continue;
+      }
 
       String friendlyName = known.getValue();
       String value = formatClaimValue(key, claim);
@@ -127,6 +134,15 @@ public class SpicePassDecoder {
     }
 
     log.info("");
+
+    if (deferredPublicKey != null) {
+      log.info("Public Key:");
+      for (String line : deferredPublicKey.split("\n")) {
+        log.info("  {}", line);
+      }
+      log.info("");
+    }
+
     log.info("  Status: {}", formatStatus());
   }
 
