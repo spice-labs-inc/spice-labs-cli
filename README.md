@@ -36,28 +36,32 @@ After installation, add `spice` to your PATH as instructed by the installer.
 
 ## 🔧 Usage
 
-The shortest valid command:
+Survey and upload (the default flow):
 
 ```bash
-spice --tag=<tag>
+spice survey inventory <subject> <input>
 ```
 
-With an explicit input path (directory or single file):
+- **`subject`** — label identifying the system being surveyed (shown on the dashboard)
+- **`input`** — path to artifacts (directory or single file)
+
+### Examples
 
 ```bash
-spice --input=path/to/my-dir --tag=<tag>
-```
+# Survey a directory and upload
+spice survey inventory my-app ./build/output
 
-```bash
-spice --input=path/to/my-artifact.tar --tag=<tag>
-```
+# Survey a single artifact
+spice survey inventory my-app ./artifacts/my-app.tar
 
-`--tag` is required when using the default `run` command. It groups surveys of the same system over time.
+# Survey only, skip upload
+spice survey inventory my-app ./build/output --no-upload
 
-The default command is `run` (survey + upload). Use `--command` only when running something other than `run`:
+# Upload previously-generated ADGs
+spice survey inventory my-app ./adg-output --upload-only
 
-```bash
-spice --command=survey-artifacts --input=path/to/my-dir
+# Decode your Spice Pass
+spice pass decode
 ```
 
 ---
@@ -66,20 +70,19 @@ spice --command=survey-artifacts --input=path/to/my-dir
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--command` | `run` \| `survey-artifacts` \| `upload-adgs` \| `decode-spice-pass` | `run` |
-| `--input` | Input path (directory or single file) | current directory |
-| `--output` | Output path | _(none)_ |
-| `--tag` | Tag all top-level artifacts with the current date and the given text. **Required for `run`.** | _(none)_ |
-| `--tag-json` | Add JSON to any tags | _(none)_ |
-| `--log-level` | `all` \| `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `off` | `info` |
-| `--log-file` | Path to log file (output will be appended to both console and file) | _(none)_ |
+| `--no-upload` | Survey only, skip upload | `false` |
+| `--upload-only` | Upload previously-generated ADGs (skip survey) | `false` |
+| `--output` | Output directory for survey results | `~/.spicelabs/surveyor/` |
+| `--tag-json` | Additional JSON metadata for tags | _(none)_ |
+| `--log-level` | `debug` \| `info` \| `warn` \| `error` | `info` |
+| `--log-file` | Path to log file (output appended to both console and file) | _(none)_ |
 | `--threads` | Number of threads to use | half of available CPU cores |
 | `--max-records` | Max records to process per batch | `5000` |
 | `--chunk-size` | Target chunk size in MB for uploads | `64` |
-| `--use-static-metadata` | Augment Goat Rodeo information with other static metadata | `false` |
-| `--ci` | CI mode | `false` |
-| `--ginger-args` | Additional Ginger builder args in key=value format (e.g. `--ginger-args="--skip-key,--encrypt-only"`) | _(none)_ |
-| `--goat-rodeo-args` | Additional GoatRodeo builder args in key=value format (e.g. `--goat-rodeo-args="blockList=ignored,tempDir=/tmp"`) | _(none)_ |
+| `--goat-rodeo-args` | Additional GoatRodeo args in key=value format | _(none)_ |
+| `--ginger-args` | Additional Ginger args in key=value format | _(none)_ |
+
+Flags can appear anywhere in the command line.
 
 ---
 
@@ -95,9 +98,7 @@ docker run --rm \
   -v "$PWD/input:/mnt/input" \
   -v "$PWD/output:/mnt/output" \
   spicelabs/spice-labs-cli \
-  --input=/mnt/input \
-  --output=/mnt/output \
-  --tag=<tag>
+  survey inventory my-app /mnt/input --output=/mnt/output
 ```
 
 ### Upload only
@@ -107,13 +108,12 @@ docker run --rm \
   --user $(id -u):$(id -g) \
   --network host \
   -e SPICE_PASS=... \
-  -v "$PWD/output:/mnt/input" \
+  -v "$PWD/adgs:/mnt/input" \
   spicelabs/spice-labs-cli \
-  --command=upload-adgs \
-  --input=/mnt/input
+  survey inventory my-app /mnt/input --upload-only
 ```
 
-The wrapper script automatically remaps `--input` and `--output` host paths to `/mnt/input` and `/mnt/output` inside the container.
+The wrapper script automatically remaps `input` and `--output` host paths to `/mnt/input` and `/mnt/output` inside the container.
 
 ---
 
@@ -121,7 +121,7 @@ The wrapper script automatically remaps `--input` and `--output` host paths to `
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SPICE_PASS` | **Required** for `upload-*` commands. JWT token for Spice Labs auth. | _(none)_ |
+| `SPICE_PASS` | **Required** for upload. JWT token for Spice Labs auth. | _(none)_ |
 | `SPICE_LABS_CLI_USE_JVM` | Use the local JVM instead of Docker (`1` = enable) | `0` |
 | `SPICE_LABS_CLI_JAR` | Path to the CLI JAR when using JVM mode | `/opt/spice-labs-cli/spice-labs-cli.jar` |
 | `SPICE_LABS_JVM_ARGS` | Custom JVM flags (e.g. `-Xmx512m -XX:+UseG1GC`) | `-XX:MaxRAMPercentage=75` |
@@ -155,27 +155,28 @@ Requirements: JDK 21+, Maven 3.6+
 ```bash
 git clone https://github.com/spice-labs-inc/spice-labs-cli.git
 cd spice-labs-cli
-mvn clean install
+mvn clean package -DskipTests
 ```
 
-Run the built JAR:
+Run with Docker:
+
+```bash
+docker build -t spicelabs/spice-labs-cli:local .
+SPICE_IMAGE_TAG=local SPICE_LABS_CLI_SKIP_PULL=1 ./spice survey inventory my-app ./path --no-upload
+```
+
+Run with JVM directly:
 
 ```bash
 java -jar target/spice-labs-cli-*-fat.jar --version
-```
-
-Or with Maven:
-
-```bash
-mvn exec:java -Dexec.mainClass="io.spicelabs.cli.SpiceLabsCLI" \
-  -Dexec.args="--command=run --input=./my-dir --output=./out-dir --log-level=all"
+java -jar target/spice-labs-cli-*-fat.jar survey inventory my-app ./path --no-upload
 ```
 
 ---
 
 ## 🚀 Releasing
 
-1. Create a GitHub Release with a tag such as `v0.2.0`. This triggers CI to build the JAR, publish to GitHub Packages and Maven Central, and push the Docker image.
+1. Create a GitHub Release with a tag such as `v2.0.0`. This triggers CI to build the JAR, publish to GitHub Packages and Maven Central, and push the Docker image.
 2. Verify the release on [Maven Central](https://central.sonatype.com) (propagation takes ~40 minutes).
 
 ---
@@ -184,7 +185,7 @@ mvn exec:java -Dexec.mainClass="io.spicelabs.cli.SpiceLabsCLI" \
 
 - [`goatrodeo`](https://github.com/spice-labs-inc/goatrodeo) — ADG surveyor
 - [`ginger-j`](https://github.com/spice-labs-inc/ginger-j) — secure uploader
-- [`spice-labs-cli`](https://github.com/spice-labs-inc/spice-labs-cli) — this repository
+- [`action-spice-labs-surveyor`](https://github.com/spice-labs-inc/action-spice-labs-surveyor) — GitHub Action
 
 Maintained by [Spice Labs](https://github.com/spice-labs-inc).
 
