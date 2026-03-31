@@ -141,7 +141,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Spice Labs Surveyor
-        uses: spice-labs-inc/action-spice-labs-surveyor@v2
+        uses: spice-labs-inc/action-spice-labs-surveyor@v5
 ```
 
 See the [Spice Labs Surveyor GitHub Action](https://github.com/spice-labs-inc/action-spice-labs-surveyor) for full configuration options.
