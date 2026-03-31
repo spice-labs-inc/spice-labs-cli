@@ -1,38 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Early parse for --log-file to capture all output
+# ── Log file tee (must be first) ─────────────────────────────────────────────
+
 LOG_FILE=""
 for arg in "$@"; do
-  if [[ "$arg" == --log-file=* ]]; then
-    LOG_FILE="${arg#--log-file=}"
-    break
-  fi
+  [[ "$arg" == --log-file=* ]] && LOG_FILE="${arg#--log-file=}" && break
 done
-
-# Check for --log-file as separate argument
-prev=""
 if [ -z "$LOG_FILE" ]; then
+  prev=""
   for arg in "$@"; do
-    if [[ "$prev" == "--log-file" ]]; then
-      LOG_FILE="$arg"
-      break
-    fi
+    [[ "$prev" == "--log-file" ]] && LOG_FILE="$arg" && break
     prev="$arg"
   done
 fi
-
-# Set up logging to both console and file (with ANSI codes stripped for file)
 if [ -n "$LOG_FILE" ]; then
   exec > >(tee >(sed -u 's/\x1b\[[0-9;]*[a-zA-Z]//g' >> "$LOG_FILE"))
   exec 2>&1
 fi
 
+# ── Script update check ─────────────────────────────────────────────────────
+
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 LOCAL_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
 
 REMOTE_HASH=$(
-  curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest \
+  curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null \
     | awk '
       BEGIN { found_spice = 0 }
       /"name":[[:space:]]*"spice"/ { found_spice = 1 }
@@ -49,9 +42,8 @@ if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
   echo "    curl -sSfL https://install.spicelabs.io | bash"
 fi
 
-SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
-# portable abs path function
 abs_path() {
   local path="$1"
   [[ "$path" == ~* ]] && path="${path/#\~/$HOME}"
@@ -62,141 +54,173 @@ abs_path() {
   fi
 }
 
+# Known subcommand tokens (not paths)
+is_subcommand() {
+  case "$1" in
+    survey|inventory|static|runtime|pass|decode) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Flags that consume the next arg as a value
+is_value_flag() {
+  case "$1" in
+    --output|--threads|--max-records|--chunk-size|--log-level|--log-file|--tag-json|--goat-rodeo-args|--ginger-args) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
+IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
+TAG="${SPICE_IMAGE_TAG:-latest}"
+
+# ── JVM mode (no Docker, no path rewriting) ──────────────────────────────────
+
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
   [ -f "$SPICE_LABS_CLI_JAR" ] || { echo "Missing: $SPICE_LABS_CLI_JAR"; exit 1; }
   JVM_ARGS="${SPICE_LABS_JVM_ARGS:--XX:MaxRAMPercentage=75}"
-
-  # Parse arguments to filter out --log-file
-  FILTERED_ARGS=()
+  # Strip --log-file (handled at shell level)
+  FILTERED=()
   prev=""
   for arg in "$@"; do
-    if [[ "$arg" == --log-file=* ]]; then
-      # Skip, already handled at top level
-      continue
-    elif [[ "$prev" == "--log-file" ]]; then
-      # Skip the value, already handled at top level
-      prev=""
-      continue
-    elif [[ "$arg" == "--log-file" ]]; then
-      prev="$arg"
-      continue
-    else
-      FILTERED_ARGS+=("$arg")
-      prev=""
-    fi
+    if [[ "$arg" == --log-file=* ]]; then continue
+    elif [[ "$prev" == "--log-file" ]]; then prev=""; continue
+    elif [[ "$arg" == "--log-file" ]]; then prev="$arg"; continue
+    else FILTERED+=("$arg"); prev=""; fi
   done
-
   # shellcheck disable=SC2086
-  exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" "${FILTERED_ARGS[@]}"
-else
-  # Check if docker is installed
-  if ! command -v docker &> /dev/null; then
-    echo "❌ Docker is not installed or not in PATH"
-    echo "   Please install Docker: https://docs.docker.com/get-docker/"
-    exit 1
-  fi
-
-  IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
-  TAG="${SPICE_IMAGE_TAG:-latest}"
-
-  INPUT_DIR=""
-  OUTPUT_DIR=""
-  MODIFIED_ARGS=()
-
-  prev=""
-  for arg in "$@"; do
-    if [[ "$arg" == --input=* ]]; then
-      INPUT_DIR="${arg#--input=}"
-    elif [[ "$arg" == --output=* ]]; then
-      OUTPUT_DIR="${arg#--output=}"
-      MODIFIED_ARGS+=("--output" "/mnt/output")
-    elif [[ "$arg" == --log-file=* ]]; then
-      # Skip, already handled at top level
-      continue
-    elif [[ "$prev" == "--input" ]]; then
-      INPUT_DIR="$arg"
-      prev=""
-    elif [[ "$prev" == "--output" ]]; then
-      OUTPUT_DIR="$arg"
-      MODIFIED_ARGS+=("/mnt/output")
-      prev=""
-    elif [[ "$prev" == "--log-file" ]]; then
-      # Skip the value, already handled at top level
-      prev=""
-      continue
-    elif [[ "$arg" == "--input" ]]; then
-      prev="$arg"
-    elif [[ "$arg" == "--output" ]]; then
-      MODIFIED_ARGS+=("$arg")
-      prev="$arg"
-    elif [[ "$arg" == "--log-file" ]]; then
-      prev="$arg"
-      continue
-    else
-      if [[ "$arg" == -V ]]; then
-        echo "script version ${LOCAL_HASH}"
-      fi
-      MODIFIED_ARGS+=("$arg")
-      prev=""
-    fi
-  done
-
-  if [ -z "$INPUT_DIR" ]; then
-    INPUT_DIR="."
-  fi
-
-  # Resolve input path and determine volume mount strategy
-  INPUT_HOST_PATH="$(abs_path "$INPUT_DIR")"
-  if [ -f "$INPUT_HOST_PATH" ]; then
-    # Single file: mount parent directory, pass file path inside container
-    VOLUMES=("-v" "$(dirname "$INPUT_HOST_PATH"):/mnt/input")
-    MODIFIED_ARGS+=("--input" "/mnt/input/$(basename "$INPUT_HOST_PATH")")
-  else
-    # Directory (or default): mount directly
-    VOLUMES=("-v" "${INPUT_HOST_PATH}:/mnt/input")
-    MODIFIED_ARGS+=("--input" "/mnt/input")
-  fi
-
-  if [ -n "$OUTPUT_DIR" ] && [ ! -d "$OUTPUT_DIR" ]; then
-    mkdir -p "$OUTPUT_DIR"
-  fi
-
-  [ -n "$OUTPUT_DIR" ] && VOLUMES+=("-v" "$(abs_path "$OUTPUT_DIR"):/mnt/output")
-
-  # Check if we're in debug/trace mode
-  DEBUG_MODE=0
-  for arg in "$@"; do
-    arg_lower=$(echo "$arg" | tr '[:upper:]' '[:lower:]')
-    if [[ "$arg_lower" == --log-level=debug || "$arg_lower" == --log-level=trace || "$arg_lower" == --log-level=all ]]; then
-      DEBUG_MODE=1
-      break
-    fi
-  done
-
-  if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
-    if [ "$DEBUG_MODE" = "1" ]; then
-      echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
-      docker pull "${IMAGE}:${TAG}" || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
-    else
-      echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
-      docker pull --quiet "${IMAGE}:${TAG}" > /dev/null 2>&1 || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
-    fi
-  fi
-
-  # Use --pull=never if skip pull is set, otherwise use default pull behavior
-  PULL_FLAG=""
-  if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" = "1" ]; then
-    PULL_FLAG="--pull=never"
-  fi
-
-  exec docker run --rm \
-    --user $(id -u):$(id -g) \
-    --network host \
-    ${PULL_FLAG:+$PULL_FLAG} \
-    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
-    ${VOLUMES+"${VOLUMES[@]}"} \
-    -e SPICE_PASS \
-    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "${IMAGE}:${TAG}" \
-    "${MODIFIED_ARGS[@]}"
+  exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" "${FILTERED[@]}"
 fi
+
+# ── Docker checks ────────────────────────────────────────────────────────────
+
+if ! command -v docker &> /dev/null; then
+  echo "❌ Docker is not installed or not in PATH"
+  echo "   Please install Docker: https://docs.docker.com/get-docker/"
+  exit 1
+fi
+
+DEBUG_MODE=0
+for arg in "$@"; do
+  arg_lower=$(echo "$arg" | tr '[:upper:]' '[:lower:]')
+  [[ "$arg_lower" == --log-level=debug || "$arg_lower" == --log-level=trace || "$arg_lower" == --log-level=all ]] && DEBUG_MODE=1 && break
+done
+
+PULL_FLAG=""
+if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" = "1" ]; then
+  PULL_FLAG="--pull=never"
+elif [ "$DEBUG_MODE" = "1" ]; then
+  echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
+  docker pull "${IMAGE}:${TAG}" || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+else
+  echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
+  docker pull --quiet "${IMAGE}:${TAG}" > /dev/null 2>&1 || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+fi
+
+for arg in "$@"; do
+  [[ "$arg" == "-V" || "$arg" == "--version" ]] && echo "script version ${LOCAL_HASH}" && break
+done
+
+# ── Find paths in args and build docker command ──────────────────────────────
+#
+# Walk the args to find:
+#   - The input path: second positional arg (first is subject)
+#   - The --output value: named flag
+# Everything else passes through, with paths rewritten to container mounts.
+
+INPUT_PATH=""
+OUTPUT_PATH=""
+POSITIONAL_INDEX=0
+DOCKER_ARGS=()
+VOLUMES=()
+
+prev=""
+for arg in "$@"; do
+  # Strip --log-file (handled at shell level)
+  if [[ "$arg" == --log-file=* ]]; then continue
+  elif [[ "$prev" == "--log-file" ]]; then prev=""; continue
+  elif [[ "$arg" == "--log-file" ]]; then prev="$arg"; continue; fi
+
+  # Capture --output value
+  if [[ "$arg" == --output=* ]]; then
+    OUTPUT_PATH="${arg#--output=}"
+    prev=""
+    continue  # will re-add after resolving
+  elif [[ "$prev" == "--output" ]]; then
+    OUTPUT_PATH="$arg"
+    prev=""
+    continue  # will re-add after resolving
+  elif [[ "$arg" == "--output" ]]; then
+    prev="$arg"
+    continue
+  fi
+
+  # Handle other value-consuming flags
+  if [ -n "$prev" ]; then
+    DOCKER_ARGS+=("$prev" "$arg")
+    prev=""
+    continue
+  fi
+
+  if [[ "$arg" == -* ]]; then
+    if is_value_flag "$arg"; then
+      prev="$arg"
+    else
+      DOCKER_ARGS+=("$arg")
+    fi
+    continue
+  fi
+
+  # It's a positional arg
+  if is_subcommand "$arg"; then
+    DOCKER_ARGS+=("$arg")
+  else
+    POSITIONAL_INDEX=$((POSITIONAL_INDEX + 1))
+    if [ "$POSITIONAL_INDEX" -eq 1 ]; then
+      # Subject — pass through
+      DOCKER_ARGS+=("$arg")
+    elif [ "$POSITIONAL_INDEX" -eq 2 ]; then
+      # Input path — capture for volume mount
+      INPUT_PATH="$arg"
+    else
+      DOCKER_ARGS+=("$arg")
+    fi
+  fi
+done
+# Flush any trailing flag
+[ -n "$prev" ] && DOCKER_ARGS+=("$prev")
+
+# ── Resolve input path ───────────────────────────────────────────────────────
+
+if [ -n "$INPUT_PATH" ]; then
+  HOST_INPUT="$(abs_path "$INPUT_PATH")"
+  if [ -f "$HOST_INPUT" ]; then
+    VOLUMES+=("-v" "$(dirname "$HOST_INPUT"):/mnt/input")
+    DOCKER_ARGS+=("/mnt/input/$(basename "$HOST_INPUT")")
+  else
+    VOLUMES+=("-v" "${HOST_INPUT}:/mnt/input")
+    DOCKER_ARGS+=("/mnt/input")
+  fi
+fi
+
+# ── Resolve output path ─────────────────────────────────────────────────────
+
+if [ -n "$OUTPUT_PATH" ]; then
+  [ ! -d "$OUTPUT_PATH" ] && mkdir -p "$OUTPUT_PATH"
+  HOST_OUTPUT="$(abs_path "$OUTPUT_PATH")"
+  VOLUMES+=("-v" "${HOST_OUTPUT}:/mnt/output")
+  DOCKER_ARGS+=("--output" "/mnt/output")
+fi
+
+# ── Run ──────────────────────────────────────────────────────────────────────
+
+exec docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  --network host \
+  ${PULL_FLAG:+$PULL_FLAG} \
+  ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
+  ${VOLUMES+"${VOLUMES[@]}"} \
+  -e SPICE_PASS \
+  ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
+  "${IMAGE}:${TAG}" \
+  "${DOCKER_ARGS[@]}"

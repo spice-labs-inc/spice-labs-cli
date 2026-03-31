@@ -1,253 +1,212 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = 'Stop'
 
-# Compatibility shim for Windows PowerShell 5.1
-if (-not (Test-Path variable:IsWindows)) {
-  $IsWindows = $true
-}
+if (-not (Test-Path variable:IsWindows)) { $IsWindows = $true }
+
+# ── Log file tee (must be first) ─────────────────────────────────────────────
 
 $logFile = ""
 for ($i = 0; $i -lt $args.Count; $i++) {
-  if ($args[$i] -match "^--log-file=(.*)") {
-    $logFile = $matches[1]
-    break
-  } elseif ($args[$i] -eq "--log-file" -and $i + 1 -lt $args.Count) {
-    $logFile = $args[$i + 1]
-    break
-  }
+  if ($args[$i] -match "^--log-file=(.*)") { $logFile = $matches[1]; break }
+  elseif ($args[$i] -eq "--log-file" -and $i + 1 -lt $args.Count) { $logFile = $args[$i + 1]; break }
 }
 
 if ($logFile -and -not $env:__SPICE_LOGGING_ACTIVE) {
   $env:__SPICE_LOGGING_ACTIVE = "1"
-
-  $filteredArgs = @()
-  $prev = ""
+  $filteredArgs = @(); $prev = ""
   foreach ($arg in $args) {
-    if ($arg -match "^--log-file=") {
-      continue
-    } elseif ($prev -eq "--log-file") {
-      $prev = ""
-      continue
-    } elseif ($arg -eq "--log-file") {
-      $prev = $arg
-      continue
-    } else {
-      $filteredArgs += $arg
-      $prev = ""
-    }
+    if ($arg -match "^--log-file=") { continue }
+    elseif ($prev -eq "--log-file") { $prev = ""; continue }
+    elseif ($arg -eq "--log-file") { $prev = $arg; continue }
+    else { $filteredArgs += $arg; $prev = "" }
   }
-
   & $PSCommandPath @filteredArgs 2>&1 | ForEach-Object {
-    $line = "$_"
-    Write-Output $line
-    $cleaned = $line -replace '\x1b\[[0-9;]*[a-zA-Z]', ''
-    Add-Content -Path $logFile -Value $cleaned
+    $line = "$_"; Write-Output $line
+    Add-Content -Path $logFile -Value ($line -replace '\x1b\[[0-9;]*[a-zA-Z]', '')
   }
-
   exit $LASTEXITCODE
 }
+
+# ── Script update check ─────────────────────────────────────────────────────
 
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalHash = Get-FileHash -Path $ScriptPath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
 
-$ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' }
-
-$Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
-
-if ($Asset -and $Asset.digest) {
+try {
+  $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' }
+  $Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
+  if ($Asset -and $Asset.digest) {
     $RemoteHash = $Asset.digest -replace "sha256:", ""
-
     if ($LocalHash -ne $RemoteHash) {
-        Write-Host "⚠️  A newer version of this script is available. Run:"
-        Write-Host "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
+      Write-Host "⚠️  A newer version of this script is available. Run:"
+      Write-Host "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
     }
-}
+  }
+} catch {}
 
-$jar = if ($env:SPICE_LABS_CLI_JAR) { $env:SPICE_LABS_CLI_JAR } else { "/opt/spice-labs-cli/spice-labs-cli.jar" }
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 function Get-AbsolutePath($path) {
-  if ($path -eq "~") {
-    $path = $HOME
-  } elseif ($path -like "~/*") {
-    $path = Join-Path $HOME ($path -replace "^~\/")
-  }
+  if ($path -eq "~") { $path = $HOME }
+  elseif ($path -like "~/*" -or $path -like "~\*") { $path = Join-Path $HOME ($path -replace "^~[/\\]") }
   return (Resolve-Path -LiteralPath $path).ProviderPath
 }
 
 function Convert-ToDockerPath($path) {
   if ($IsWindows) {
-    if ($path -match '^([A-Za-z]):') {
-      $driveLetter = $matches[1].ToLower()
-      $path = $path -replace '^[A-Za-z]:', "/$driveLetter"
-    }
+    if ($path -match '^([A-Za-z]):') { $path = $path -replace '^[A-Za-z]:', "/$($matches[1].ToLower())" }
     return $path -replace '\\', '/'
-  } else {
-    return $path
   }
+  return $path
 }
+
+$subcommands = @('survey', 'inventory', 'static', 'runtime', 'pass', 'decode')
+
+$valueFlags = @('--output', '--threads', '--max-records', '--chunk-size',
+  '--log-level', '--log-file', '--tag-json', '--goat-rodeo-args', '--ginger-args')
+
+$jar = if ($env:SPICE_LABS_CLI_JAR) { $env:SPICE_LABS_CLI_JAR } else { "/opt/spice-labs-cli/spice-labs-cli.jar" }
+$img = if ($env:SPICE_IMAGE) { $env:SPICE_IMAGE } else { "spicelabs/spice-labs-cli" }
+$tag = if ($env:SPICE_IMAGE_TAG) { $env:SPICE_IMAGE_TAG } else { "latest" }
+
+# ── JVM mode (no Docker, no path rewriting) ──────────────────────────────────
 
 if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
-  if (-not (Test-Path $jar)) {
-    Write-Error "Missing: $jar"
-    exit 1
-  }
-
+  if (-not (Test-Path $jar)) { Write-Error "Missing: $jar"; exit 1 }
   $jvmArgs = if ($env:SPICE_LABS_JVM_ARGS) { $env:SPICE_LABS_JVM_ARGS } else { "--XX:MaxRAMPercentage=75" }
-
-  $filteredArgs = @()
-  $prev = ""
+  $filtered = @(); $prev = ""
   foreach ($arg in $args) {
-    if ($arg -match "^--log-file=") {
-      continue
-    } elseif ($prev -eq "--log-file") {
-      $prev = ""
-      continue
-    } elseif ($arg -eq "--log-file") {
-      $prev = $arg
-      continue
-    } else {
-      $filteredArgs += $arg
-      $prev = ""
-    }
+    if ($arg -match "^--log-file=") { continue }
+    elseif ($prev -eq "--log-file") { $prev = ""; continue }
+    elseif ($arg -eq "--log-file") { $prev = $arg; continue }
+    else { $filtered += $arg; $prev = "" }
   }
-
-  & java $jvmArgs -jar $jar @filteredArgs
+  & java $jvmArgs -jar $jar @filtered
   exit $LASTEXITCODE
-} else {
-  # Check if docker is installed
-  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Error "❌ Docker is not installed or not in PATH"
-    Write-Host "   Please install Docker: https://docs.docker.com/get-docker/"
-    exit 1
-  }
-
-  $img       = if ($env:SPICE_IMAGE)     { $env:SPICE_IMAGE }     else { "spicelabs/spice-labs-cli" }
-  $tag       = if ($env:SPICE_IMAGE_TAG) { $env:SPICE_IMAGE_TAG } else { "latest" }
-  $inputDir  = ""
-  $outputDir = ""
-  $modifiedArgs = @()
-  $prev = ""
-
-  foreach ($arg in $args) {
-    if ($arg -match "^--input=(.*)") {
-      $inputDir = $matches[1]
-    } elseif ($arg -match "^--output=(.*)") {
-      $outputDir = $matches[1]
-      $modifiedArgs += "--output"
-      $modifiedArgs += "/mnt/output"
-    } elseif ($arg -match "^--log-file=") {
-      continue
-    } elseif ($prev -eq "--input") {
-      $inputDir = $arg
-      $prev = ""
-    } elseif ($prev -eq "--output") {
-      $outputDir = $arg
-      $modifiedArgs += "/mnt/output"
-      $prev = ""
-    } elseif ($prev -eq "--log-file") {
-      $prev = ""
-      continue
-    } elseif ($arg -eq "--input") {
-      $prev = $arg
-    } elseif ($arg -eq "--output") {
-      $modifiedArgs += $arg
-      $prev = $arg
-    } elseif ($arg -eq "--log-file") {
-      $prev = $arg
-      continue
-    } else {
-      if ($arg -eq "-V") {
-        Write-Host "Powershell Script hash"
-        Write-Host $LocalHash
-      }
-      $modifiedArgs += $arg
-      $prev = ""
-    }
-  }
-
-  if (-not $inputDir) {
-    $inputDir = "."
-  }
-
-  if ($outputDir -and -not (Test-Path $outputDir)) {
-    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
-  }
-
-  # Resolve input path and determine volume mount strategy
-  $absIn = Get-AbsolutePath $inputDir
-  $volumes = @()
-  if (Test-Path -LiteralPath $absIn -PathType Leaf) {
-    # Single file: mount parent directory, pass file path inside container
-    $parentDir = Convert-ToDockerPath (Split-Path -Parent $absIn)
-    $fileName = Split-Path -Leaf $absIn
-    $volumes += "-v"; $volumes += "${parentDir}:/mnt/input"
-    $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input/$fileName"
-  } else {
-    # Directory (or default): mount directly
-    $dockerIn = Convert-ToDockerPath $absIn
-    $volumes += "-v"; $volumes += "${dockerIn}:/mnt/input"
-    $modifiedArgs += "--input"; $modifiedArgs += "/mnt/input"
-  }
-
-  if ($outputDir) {
-    $absOut = Convert-ToDockerPath (Get-AbsolutePath $outputDir)
-    $volumes += "-v"; $volumes += "${absOut}:/mnt/output"
-  }
-
-  # Check if we're in debug/trace mode
-  $debugMode = $false
-  foreach ($arg in $args) {
-    if ($arg -match '^--log-level=(debug|trace|all)$' -or $arg -match '^--log-level=(DEBUG|TRACE|ALL)$') {
-      $debugMode = $true
-      break
-    }
-  }
-
-  if ($env:SPICE_LABS_CLI_SKIP_PULL -ne "1") {
-    try {
-      if ($debugMode) {
-        Write-Host "📦 Checking for updates to Spice Labs Surveyor CLI..."
-        docker pull "${img}:${tag}"
-      } else {
-        Write-Host "📦 Checking for updates to Spice Labs Surveyor CLI..."
-        docker pull --quiet "${img}:${tag}" | Out-Null
-      }
-    } catch {
-      Write-Warning "⚠️  Failed to pull ${img}:${tag}, using local copy if available"
-    }
-  }
-
-  # Trim SPICE_PASS to remove any invisible characters (e.g. CRLF, BOM, trailing
-  # whitespace) that Windows may introduce when the value is stored via the
-  # Environment Variables GUI or registry. These are invisible in the UI but
-  # corrupt the Authorization header sent to the upload server.
-  $spicePass = if ($env:SPICE_PASS) { $env:SPICE_PASS.Trim() } else { "" }
-
-  $envArgs = @()
-  if ($env:SPICE_LABS_JVM_ARGS) {
-    $envArgs += "-e"
-    $envArgs += "SPICE_LABS_JVM_ARGS"
-  }
-
-  # Use --pull=never if skip pull is set, otherwise use default pull behavior
-  $pullFlag = @()
-  if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
-    $pullFlag += "--pull=never"
-  }
-
-  $dockerFlags = @()
-  if ($env:SPICE_DOCKER_FLAGS) {
-    $dockerFlags = $env:SPICE_DOCKER_FLAGS -split '\s+'
-  }
-
-  docker run `
-    --rm `
-    @pullFlag `
-    @dockerFlags `
-    --network host `
-    @volumes `
-    -e "SPICE_PASS=$spicePass" `
-    @envArgs `
-    "${img}:${tag}" `
-    @modifiedArgs
 }
+
+# ── Docker checks ────────────────────────────────────────────────────────────
+
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+  Write-Error "❌ Docker is not installed or not in PATH"
+  Write-Host "   Please install Docker: https://docs.docker.com/get-docker/"
+  exit 1
+}
+
+$debugMode = $false
+foreach ($arg in $args) {
+  if ($arg -match '(?i)^--log-level=(debug|trace|all)$') { $debugMode = $true; break }
+}
+
+$pullFlag = @()
+if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
+  $pullFlag += "--pull=never"
+} else {
+  try {
+    Write-Host "📦 Checking for updates to Spice Labs Surveyor CLI..."
+    if ($debugMode) { docker pull "${img}:${tag}" }
+    else { docker pull --quiet "${img}:${tag}" | Out-Null }
+  } catch { Write-Warning "⚠️  Failed to pull ${img}:${tag}, using local copy if available" }
+}
+
+foreach ($arg in $args) {
+  if ($arg -eq "-V" -or $arg -eq "--version") {
+    Write-Host "Powershell Script hash"
+    Write-Host $LocalHash
+    break
+  }
+}
+
+# ── Find paths in args and build docker command ──────────────────────────────
+
+$inputPath = ""
+$outputPath = ""
+$positionalIndex = 0
+$dockerArgs = @()
+$volumes = @()
+
+$prev = ""
+foreach ($arg in $args) {
+  # Strip --log-file
+  if ($arg -match "^--log-file=") { continue }
+  elseif ($prev -eq "--log-file") { $prev = ""; continue }
+  elseif ($arg -eq "--log-file") { $prev = $arg; continue }
+
+  # Capture --output value
+  if ($arg -match "^--output=(.*)$") { $outputPath = $matches[1]; $prev = ""; continue }
+  elseif ($prev -eq "--output") { $outputPath = $arg; $prev = ""; continue }
+  elseif ($arg -eq "--output") { $prev = $arg; continue }
+
+  # Handle other value-consuming flags
+  if ($prev) {
+    $dockerArgs += $prev; $dockerArgs += $arg; $prev = ""; continue
+  }
+
+  if ($arg -like "-*") {
+    if ($arg -in $valueFlags) { $prev = $arg }
+    else { $dockerArgs += $arg }
+    continue
+  }
+
+  # It's a positional arg
+  if ($arg -in $subcommands) {
+    $dockerArgs += $arg
+  } else {
+    $positionalIndex++
+    if ($positionalIndex -eq 1) {
+      # Subject — pass through
+      $dockerArgs += $arg
+    } elseif ($positionalIndex -eq 2) {
+      # Input path — capture for volume mount
+      $inputPath = $arg
+    } else {
+      $dockerArgs += $arg
+    }
+  }
+}
+if ($prev) { $dockerArgs += $prev }
+
+# ── Resolve input path ───────────────────────────────────────────────────────
+
+if ($inputPath) {
+  if (Test-Path -LiteralPath $inputPath -PathType Leaf) {
+    $hostDir = Convert-ToDockerPath (Get-AbsolutePath (Split-Path -Parent $inputPath))
+    $fileName = Split-Path -Leaf $inputPath
+    $volumes += "-v"; $volumes += "${hostDir}:/mnt/input"
+    $dockerArgs += "/mnt/input/${fileName}"
+  } else {
+    $hostDir = Convert-ToDockerPath (Get-AbsolutePath $inputPath)
+    $volumes += "-v"; $volumes += "${hostDir}:/mnt/input"
+    $dockerArgs += "/mnt/input"
+  }
+}
+
+# ── Resolve output path ─────────────────────────────────────────────────────
+
+if ($outputPath) {
+  if (-not (Test-Path $outputPath)) { New-Item -ItemType Directory -Path $outputPath -Force | Out-Null }
+  $hostDir = Convert-ToDockerPath (Get-AbsolutePath $outputPath)
+  $volumes += "-v"; $volumes += "${hostDir}:/mnt/output"
+  $dockerArgs += "--output"; $dockerArgs += "/mnt/output"
+}
+
+# ── Run ──────────────────────────────────────────────────────────────────────
+
+# Trim SPICE_PASS to remove invisible characters (e.g. CRLF, BOM, trailing
+# whitespace) that Windows may introduce via the Environment Variables GUI.
+$spicePass = if ($env:SPICE_PASS) { $env:SPICE_PASS.Trim() } else { "" }
+
+$envArgs = @()
+if ($env:SPICE_LABS_JVM_ARGS) { $envArgs += "-e"; $envArgs += "SPICE_LABS_JVM_ARGS" }
+
+$dockerFlags = @()
+if ($env:SPICE_DOCKER_FLAGS) { $dockerFlags = $env:SPICE_DOCKER_FLAGS -split '\s+' }
+
+docker run --rm `
+  @pullFlag @dockerFlags `
+  --network host `
+  @volumes `
+  -e "SPICE_PASS=$spicePass" `
+  @envArgs `
+  "${img}:${tag}" `
+  @dockerArgs
