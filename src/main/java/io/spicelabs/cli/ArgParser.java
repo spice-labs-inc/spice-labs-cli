@@ -37,7 +37,6 @@ public class ArgParser {
 
     for (int i = 0; i < raw.size(); i++) {
       String token = raw.get(i);
-      if (token == null) continue;
 
       if (token.contains("=")) {
         String[] kv = token.split("=", 2);

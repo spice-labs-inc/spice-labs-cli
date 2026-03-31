@@ -112,10 +112,10 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   public Integer call() throws Exception {
     configureLogging();
 
-    if (goatRodeoArgsRaw != null && !goatRodeoArgsRaw.isEmpty()) {
+    if (goatRodeoArgsRaw != null) {
       goatRodeoArgs = ArgParser.parseKeyValueList(goatRodeoArgsRaw);
     }
-    if (gingerArgsRaw != null && !gingerArgsRaw.isEmpty()) {
+    if (gingerArgsRaw != null) {
       gingerArgs = ArgParser.parseKeyValueList(gingerArgsRaw);
     }
 
@@ -175,13 +175,13 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
     String spicePass = resolveSpicePass();
 
-    if (!noUpload && (spicePass == null || spicePass.isBlank())) {
+    if (!noUpload && !hasSpicePass(spicePass)) {
       throw new IllegalArgumentException(
           "SPICE_PASS must be set via SPICE_PASS env var for upload. Use --no-upload to skip upload.");
     }
 
     // Log project info for upload commands
-    if (!noUpload && spicePass != null && !spicePass.isBlank()) {
+    if (!noUpload && hasSpicePass(spicePass)) {
       logProjectInfo(spicePass);
     }
 
@@ -340,21 +340,36 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     System.setProperty("scala.logging.level", levelStr);
   }
 
-  static void deleteRecursively(Path path) throws IOException {
-    if (path == null || !Files.exists(path)) return;
-    Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
-      @Override
-      public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-        Files.deleteIfExists(file);
-        return FileVisitResult.CONTINUE;
-      }
+  private static boolean hasSpicePass(String spicePass) {
+    return spicePass != null && !spicePass.isBlank();
+  }
 
-      @Override
-      public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-        if (exc != null) throw exc;
-        Files.deleteIfExists(dir);
-        return FileVisitResult.CONTINUE;
-      }
-    });
+  static void deleteRecursively(Path path) {
+    if (path == null || !Files.exists(path)) return;
+    try {
+      Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+        @Override
+        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+          try {
+            Files.deleteIfExists(file);
+          } catch (IOException e) {
+            log.warn("Failed to delete file {}: {}", file, e.getMessage());
+          }
+          return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+          try {
+            Files.deleteIfExists(dir);
+          } catch (IOException e) {
+            log.warn("Failed to delete directory {}: {}", dir, e.getMessage());
+          }
+          return FileVisitResult.CONTINUE;
+        }
+      });
+    } catch (IOException e) {
+      log.warn("Failed to clean up {}: {}", path, e.getMessage());
+    }
   }
 }
