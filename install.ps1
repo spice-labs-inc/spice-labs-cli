@@ -11,13 +11,22 @@ if (-not $env:USERPROFILE) {
 }
 
 $TargetDir = "$env:USERPROFILE\.spice\bin"
+$CompletionDir = "$env:USERPROFILE\.spice\completions"
 $ScriptUrl = "https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice.ps1"
+$CompletionUrl = "https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice-completion.ps1"
 $ScriptPath = "$TargetDir\spice.ps1"
+$CompletionPath = "$CompletionDir\spice-completion.ps1"
 
 Write-Host "📦 Installing spice.ps1 to $TargetDir"
 
 New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
+New-Item -ItemType Directory -Force -Path $CompletionDir | Out-Null
 Invoke-WebRequest -Uri $ScriptUrl -OutFile $ScriptPath
+try {
+    Invoke-WebRequest -Uri $CompletionUrl -OutFile $CompletionPath
+} catch {
+    Write-Warning "Could not download tab completion script (non-fatal)"
+}
 
 # Optionally create a shim
 $ShimPath = "$TargetDir\spice.cmd"
@@ -44,6 +53,23 @@ if (-not ($env:PATH -split $pathDelimiter | Where-Object { $_ -eq $normalizedTar
     } else {
         Write-Host "✅ spice installed and ready to use"
     }
+}
+
+# ── Tab completion ───────────────────────────────────────────────────────────
+
+$SourceLine = ". `"$CompletionPath`""
+$ProfilePath = $PROFILE.CurrentUserAllHosts
+if (Test-Path $CompletionPath) {
+    $profileDir = Split-Path $ProfilePath -Parent
+    if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Force -Path $profileDir | Out-Null }
+    if (-not (Test-Path $ProfilePath)) { New-Item -ItemType File -Force -Path $ProfilePath | Out-Null }
+    if (-not (Select-String -Path $ProfilePath -SimpleMatch $CompletionPath -Quiet -ErrorAction SilentlyContinue)) {
+        Add-Content -Path $ProfilePath -Value "`n# Spice CLI tab completion`n$SourceLine"
+    }
+    Write-Host "✅ Tab completion installed (restart your shell or open a new terminal to activate)"
+} else {
+    Write-Host "💡 To enable tab completion, add this to your PowerShell profile ($ProfilePath):"
+    Write-Host "    $SourceLine"
 }
 
 if (-not $env:SPICE_PASS) {
