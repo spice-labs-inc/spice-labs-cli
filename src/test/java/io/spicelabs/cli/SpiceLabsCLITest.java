@@ -145,19 +145,43 @@ class SpiceLabsCLITest {
   }
 
   @Test
-  void surveyInventory_threadsZero_fails() {
+  void surveyInventory_nonExistentInput_fails() {
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
     int rc = cmd.execute("survey", "inventory",
-        "test-subject", "/tmp/fake",
+        "test-subject", "/tmp/this-path-does-not-exist-at-all",
+        "--no-upload");
+    assertNotEquals(0, rc);
+  }
+
+  @Test
+  void surveyInventory_nonExistentInput_uploadOnly_fails() {
+    SurveyInventoryCommand cmd = new SurveyInventoryCommand();
+    cmd.subject = "test-subject";
+    cmd.input = Path.of("/tmp/this-path-does-not-exist-at-all");
+    cmd.uploadOnly = true;
+    cmd.spicePassOverride = "dummy-pass";
+
+    int rc;
+    try { rc = cmd.call(); } catch (Exception e) { rc = 1; }
+    assertNotEquals(0, rc);
+  }
+
+  @Test
+  void surveyInventory_threadsZero_fails() throws Exception {
+    Path inputDir = Files.createTempDirectory("threads-zero-test");
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    int rc = cmd.execute("survey", "inventory",
+        "test-subject", inputDir.toString(),
         "--no-upload", "--threads", "0");
     assertNotEquals(0, rc);
   }
 
   @Test
-  void surveyInventory_threadsNegative_fails() {
+  void surveyInventory_threadsNegative_fails() throws Exception {
+    Path inputDir = Files.createTempDirectory("threads-neg-test");
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
     int rc = cmd.execute("survey", "inventory",
-        "test-subject", "/tmp/fake",
+        "test-subject", inputDir.toString(),
         "--no-upload", "--threads", "-1");
     assertNotEquals(0, rc);
   }
