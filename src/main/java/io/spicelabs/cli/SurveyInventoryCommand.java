@@ -142,6 +142,22 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       throw new IllegalArgumentException("Cannot use both --no-upload and --upload-only");
     }
 
+    if (!Files.exists(input)) {
+      throw new IllegalArgumentException("Input path does not exist: " + input);
+    }
+
+    if (Files.isDirectory(input)) {
+      try (var entries = Files.list(input)) {
+        if (entries.findFirst().isEmpty()) {
+          throw new IllegalArgumentException("Input directory is empty: " + input);
+        }
+      }
+    }
+
+    if (threads != null && threads < 1) {
+      throw new IllegalArgumentException("--threads must be at least 1, got: " + threads);
+    }
+
     if (threads == null) {
       int availableCores = Runtime.getRuntime().availableProcessors();
       threads = Math.max(1, Math.round(availableCores / 2.0f));
