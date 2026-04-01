@@ -144,6 +144,24 @@ class SpiceLabsCLITest {
     assertNotEquals(0, rc);
   }
 
+  @Test
+  void surveyInventory_threadsZero_fails() {
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    int rc = cmd.execute("survey", "inventory",
+        "test-subject", "/tmp/fake",
+        "--no-upload", "--threads", "0");
+    assertNotEquals(0, rc);
+  }
+
+  @Test
+  void surveyInventory_threadsNegative_fails() {
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    int rc = cmd.execute("survey", "inventory",
+        "test-subject", "/tmp/fake",
+        "--no-upload", "--threads", "-1");
+    assertNotEquals(0, rc);
+  }
+
   // ── Survey inventory: full pipeline (survey + upload) ─────────────────────
 
   @Test
