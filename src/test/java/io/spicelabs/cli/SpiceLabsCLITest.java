@@ -154,6 +154,16 @@ class SpiceLabsCLITest {
   }
 
   @Test
+  void surveyInventory_emptyInputDir_fails() throws Exception {
+    Path emptyDir = Files.createTempDirectory("empty-input-test");
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    int rc = cmd.execute("survey", "inventory",
+        "test-subject", emptyDir.toString(),
+        "--no-upload");
+    assertNotEquals(0, rc);
+  }
+
+  @Test
   void surveyInventory_nonExistentInput_uploadOnly_fails() {
     SurveyInventoryCommand cmd = new SurveyInventoryCommand();
     cmd.subject = "test-subject";
@@ -169,6 +179,7 @@ class SpiceLabsCLITest {
   @Test
   void surveyInventory_threadsZero_fails() throws Exception {
     Path inputDir = Files.createTempDirectory("threads-zero-test");
+    Files.createFile(inputDir.resolve("dummy.jar"));
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
     int rc = cmd.execute("survey", "inventory",
         "test-subject", inputDir.toString(),
@@ -179,6 +190,7 @@ class SpiceLabsCLITest {
   @Test
   void surveyInventory_threadsNegative_fails() throws Exception {
     Path inputDir = Files.createTempDirectory("threads-neg-test");
+    Files.createFile(inputDir.resolve("dummy.jar"));
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
     int rc = cmd.execute("survey", "inventory",
         "test-subject", inputDir.toString(),

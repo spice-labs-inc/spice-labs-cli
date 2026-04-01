@@ -146,6 +146,14 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       throw new IllegalArgumentException("Input path does not exist: " + input);
     }
 
+    if (Files.isDirectory(input)) {
+      try (var entries = Files.list(input)) {
+        if (entries.findFirst().isEmpty()) {
+          throw new IllegalArgumentException("Input directory is empty: " + input);
+        }
+      }
+    }
+
     if (threads != null && threads < 1) {
       throw new IllegalArgumentException("--threads must be at least 1, got: " + threads);
     }
