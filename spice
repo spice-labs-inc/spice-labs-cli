@@ -22,24 +22,30 @@ fi
 # ── Script update check ─────────────────────────────────────────────────────
 
 SCRIPT_PATH="${BASH_SOURCE[0]}"
-LOCAL_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
+if command -v sha256sum &>/dev/null; then
+  LOCAL_HASH=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
+else
+  LOCAL_HASH=$(shasum -a 256 "$SCRIPT_PATH" | awk '{print $1}')
+fi
 
-REMOTE_HASH=$(
-  curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null \
-    | awk '
-      BEGIN { found_spice = 0 }
-      /"name":[[:space:]]*"spice"/ { found_spice = 1 }
-      found_spice && /"digest":[[:space:]]*"sha256:/ {
-        gsub(/.*"digest":[[:space:]]*"sha256:/, "")
-        gsub(/".*/, "")
-        print
-        exit(0)
-      }'
-) || true # on Ubuntu, the exit(0) sometimes propagates... this is a no-op that catches the exit and doesn't allow it to shut down the script
+if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
+  REMOTE_HASH=$(
+    curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null \
+      | awk '
+        BEGIN { found_spice = 0 }
+        /"name":[[:space:]]*"spice"/ { found_spice = 1 }
+        found_spice && /"digest":[[:space:]]*"sha256:/ {
+          gsub(/.*"digest":[[:space:]]*"sha256:/, "")
+          gsub(/".*/, "")
+          print
+          exit(0)
+        }'
+  ) || true
 
-if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
-  echo "⚠️  A newer version of this script is available. Run:"
-  echo "    curl -sSfL https://install.spicelabs.io | bash"
+  if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
+    echo "⚠️  A newer version of this script is available. Run:"
+    echo "    curl -sSfL https://install.spicelabs.io | bash"
+  fi
 fi
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -210,6 +216,11 @@ if [ -n "$OUTPUT_PATH" ]; then
   HOST_OUTPUT="$(abs_path "$OUTPUT_PATH")"
   VOLUMES+=("-v" "${HOST_OUTPUT}:/mnt/output")
   DOCKER_ARGS+=("--output" "/mnt/output")
+else
+  # Mount default output directory so container output is preserved on the host
+  DEFAULT_OUTPUT="$HOME/.spicelabs/surveyor"
+  mkdir -p "$DEFAULT_OUTPUT"
+  VOLUMES+=("-v" "${DEFAULT_OUTPUT}:/root/.spicelabs/surveyor")
 fi
 
 # ── Run ──────────────────────────────────────────────────────────────────────

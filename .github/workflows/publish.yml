@@ -32,7 +32,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Checkout with LFS
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
@@ -194,7 +194,7 @@ jobs:
           platforms: ${{ env.PLATFORMS }}
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download fat jar
         run: |

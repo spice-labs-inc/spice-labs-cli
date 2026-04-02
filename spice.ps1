@@ -20,8 +20,12 @@ if ($logFile -and -not $env:__SPICE_LOGGING_ACTIVE) {
     elseif ($arg -eq "--log-file") { $prev = $arg; continue }
     else { $filteredArgs += $arg; $prev = "" }
   }
+  # Use 'Continue' so that ErrorRecords from docker stderr (via 2>&1)
+  # do not terminate the pipeline under $ErrorActionPreference = 'Stop'.
+  $ErrorActionPreference = 'Continue'
   & $PSCommandPath @filteredArgs 2>&1 | ForEach-Object {
-    $line = "$_"; Write-Output $line
+    $line = "$_"
+    Write-Output $line
     Add-Content -Path $logFile -Value ($line -replace '\x1b\[[0-9;]*[a-zA-Z]', '')
   }
   exit $LASTEXITCODE
@@ -32,17 +36,24 @@ if ($logFile -and -not $env:__SPICE_LOGGING_ACTIVE) {
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalHash = Get-FileHash -Path $ScriptPath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
 
-try {
-  $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' }
+$ReleaseInfo = $null
+if ($env:SPICE_LABS_CLI_SKIP_PULL -ne "1") {
+  try {
+    $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' }
+  } catch {
+    # Silently ignore update check failures (no network, rate limited, etc.)
+  }
+}
+if ($ReleaseInfo) {
   $Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
   if ($Asset -and $Asset.digest) {
     $RemoteHash = $Asset.digest -replace "sha256:", ""
     if ($LocalHash -ne $RemoteHash) {
-      Write-Host "⚠️  A newer version of this script is available. Run:"
+      Write-Host "[!] A newer version of this script is available. Run:"
       Write-Host "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
     }
   }
-} catch {}
+}
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -88,7 +99,7 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
 # ── Docker checks ────────────────────────────────────────────────────────────
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-  Write-Error "❌ Docker is not installed or not in PATH"
+  Write-Error "[X] Docker is not installed or not in PATH"
   Write-Host "   Please install Docker: https://docs.docker.com/get-docker/"
   exit 1
 }
@@ -103,10 +114,10 @@ if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
   $pullFlag += "--pull=never"
 } else {
   try {
-    Write-Host "📦 Checking for updates to Spice Labs Surveyor CLI..."
+    Write-Host "[*] Checking for updates to Spice Labs Surveyor CLI..."
     if ($debugMode) { docker pull "${img}:${tag}" }
     else { docker pull --quiet "${img}:${tag}" | Out-Null }
-  } catch { Write-Warning "⚠️  Failed to pull ${img}:${tag}, using local copy if available" }
+  } catch { Write-Warning "[!] Failed to pull ${img}:${tag}, using local copy if available" }
 }
 
 foreach ($arg in $args) {
@@ -188,6 +199,12 @@ if ($outputPath) {
   $hostDir = Convert-ToDockerPath (Get-AbsolutePath $outputPath)
   $volumes += "-v"; $volumes += "${hostDir}:/mnt/output"
   $dockerArgs += "--output"; $dockerArgs += "/mnt/output"
+} else {
+  # Mount default output directory so container output is preserved on the host
+  $defaultOutput = Join-Path (Join-Path $HOME '.spicelabs') 'surveyor'
+  if (-not (Test-Path $defaultOutput)) { New-Item -ItemType Directory -Path $defaultOutput -Force | Out-Null }
+  $hostDir = Convert-ToDockerPath (Get-AbsolutePath $defaultOutput)
+  $volumes += "-v"; $volumes += "${hostDir}:/root/.spicelabs/surveyor"
 }
 
 # ── Run ──────────────────────────────────────────────────────────────────────
@@ -202,7 +219,21 @@ if ($env:SPICE_LABS_JVM_ARGS) { $envArgs += "-e"; $envArgs += "SPICE_LABS_JVM_AR
 $dockerFlags = @()
 if ($env:SPICE_DOCKER_FLAGS) { $dockerFlags = $env:SPICE_DOCKER_FLAGS -split '\s+' }
 
+# --user: match bash wrapper behavior on Linux/macOS. Not needed on Windows
+# where Docker Desktop handles file ownership transparently.
+$userFlag = @()
+if (-not $IsWindows) {
+  try {
+    $uid = & id -u
+    $gid = & id -g
+    $userFlag = @("--user", "${uid}:${gid}")
+  } catch {}
+}
+
+# 'Continue' prevents docker stderr from becoming a terminating error
+$ErrorActionPreference = 'Continue'
 docker run --rm `
+  @userFlag `
   @pullFlag @dockerFlags `
   --network host `
   @volumes `
@@ -210,3 +241,4 @@ docker run --rm `
   @envArgs `
   "${img}:${tag}" `
   @dockerArgs
+exit $LASTEXITCODE
