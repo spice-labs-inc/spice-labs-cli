@@ -32,7 +32,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Checkout with LFS
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
@@ -163,7 +163,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
-      - name: Upload wrapper scripts to GitHub Release
+      - name: Upload wrapper scripts and completions to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -171,6 +171,8 @@ jobs:
             spice.ps1
             install.sh
             install.ps1
+            completions/spice.bash
+            completions/spice-completion.ps1
 
   docker_image:
     name: Build and Push Docker Image
@@ -192,7 +194,7 @@ jobs:
           platforms: ${{ env.PLATFORMS }}
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download fat jar
         run: |

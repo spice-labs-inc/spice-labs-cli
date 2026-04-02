@@ -1,0 +1,81 @@
+name: Test Wrapper Scripts
+
+on:
+  push:
+    branches: ["**"]
+
+jobs:
+  # ── Full Docker tests on Linux (bash reference implementation) ─────────────
+  test-bash:
+    name: Bash Wrapper (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build test container
+        run: docker build -t spice-wrapper-test test/wrapper/
+
+      - name: Install bats-core
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bats
+
+      - name: Run tests
+        run: bats test/wrapper/spice.bats
+
+  # ── Portability & JVM-mode tests on macOS (no Docker) ──────────────────────
+  test-bash-macos:
+    name: Bash Wrapper (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install bats-core
+        run: brew install bats-core
+
+      - name: Run tests
+        run: bats test/wrapper/spice-macos.bats
+
+  # ── PowerShell 7 tests on Windows (mock docker) ───────────────────────────
+  test-ps7:
+    name: PowerShell Wrapper (Windows - PS7)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'test/wrapper/spice.Tests.ps1'
+          $config.Output.Verbosity = 'Detailed'
+          $config.Run.Exit = $true
+          Invoke-Pester -Configuration $config
+
+  # ── PowerShell 5 tests on Windows (mock docker) ───────────────────────────
+  test-ps5:
+    name: PowerShell Wrapper (Windows - PS5)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Pester 5
+        shell: powershell
+        run: |
+          Install-Module -Name Pester -Force -SkipPublisherCheck -MinimumVersion 5.0.0
+          Import-Module Pester -MinimumVersion 5.0.0
+          (Get-Module Pester).Version
+
+      - name: Validate PS5 syntax
+        shell: powershell
+        run: |
+          & (Join-Path $PWD 'test/wrapper/ps5-check.ps1') (Join-Path $PWD 'spice.ps1')
+
+      - name: Run Pester tests
+        shell: powershell
+        run: |
+          Import-Module Pester -MinimumVersion 5.0.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'test/wrapper/spice.Tests.ps1'
+          $config.Output.Verbosity = 'Detailed'
+          $config.Run.Exit = $true
+          Invoke-Pester -Configuration $config
+
