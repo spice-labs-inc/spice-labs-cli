@@ -118,6 +118,7 @@ public class RuntimeCollect {
             Ginger.builder()
                     .jwt(spicePass)
                     .runtimeSurveyFile(jsonPath)
+                    .runtimeSubject(subject)
                     .run();
             log.info("Upload complete.");
         } else {
