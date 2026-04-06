@@ -265,7 +265,23 @@ if ($isRuntimeSurvey) {
   }
 
   if (-not $rtNativeOnly -and (Test-Path (Join-Path $rtWorkdir 'ancho.jar'))) {
-    $spiceJto = "-javaagent:${rtWorkdirHost}/ancho.jar $spiceJto"
+    Write-Host "Downloading probe configuration..."
+    $rtProbes = Join-Path $rtWorkdir 'probes.json'
+    $dlArgs = @('run', '--rm', '--entrypoint', 'java')
+    $dlArgs += @($userFlag)
+    $dlArgs += @('--network', 'host')
+    $dlArgs += @($pullFlag)
+    $dlArgs += @('-e', "SPICE_PASS=$spicePass")
+    $dlArgs += @("${img}:${tag}")
+    $dlArgs += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect', '--download-probes')
+    & docker @dlArgs > $rtProbes 2>$null
+
+    if ((Test-Path $rtProbes) -and (Get-Item $rtProbes).Length -gt 0) {
+      $spiceJto = "-javaagent:${rtWorkdirHost}/ancho.jar=${rtProbes} $spiceJto"
+    } else {
+      Remove-Item $rtProbes -ErrorAction SilentlyContinue
+      Write-Host "[!] Could not download probe config. Using native-only mode."
+    }
   }
 
   # Phase 3: Execute target command on the HOST

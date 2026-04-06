@@ -257,7 +257,25 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   SPICE_JTO="-XX:StartFlightRecording=settings=${RT_JFC},dumponexit=true,filename=${RT_WORKDIR}/recording-%p.jfr"
 
   if [ "$RT_NATIVE_ONLY" = "0" ] && [ -f "$RT_WORKDIR/ancho.jar" ]; then
-    SPICE_JTO="-javaagent:${RT_WORKDIR}/ancho.jar ${SPICE_JTO}"
+    # Download probe config from server via container, piped to host
+    echo "📡 Downloading probe configuration..."
+    RT_PROBES="${RT_WORKDIR}/probes.json"
+    docker run --rm --entrypoint java \
+      --user "$(id -u):$(id -g)" \
+      --network host \
+      ${PULL_FLAG:+$PULL_FLAG} \
+      -e SPICE_PASS \
+      "${IMAGE}:${TAG}" \
+      -cp ${SPICE_LABS_CLI_JAR} \
+      io.spicelabs.cli.RuntimeCollect \
+      --download-probes > "$RT_PROBES" 2>/dev/null
+
+    if [ -s "$RT_PROBES" ]; then
+      SPICE_JTO="-javaagent:${RT_WORKDIR}/ancho.jar=${RT_PROBES} ${SPICE_JTO}"
+    else
+      rm -f "$RT_PROBES"
+      echo "⚠️  Could not download probe config. Using native-only mode."
+    fi
   fi
 
   # Phase 3: Execute target command on the HOST

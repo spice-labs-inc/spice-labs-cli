@@ -28,6 +28,20 @@ public class RuntimeCollect {
     private static final Logger log = LoggerFactory.getLogger(RuntimeCollect.class);
 
     public static void main(String[] args) throws Exception {
+        // Probe config download mode: streams JSON to stdout, no file written
+        if (args.length >= 1 && "--download-probes".equals(args[0])) {
+            String spicePass = System.getenv("SPICE_PASS");
+            if (spicePass == null || spicePass.isBlank()) {
+                System.exit(1);
+            }
+            byte[] config = Ginger.builder().jwt(spicePass).downloadRuntimeConfigBytes();
+            if (config != null) {
+                System.out.write(config);
+                System.out.flush();
+            }
+            System.exit(config != null ? 0 : 1);
+        }
+
         if (args.length < 2) {
             System.err.println("Usage: RuntimeCollect <subject> <dir> [--no-upload]");
             System.exit(1);
