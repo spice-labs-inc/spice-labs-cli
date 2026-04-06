@@ -6,7 +6,9 @@ package io.spicelabs.cli;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import org.slf4j.Logger;
@@ -84,9 +86,17 @@ public class RuntimeCollect {
         log.info("Found {} recording(s), total size: {}",
                 recordings.size(), SurveyRuntimeCommand.humanReadableSize(totalSize));
 
+        // Load probe config if present in the workdir
+        Map<String, JfrEventExtractor.ProbeDefinition> probeIndex = null;
+        Path probeConfig = dir.resolve("probes.json");
+        if (Files.exists(probeConfig)) {
+            probeIndex = loadProbeIndex(probeConfig);
+            log.info("Loaded {} probe definitions", probeIndex.size());
+        }
+
         // Parse
         log.info("Parsing JFR recordings...");
-        JfrEventExtractor.RawSurveyData data = JfrEventExtractor.extract(subject, recordings);
+        JfrEventExtractor.RawSurveyData data = JfrEventExtractor.extract(subject, recordings, probeIndex);
 
         // Print summary
         new SurveyRuntimeCommand().printSummary(data);
@@ -112,6 +122,28 @@ public class RuntimeCollect {
             log.info("Upload complete.");
         } else {
             log.info("--no-upload: remove to send results to Spice Labs for full categorization.");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, JfrEventExtractor.ProbeDefinition> loadProbeIndex(Path configPath) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            Map<String, Object> config = mapper.readValue(configPath.toFile(), Map.class);
+            List<Map<String, String>> probes = (List<Map<String, String>>) config.get("probes");
+            if (probes == null) return Map.of();
+            Map<String, JfrEventExtractor.ProbeDefinition> index = new HashMap<>();
+            for (Map<String, String> p : probes) {
+                String id = p.get("id");
+                if (id != null) {
+                    index.put(id, new JfrEventExtractor.ProbeDefinition(
+                            id, p.get("class"), p.get("method"), p.get("label")));
+                }
+            }
+            return index;
+        } catch (Exception e) {
+            log.warn("Failed to load probe config: {}", e.getMessage());
+            return Map.of();
         }
     }
 }

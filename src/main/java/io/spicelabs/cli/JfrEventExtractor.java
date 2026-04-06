@@ -104,6 +104,8 @@ public class JfrEventExtractor {
 
     // ── Internal accumulators ───────────────────────────────────────────
 
+    public record ProbeDefinition(String id, String classFqn, String method, String label) {}
+
     private record ProbeKey(String classFqn, String methodName) {}
 
     private record SecurityProviderKey(String algorithm, String serviceType) {}
@@ -165,6 +167,10 @@ public class JfrEventExtractor {
      * @return raw survey data ready for JSON serialization and upload
      */
     public static RawSurveyData extract(String subject, List<Path> recordingPaths) throws Exception {
+        return extract(subject, recordingPaths, null);
+    }
+
+    public static RawSurveyData extract(String subject, List<Path> recordingPaths, Map<String, ProbeDefinition> probeIndex) throws Exception {
         if (recordingPaths == null || recordingPaths.isEmpty()) {
             throw new IllegalArgumentException("No recording files provided");
         }
@@ -282,7 +288,7 @@ public class JfrEventExtractor {
                         default -> {
                             // Spice probe events
                             if (eventType.startsWith("spice.probe.")) {
-                                processProbeEvent(event, eventType, probeMap);
+                                processProbeEvent(event, eventType, probeMap, probeIndex);
                             }
                         }
                     }
@@ -337,28 +343,35 @@ public class JfrEventExtractor {
     // ── Probe event processing ──────────────────────────────────────────
 
     private static void processProbeEvent(RecordedEvent event, String eventType,
-                                          Map<ProbeKey, ProbeAccumulator> probeMap) {
-        // Extract class and method from the event type name
-        // Event type format: spice.probe.<hash>
-        // The actual class/method info is in the event fields or stack trace
+                                          Map<ProbeKey, ProbeAccumulator> probeMap,
+                                          Map<String, ProbeDefinition> probeIndex) {
         String probeLabel = null;
         try {
             probeLabel = event.getEventType().getLabel();
         } catch (Exception ignored) {}
-        final String label = probeLabel;
 
-        // Try to get class/method from stack trace (the instrumented method is the first frame)
+        // Resolve class/method from probe config (authoritative) or fall back to stack trace
         String classFqn = null;
         String methodName = null;
+        if (probeIndex != null) {
+            ProbeDefinition def = probeIndex.get(eventType);
+            if (def != null) {
+                classFqn = def.classFqn();
+                methodName = def.method();
+                if (probeLabel == null) probeLabel = def.label();
+            }
+        }
+        final String label = probeLabel;
+
+        // Fall back to stack trace if probe config didn't resolve
         RecordedStackTrace st = event.getStackTrace();
-        if (st != null && !st.getFrames().isEmpty()) {
+        if (classFqn == null && st != null && !st.getFrames().isEmpty()) {
             RecordedFrame topFrame = st.getFrames().get(0);
             classFqn = topFrame.getMethod().getType().getName();
             methodName = topFrame.getMethod().getName();
         }
 
         if (classFqn == null) {
-            // Fallback: use event type as identifier
             classFqn = eventType;
             methodName = "unknown";
         }
