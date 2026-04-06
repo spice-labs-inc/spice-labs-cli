@@ -34,12 +34,20 @@ public class RuntimeCollect {
             if (spicePass == null || spicePass.isBlank()) {
                 System.exit(1);
             }
-            byte[] config = Ginger.builder().jwt(spicePass).downloadRuntimeConfigBytes();
-            if (config != null) {
-                System.out.write(config);
-                System.out.flush();
+            try {
+                byte[] config = Ginger.builder().jwt(spicePass).downloadRuntimeConfigBytes();
+                if (config != null && config.length > 0) {
+                    System.out.write(config);
+                    System.out.flush();
+                    System.exit(0);
+                } else {
+                    System.err.println("No probe config returned");
+                    System.exit(1);
+                }
+            } catch (Exception e) {
+                System.err.println("Probe config download failed: " + e.getMessage());
+                System.exit(1);
             }
-            System.exit(config != null ? 0 : 1);
         }
 
         if (args.length < 2) {
