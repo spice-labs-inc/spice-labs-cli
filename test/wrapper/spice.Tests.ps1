@@ -29,6 +29,21 @@ using System.Collections.Generic;
 class MockDocker {
   static int Main(string[] args) {
     if (args.Length > 0 && args[0] == "pull") return 0;
+    // Detect runtime survey calls by --entrypoint
+    string entrypoint = null, volHost = null;
+    for (int j = 0; j < args.Length - 1; j++) {
+      if (args[j] == "--entrypoint") entrypoint = args[j+1];
+      if (args[j] == "-v" && args[j+1].Contains(":")) volHost = args[j+1].Split(':')[0];
+    }
+    // Phase 1: extraction
+    if (entrypoint == "sh" && volHost != null && Directory.Exists(volHost)) {
+      File.WriteAllText(Path.Combine(volHost, "ancho.jar"), "mock");
+      File.WriteAllText(Path.Combine(volHost, "spice-jfr.jfc"), "mock");
+      Console.WriteLine("done");
+      return 0;
+    }
+    // Phase 4: RuntimeCollect
+    if (entrypoint == "java") return 0;
     // Write all args to capture file
     var af = Environment.GetEnvironmentVariable("DOCKER_ARGS_FILE");
     if (!string.IsNullOrEmpty(af)) File.WriteAllLines(af, args);
@@ -197,7 +212,37 @@ Write-Output "$([char]27)[31mCOLORED:red-text$([char]27)[0m"
 Write-Output '===SPICE_TEST_END==='
 exit 0
 '@
-    Set-Content -Path $mockDockerSh -Value "#!/bin/bash`nif [ `"`$1`" = 'pull' ]; then exit 0; fi`npwsh -NoProfile -File `"$mockDockerPs1`" `"`$@`""
+    # Shell mock handles runtime survey entrypoint calls directly (no pwsh needed)
+    # and falls back to the pwsh mock for normal docker run calls.
+    Set-Content -Path $mockDockerSh -Value @"
+#!/bin/bash
+if [ "`\`$1" = 'pull' ]; then exit 0; fi
+
+# Detect runtime survey Docker calls by --entrypoint
+_entrypoint=""
+_vol_host=""
+_prev=""
+for _arg in "`\`$@"; do
+  if [ "`\`$_prev" = "--entrypoint" ]; then _entrypoint="`\`$_arg"; fi
+  if [ "`\`$_prev" = "-v" ]; then _vol_host="`\`${_arg%%:*}"; fi
+  _prev="`\`$_arg"
+done
+
+# Phase 1: extraction (--entrypoint sh) — create mock files in workdir
+if [ "`\`$_entrypoint" = "sh" ] && [ -n "`\`$_vol_host" ] && [ -d "`\`$_vol_host" ]; then
+  echo "mock" > "`\`$_vol_host/ancho.jar"
+  echo "mock" > "`\`$_vol_host/spice-jfr.jfc"
+  echo done
+  exit 0
+fi
+
+# Phase 4: RuntimeCollect (--entrypoint java) — just succeed
+if [ "`\`$_entrypoint" = "java" ]; then
+  exit 0
+fi
+
+pwsh -NoProfile -File "$mockDockerPs1" "`\`$@"
+"@
     chmod +x $mockDockerSh 2>`$null
   }
 
@@ -637,6 +682,153 @@ Describe 'spice.ps1 wrapper' {
         Remove-Item env:SPICE_LABS_CLI_USE_JVM -ErrorAction SilentlyContinue
         Remove-Item env:SPICE_LABS_CLI_JAR -ErrorAction SilentlyContinue
         Remove-Item env:JAVA_ARGS_FILE -ErrorAction SilentlyContinue
+      }
+    }
+  }
+
+  # ── Runtime survey orchestration ───────────────────────────────────────
+
+  Context 'Runtime survey' {
+    It 'missing command after -- fails' {
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr')
+      $r.ExitCode | Should -Not -Be 0
+      ($r.RawOutput -join "`n") | Should -Match 'No command specified'
+    }
+
+    It 'missing subject fails' {
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', '--jfr', '--', 'echo', 'hello')
+      $r.ExitCode | Should -Not -Be 0
+      ($r.RawOutput -join "`n") | Should -Match 'No subject specified'
+    }
+
+    It 'target command runs on host' {
+      $marker = Join-Path $script:TestDir 'host-ran.txt'
+      $outdir = Join-Path $HOME '.spicelabs' "test-rt-host-$PID"
+      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        $cmd = Join-Path $script:TestDir 'touch.cmd'
+        Set-Content -Path $cmd -Value "@echo test > `"$marker`""
+      } else {
+        $cmd = Join-Path $script:TestDir 'touch.sh'
+        Set-Content -Path $cmd -Value "#!/bin/bash`ntouch `"$marker`""
+        chmod +x $cmd
+      }
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
+        $marker | Should -Exist
+      } finally {
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
+      }
+    }
+
+    It 'JAVA_TOOL_OPTIONS set for target' {
+      $dump = Join-Path $script:TestDir 'jto-dump.txt'
+      $outdir = Join-Path $HOME '.spicelabs' "test-rt-jto-$PID"
+      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        $cmd = Join-Path $script:TestDir 'dump-jto.cmd'
+        Set-Content -Path $cmd -Value "@echo %JAVA_TOOL_OPTIONS% > `"$dump`""
+      } else {
+        $cmd = Join-Path $script:TestDir 'dump-jto.sh'
+        Set-Content -Path $cmd -Value "#!/bin/bash`necho `\"`\`$JAVA_TOOL_OPTIONS`\" > `"$dump`""
+        chmod +x $cmd
+      }
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
+        $dump | Should -Exist
+        $jto = Get-Content $dump -Raw
+        $jto | Should -Match 'StartFlightRecording'
+        $jto | Should -Match 'dumponexit=true'
+        $jto | Should -Match 'spice-jfr\.jfc'
+      } finally {
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
+      }
+    }
+
+    It 'workdir created under output dir' {
+      $outdir = Join-Path $HOME '.spicelabs' "test-rt-workdir-$PID"
+      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        $cmd = Join-Path $script:TestDir 'noop.cmd'
+        Set-Content -Path $cmd -Value '@rem noop'
+      } else {
+        $cmd = Join-Path $script:TestDir 'noop.sh'
+        Set-Content -Path $cmd -Value "#!/bin/bash`ntrue"
+        chmod +x $cmd
+      }
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
+        $found = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $found | Should -Not -BeNullOrEmpty
+      } finally {
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
+      }
+    }
+
+    It 'workdir cleaned up without --keep-recording' {
+      $outdir = Join-Path $HOME '.spicelabs' "test-rt-cleanup-$PID"
+      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        $cmd = Join-Path $script:TestDir 'noop.cmd'
+        Set-Content -Path $cmd -Value '@rem noop'
+      } else {
+        $cmd = Join-Path $script:TestDir 'noop.sh'
+        Set-Content -Path $cmd -Value "#!/bin/bash`ntrue"
+        chmod +x $cmd
+      }
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
+        $found = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $found | Should -BeNullOrEmpty
+      } finally {
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
+      }
+    }
+
+    It 'recordings kept with --keep-recording' {
+      $outdir = Join-Path $HOME '.spicelabs' "test-rt-keep-$PID"
+      # Script that creates a fake .jfr recording in the workdir
+      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        $cmd = Join-Path $script:TestDir 'fake-jfr.cmd'
+        # Parse JAVA_TOOL_OPTIONS to find recording dir and create a .jfr
+        Set-Content -Path $cmd -Value @"
+@echo off
+setlocal enabledelayedexpansion
+for /f "tokens=1 delims=," %%a in ("%JAVA_TOOL_OPTIONS:*filename=%") do set "recpath=%%a"
+for %%i in ("!recpath!") do set "recdir=%%~dpi"
+echo fake > "!recdir!recording-fake.jfr"
+"@
+      } else {
+        $cmd = Join-Path $script:TestDir 'fake-jfr.sh'
+        Set-Content -Path $cmd -Value @'
+#!/bin/bash
+recpath=$(echo "$JAVA_TOOL_OPTIONS" | sed -n 's/.*filename=\([^ ,]*\).*/\1/p')
+dir=$(dirname "$recpath")
+echo "fake-jfr" > "$dir/recording-$$.jfr"
+'@
+        chmod +x $cmd
+      }
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
+        ($r.RawOutput -join "`n") | Should -Match 'Recordings kept in:'
+      } finally {
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
+      }
+    }
+
+    It 'JFC extracted from container' {
+      $outdir = Join-Path $HOME '.spicelabs' "test-rt-jfc-$PID"
+      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        $cmd = Join-Path $script:TestDir 'noop.cmd'
+        Set-Content -Path $cmd -Value '@rem noop'
+      } else {
+        $cmd = Join-Path $script:TestDir 'noop.sh'
+        Set-Content -Path $cmd -Value "#!/bin/bash`ntrue"
+        chmod +x $cmd
+      }
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
+        $workdir = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $workdir | Should -Not -BeNullOrEmpty
+        (Join-Path $workdir.FullName 'spice-jfr.jfc') | Should -Exist
+      } finally {
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
       }
     }
   }

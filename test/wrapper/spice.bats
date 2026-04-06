@@ -358,3 +358,88 @@ refute_arg() {
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 42 ]
 }
+
+# ── Runtime survey orchestration ─────────────────────────────────────────
+
+@test "runtime survey: missing command after -- fails" {
+  run "$WRAPPER" survey runtime myapp --jfr
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"No command specified"* ]]
+}
+
+@test "runtime survey: missing subject fails" {
+  run "$WRAPPER" survey runtime --jfr -- echo hello
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"No subject specified"* ]]
+}
+
+@test "runtime survey: target command runs on host" {
+  local marker="$TEST_TMPDIR/host-ran.txt"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload -- touch "$marker"
+  # touch should have run on the host, creating the marker file
+  [ -f "$marker" ]
+}
+
+@test "runtime survey: JAVA_TOOL_OPTIONS set for target" {
+  # Use a script that dumps JAVA_TOOL_OPTIONS to a file
+  local dump="$TEST_TMPDIR/jto-dump.txt"
+  local script="$TEST_TMPDIR/dump-jto.sh"
+  cat > "$script" <<'SCRIPT'
+#!/bin/bash
+echo "$JAVA_TOOL_OPTIONS" > "$1"
+SCRIPT
+  chmod +x "$script"
+
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload -- "$script" "$dump"
+  [ -f "$dump" ]
+  local jto=$(cat "$dump")
+  [[ "$jto" == *"-XX:StartFlightRecording="* ]]
+  [[ "$jto" == *"dumponexit=true"* ]]
+  [[ "$jto" == *"spice-jfr.jfc"* ]]
+}
+
+@test "runtime survey: workdir created under output dir" {
+  # Use $HOME path (not /tmp) — snap Docker can't bind-mount /tmp
+  local outdir="$HOME/.spicelabs/test-rt-workdir-$$"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload --keep-recording --output "$outdir" -- true
+  # A survey-* workdir should exist under the output dir
+  local found=$(find "$outdir" -maxdepth 1 -type d -name 'survey-*' 2>/dev/null | head -1)
+  [ -n "$found" ]
+  rm -rf "$outdir"
+}
+
+@test "runtime survey: workdir cleaned up without --keep-recording" {
+  local outdir="$HOME/.spicelabs/test-rt-cleanup-$$"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload --output "$outdir" -- true
+  # Workdir should have been cleaned up (no survey-* dirs left)
+  local found=$(find "$outdir" -maxdepth 1 -type d -name 'survey-*' 2>/dev/null | head -1)
+  [ -z "$found" ]
+  rm -rf "$outdir"
+}
+
+@test "runtime survey: recordings kept with --keep-recording" {
+  local outdir="$HOME/.spicelabs/test-rt-keep-$$"
+  # Script that creates a fake .jfr recording in the workdir
+  local script="$TEST_TMPDIR/fake-jfr.sh"
+  cat > "$script" <<'SCRIPT'
+#!/bin/bash
+# Extract the recording dir from JAVA_TOOL_OPTIONS filename= parameter
+recpath=$(echo "$JAVA_TOOL_OPTIONS" | sed -n 's/.*filename=\([^ ,]*\).*/\1/p')
+dir=$(dirname "$recpath")
+echo "fake-jfr" > "$dir/recording-$$.jfr"
+SCRIPT
+  chmod +x "$script"
+
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload --keep-recording --output "$outdir" -- "$script"
+  [[ "$output" == *"Recordings kept in:"* ]]
+  rm -rf "$outdir"
+}
+
+@test "runtime survey: JFC extracted from container" {
+  local outdir="$HOME/.spicelabs/test-rt-jfc-$$"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload --keep-recording --output "$outdir" -- true
+  local workdir=$(find "$outdir" -maxdepth 1 -type d -name 'survey-*' 2>/dev/null | head -1)
+  [ -n "$workdir" ]
+  [ -f "$workdir/spice-jfr.jfc" ]
+  rm -rf "$outdir"
+}

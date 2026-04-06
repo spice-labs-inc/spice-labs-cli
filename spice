@@ -127,6 +127,199 @@ for arg in "$@"; do
   [[ "$arg" == "-V" || "$arg" == "--version" ]] && echo "script version ${LOCAL_HASH}" && break
 done
 
+# ── Runtime survey detection (must happen before general arg parsing) ───────
+# survey runtime args contain "-- <command...>" which the general parser
+# would misinterpret as positional path args. Detect and handle early.
+
+IS_RUNTIME_SURVEY=0
+{
+  saw_survey=0
+  for arg in "$@"; do
+    if [ "$saw_survey" = "1" ] && [ "$arg" = "runtime" ]; then
+      IS_RUNTIME_SURVEY=1
+      break
+    fi
+    [ "$arg" = "survey" ] && saw_survey=1 || saw_survey=0
+  done
+}
+
+if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
+  # Parse runtime survey args ourselves — split at "--" into CLI flags + user command.
+  RT_CLI_ARGS=()
+  RT_USER_CMD=()
+  RT_SUBJECT=""
+  RT_OUTPUT_PATH=""
+  RT_NO_UPLOAD=0
+  RT_NATIVE_ONLY=0
+  RT_KEEP_RECORDING=0
+  rt_past_sep=0
+  rt_prev=""
+  rt_pos=0
+
+  for arg in "$@"; do
+    # Strip --log-file (handled at shell level)
+    if [[ "$arg" == --log-file=* ]]; then continue
+    elif [[ "$rt_prev" == "--log-file" ]]; then rt_prev=""; continue
+    elif [[ "$arg" == "--log-file" ]]; then rt_prev="$arg"; continue; fi
+
+    if [[ "$arg" == "--" ]] && [ "$rt_past_sep" = "0" ]; then
+      rt_past_sep=1
+      continue
+    fi
+    if [ "$rt_past_sep" = "1" ]; then
+      RT_USER_CMD+=("$arg")
+      continue
+    fi
+
+    # Capture --output value
+    if [[ "$arg" == --output=* ]]; then
+      RT_OUTPUT_PATH="${arg#--output=}"
+      continue
+    elif [[ "$rt_prev" == "--output" ]]; then
+      RT_OUTPUT_PATH="$arg"
+      rt_prev=""
+      continue
+    elif [[ "$arg" == "--output" ]]; then
+      rt_prev="$arg"
+      continue
+    fi
+
+    # Handle value-consuming flags
+    if [ -n "$rt_prev" ]; then
+      RT_CLI_ARGS+=("$rt_prev" "$arg")
+      rt_prev=""
+      continue
+    fi
+
+    if [[ "$arg" == -* ]]; then
+      [[ "$arg" == "--no-upload" ]] && RT_NO_UPLOAD=1
+      [[ "$arg" == "--native-only" ]] && RT_NATIVE_ONLY=1
+      [[ "$arg" == "--keep-recording" ]] && RT_KEEP_RECORDING=1
+      if is_value_flag "$arg"; then
+        rt_prev="$arg"
+      else
+        RT_CLI_ARGS+=("$arg")
+      fi
+      continue
+    fi
+
+    # Positional: subcommands pass through, first non-subcommand is subject
+    if is_subcommand "$arg"; then
+      RT_CLI_ARGS+=("$arg")
+    else
+      rt_pos=$((rt_pos + 1))
+      if [ $rt_pos -eq 1 ]; then
+        RT_SUBJECT="$arg"
+        RT_CLI_ARGS+=("$arg")
+      else
+        RT_CLI_ARGS+=("$arg")
+      fi
+    fi
+  done
+  [ -n "$rt_prev" ] && RT_CLI_ARGS+=("$rt_prev")
+
+  if [ ${#RT_USER_CMD[@]} -eq 0 ]; then
+    echo "❌ No command specified after --"
+    echo "Usage: spice survey runtime <subject> --jfr -- <command...>"
+    exit 1
+  fi
+
+  if [ -z "$RT_SUBJECT" ]; then
+    echo "❌ No subject specified"
+    echo "Usage: spice survey runtime <subject> --jfr -- <command...>"
+    exit 1
+  fi
+
+  # Create workdir under the output dir (or default location)
+  RT_BASE="${RT_OUTPUT_PATH:-$HOME/.spicelabs/runtime-survey}"
+  mkdir -p "$RT_BASE"
+  RT_WORKDIR=$(mktemp -d "$RT_BASE/survey-XXXXXXXX")
+
+  # Phase 1: Copy agent + JFC from container to host workdir
+  echo "🌶️  Preparing runtime survey..."
+  SPICE_CLI_DIR=$(dirname "${SPICE_LABS_CLI_JAR}")
+  docker run --rm --entrypoint sh \
+    --user "$(id -u):$(id -g)" \
+    ${PULL_FLAG:+$PULL_FLAG} \
+    -v "${RT_WORKDIR}:${RT_WORKDIR}" \
+    "${IMAGE}:${TAG}" \
+    -c "cp '${SPICE_CLI_DIR}/ancho.jar' '${RT_WORKDIR}/' 2>/dev/null; \
+        cp '${SPICE_CLI_DIR}/spice-jfr.jfc' '${RT_WORKDIR}/' 2>/dev/null"
+
+  # Phase 2: Build JAVA_TOOL_OPTIONS
+  RT_JFC="${RT_WORKDIR}/spice-jfr.jfc"
+  if [ ! -f "$RT_JFC" ]; then
+    echo "❌ Failed to extract JFR settings from container"
+    rm -rf "$RT_WORKDIR"
+    exit 1
+  fi
+
+  SPICE_JTO="-XX:StartFlightRecording=settings=${RT_JFC},dumponexit=true,filename=${RT_WORKDIR}/recording-%p.jfr"
+
+  if [ "$RT_NATIVE_ONLY" = "0" ] && [ -f "$RT_WORKDIR/ancho.jar" ]; then
+    SPICE_JTO="-javaagent:${RT_WORKDIR}/ancho.jar ${SPICE_JTO}"
+  fi
+
+  # Phase 3: Execute target command on the HOST
+  echo "🚀 Executing: ${RT_USER_CMD[*]}"
+  EXISTING_JTO="${JAVA_TOOL_OPTIONS:-}"
+  if [ -n "$EXISTING_JTO" ]; then
+    export JAVA_TOOL_OPTIONS="${SPICE_JTO} ${EXISTING_JTO}"
+  else
+    export JAVA_TOOL_OPTIONS="${SPICE_JTO}"
+  fi
+
+  set +e
+  "${RT_USER_CMD[@]}"
+  RT_TARGET_RC=$?
+  set -e
+
+  # Restore original JAVA_TOOL_OPTIONS
+  if [ -n "$EXISTING_JTO" ]; then
+    export JAVA_TOOL_OPTIONS="$EXISTING_JTO"
+  else
+    unset JAVA_TOOL_OPTIONS
+  fi
+
+  if [ $RT_TARGET_RC -ne 0 ]; then
+    echo "⚠️  Target command exited with code $RT_TARGET_RC. Still collecting recordings."
+  fi
+
+  # Check for recordings
+  RT_JFR_COUNT=$(find "$RT_WORKDIR" -maxdepth 1 -name '*.jfr' 2>/dev/null | wc -l)
+  if [ "$RT_JFR_COUNT" -eq 0 ]; then
+    echo "❌ No JFR recordings found in $RT_WORKDIR"
+    [ "$RT_KEEP_RECORDING" = "0" ] && rm -rf "$RT_WORKDIR"
+    exit 1
+  fi
+
+  # Phase 4: Parse + upload in container
+  echo "📊 Analyzing recordings..."
+  RT_COLLECT_ARGS=("$RT_SUBJECT" "$RT_WORKDIR")
+  [ "$RT_NO_UPLOAD" = "1" ] && RT_COLLECT_ARGS+=("--no-upload")
+
+  docker run --rm --entrypoint java \
+    --user "$(id -u):$(id -g)" \
+    --network host \
+    ${PULL_FLAG:+$PULL_FLAG} \
+    -v "${RT_WORKDIR}:${RT_WORKDIR}" \
+    -e SPICE_PASS \
+    "${IMAGE}:${TAG}" \
+    -cp /opt/spice-labs-cli/spice-labs-cli.jar \
+    io.spicelabs.cli.RuntimeCollect \
+    "${RT_COLLECT_ARGS[@]}"
+  RT_COLLECT_RC=$?
+
+  # Clean up
+  if [ "$RT_KEEP_RECORDING" = "0" ]; then
+    rm -rf "$RT_WORKDIR"
+  else
+    echo "Recordings kept in: $RT_WORKDIR"
+  fi
+
+  exit $(( RT_TARGET_RC != 0 ? RT_TARGET_RC : RT_COLLECT_RC ))
+fi
+
 # ── Find paths in args and build docker command ──────────────────────────────
 #
 # Walk the args to find:
@@ -223,7 +416,7 @@ else
   VOLUMES+=("-v" "${DEFAULT_OUTPUT}:/root/.spicelabs/surveyor")
 fi
 
-# ── Run ──────────────────────────────────────────────────────────────────────
+# ── Run (non-runtime) ────────────────────────────────────────────────────────
 
 exec docker run --rm \
   --user "$(id -u):$(id -g)" \

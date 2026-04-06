@@ -128,6 +128,203 @@ foreach ($arg in $args) {
   }
 }
 
+# Trim SPICE_PASS to remove invisible characters (e.g. CRLF, BOM, trailing
+# whitespace) that Windows may introduce via the Environment Variables GUI.
+$spicePass = if ($env:SPICE_PASS) { $env:SPICE_PASS.Trim() } else { "" }
+
+# --user: match bash wrapper behavior on Linux/macOS. Not needed on Windows
+# where Docker Desktop handles file ownership transparently.
+$userFlag = @()
+if (-not $IsWindows) {
+  try {
+    $uid = & id -u
+    $gid = & id -g
+    $userFlag = @("--user", "${uid}:${gid}")
+  } catch {}
+}
+
+# ── Runtime survey detection (must happen before general arg parsing) ───────
+# survey runtime args contain "-- <command...>" which the general parser
+# would misinterpret as positional path args. Detect and handle early.
+
+$isRuntimeSurvey = $false
+for ($i = 0; $i -lt $args.Count - 1; $i++) {
+  if ($args[$i] -eq 'survey' -and $args[$i + 1] -eq 'runtime') {
+    $isRuntimeSurvey = $true
+    break
+  }
+}
+
+if ($isRuntimeSurvey) {
+  # Parse runtime survey args — split at "--" into CLI flags + user command.
+  $rtCliArgs = @()
+  $rtUserCmd = @()
+  $rtSubject = ""
+  $rtOutputPath = ""
+  $rtNoUpload = $false
+  $rtNativeOnly = $false
+  $rtKeepRecording = $false
+  $rtPastSep = $false
+  $rtPrev = ""
+  $rtPos = 0
+
+  foreach ($arg in $args) {
+    # Strip --log-file (handled at shell level)
+    if ($arg -match '^--log-file=') { continue }
+    elseif ($rtPrev -eq '--log-file') { $rtPrev = ""; continue }
+    elseif ($arg -eq '--log-file') { $rtPrev = $arg; continue }
+
+    if ($arg -eq '--' -and -not $rtPastSep) {
+      $rtPastSep = $true
+      continue
+    }
+    if ($rtPastSep) {
+      $rtUserCmd += $arg
+      continue
+    }
+
+    # Capture --output value
+    if ($arg -match '^--output=(.*)$') { $rtOutputPath = $matches[1]; continue }
+    elseif ($rtPrev -eq '--output') { $rtOutputPath = $arg; $rtPrev = ""; continue }
+    elseif ($arg -eq '--output') { $rtPrev = $arg; continue }
+
+    # Handle value-consuming flags
+    if ($rtPrev) {
+      $rtCliArgs += $rtPrev; $rtCliArgs += $arg; $rtPrev = ""; continue
+    }
+
+    if ($arg -like '-*') {
+      if ($arg -eq '--no-upload') { $rtNoUpload = $true }
+      if ($arg -eq '--native-only') { $rtNativeOnly = $true }
+      if ($arg -eq '--keep-recording') { $rtKeepRecording = $true }
+      if ($arg -in $valueFlags) { $rtPrev = $arg }
+      else { $rtCliArgs += $arg }
+      continue
+    }
+
+    # Positional: subcommands pass through, first non-subcommand is subject
+    if ($arg -in $subcommands) {
+      $rtCliArgs += $arg
+    } else {
+      $rtPos++
+      if ($rtPos -eq 1) {
+        $rtSubject = $arg
+        $rtCliArgs += $arg
+      } else {
+        $rtCliArgs += $arg
+      }
+    }
+  }
+  if ($rtPrev) { $rtCliArgs += $rtPrev }
+
+  if ($rtUserCmd.Count -eq 0) {
+    Write-Host "[X] No command specified after --"
+    Write-Host "Usage: spice survey runtime <subject> --jfr -- <command...>"
+    exit 1
+  }
+
+  if (-not $rtSubject) {
+    Write-Host "[X] No subject specified"
+    Write-Host "Usage: spice survey runtime <subject> --jfr -- <command...>"
+    exit 1
+  }
+
+  # Create workdir under the output dir (or default location)
+  $rtBase = if ($rtOutputPath) { $rtOutputPath } else { Join-Path (Join-Path $HOME '.spicelabs') 'runtime-survey' }
+  if (-not (Test-Path $rtBase)) { New-Item -ItemType Directory -Path $rtBase -Force | Out-Null }
+  $rtRandom = -join ((0x30..0x39) + (0x41..0x5A) + (0x61..0x7A) | Get-Random -Count 8 | ForEach-Object { [char]$_ })
+  $rtWorkdir = Join-Path $rtBase "survey-$rtRandom"
+  New-Item -ItemType Directory -Path $rtWorkdir -Force | Out-Null
+
+  # Convert workdir to Docker-compatible path
+  $rtWorkdirDocker = Convert-ToDockerPath (Get-AbsolutePath $rtWorkdir)
+  $rtWorkdirHost = (Get-AbsolutePath $rtWorkdir)
+
+  # Phase 1: Extract agent + JFC from container
+  Write-Host "Preparing runtime survey..."
+  $spiceCliDir = Split-Path $jar -Parent
+  $p1Args = @('run', '--rm', '--entrypoint', 'sh')
+  $p1Args += @($userFlag)
+  $p1Args += @($pullFlag)
+  $p1Args += @('-v', "${rtWorkdirDocker}:${rtWorkdirDocker}")
+  $p1Args += @("${img}:${tag}")
+  $p1Args += @('-c', "cp '${spiceCliDir}/ancho.jar' '${rtWorkdirDocker}/' 2>/dev/null; cp '${spiceCliDir}/spice-jfr.jfc' '${rtWorkdirDocker}/' 2>/dev/null")
+  & docker @p1Args
+
+  # Phase 2: Build JAVA_TOOL_OPTIONS
+  $rtJfc = Join-Path $rtWorkdir 'spice-jfr.jfc'
+  if (-not (Test-Path $rtJfc)) {
+    Write-Host "[X] Failed to extract JFR settings from container"
+    Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
+    exit 1
+  }
+
+  $spiceJto = "-XX:StartFlightRecording=settings=${rtWorkdirHost}/spice-jfr.jfc,dumponexit=true,filename=${rtWorkdirHost}/recording-%p.jfr"
+  if ($IsWindows) {
+    $spiceJto = "-XX:StartFlightRecording=settings=$rtJfc,dumponexit=true,filename=$(Join-Path $rtWorkdir 'recording-%p.jfr')"
+  }
+
+  if (-not $rtNativeOnly -and (Test-Path (Join-Path $rtWorkdir 'ancho.jar'))) {
+    $spiceJto = "-javaagent:${rtWorkdirHost}/ancho.jar $spiceJto"
+  }
+
+  # Phase 3: Execute target command on the HOST
+  Write-Host "Executing: $($rtUserCmd -join ' ')"
+  $existingJto = $env:JAVA_TOOL_OPTIONS
+  if ($existingJto) {
+    $env:JAVA_TOOL_OPTIONS = "$spiceJto $existingJto"
+  } else {
+    $env:JAVA_TOOL_OPTIONS = $spiceJto
+  }
+
+  $ErrorActionPreference = 'Continue'
+  & $rtUserCmd[0] @($rtUserCmd | Select-Object -Skip 1)
+  $rtTargetRc = $LASTEXITCODE
+  $ErrorActionPreference = 'Stop'
+
+  # Restore original JAVA_TOOL_OPTIONS
+  if ($existingJto) { $env:JAVA_TOOL_OPTIONS = $existingJto }
+  else { Remove-Item Env:JAVA_TOOL_OPTIONS -ErrorAction SilentlyContinue }
+
+  if ($rtTargetRc -ne 0) {
+    Write-Host "[!] Target command exited with code $rtTargetRc. Still collecting recordings."
+  }
+
+  # Check for recordings
+  $rtRecordings = Get-ChildItem -Path $rtWorkdir -Filter '*.jfr' -ErrorAction SilentlyContinue
+  if (-not $rtRecordings -or $rtRecordings.Count -eq 0) {
+    Write-Host "[X] No JFR recordings found in $rtWorkdir"
+    if (-not $rtKeepRecording) { Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue }
+    exit 1
+  }
+
+  # Phase 4: Parse + upload in container
+  Write-Host "Analyzing recordings..."
+  $rtCollectArgs = @($rtSubject, $rtWorkdirDocker)
+  if ($rtNoUpload) { $rtCollectArgs += '--no-upload' }
+
+  $p4Args = @('run', '--rm', '--entrypoint', 'java')
+  $p4Args += @($userFlag)
+  $p4Args += @('--network', 'host')
+  $p4Args += @($pullFlag)
+  $p4Args += @('-v', "${rtWorkdirDocker}:${rtWorkdirDocker}")
+  $p4Args += @('-e', "SPICE_PASS=$spicePass")
+  $p4Args += @("${img}:${tag}")
+  $p4Args += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect')
+  $p4Args += @($rtCollectArgs)
+  & docker @p4Args
+  $rtCollectRc = $LASTEXITCODE
+
+  # Clean up
+  if (-not $rtKeepRecording) {
+    Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
+  } else {
+    Write-Host "Recordings kept in: $rtWorkdir"
+  }
+
+  if ($rtTargetRc -ne 0) { exit $rtTargetRc } else { exit $rtCollectRc }
+}
+
 # ── Find paths in args and build docker command ──────────────────────────────
 
 $inputPath = ""
@@ -209,26 +406,11 @@ if ($outputPath) {
 
 # ── Run ──────────────────────────────────────────────────────────────────────
 
-# Trim SPICE_PASS to remove invisible characters (e.g. CRLF, BOM, trailing
-# whitespace) that Windows may introduce via the Environment Variables GUI.
-$spicePass = if ($env:SPICE_PASS) { $env:SPICE_PASS.Trim() } else { "" }
-
 $envArgs = @()
 if ($env:SPICE_LABS_JVM_ARGS) { $envArgs += "-e"; $envArgs += "SPICE_LABS_JVM_ARGS" }
 
 $dockerFlags = @()
 if ($env:SPICE_DOCKER_FLAGS) { $dockerFlags = $env:SPICE_DOCKER_FLAGS -split '\s+' }
-
-# --user: match bash wrapper behavior on Linux/macOS. Not needed on Windows
-# where Docker Desktop handles file ownership transparently.
-$userFlag = @()
-if (-not $IsWindows) {
-  try {
-    $uid = & id -u
-    $gid = & id -g
-    $userFlag = @("--user", "${uid}:${gid}")
-  } catch {}
-}
 
 # 'Continue' prevents docker stderr from becoming a terminating error
 $ErrorActionPreference = 'Continue'
