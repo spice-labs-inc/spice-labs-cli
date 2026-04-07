@@ -694,30 +694,23 @@ Describe 'spice.ps1 wrapper' {
   # ── Runtime survey orchestration ───────────────────────────────────────
 
   Context 'Runtime survey' {
-    # Helper: create a script that performs an action AND creates a fake .jfr
-    # so the wrapper doesn't abort at the "no recordings" check.
-    function New-TestScript {
-      param([string]$Name, [string]$WinBody, [string]$UnixBody)
-      # Append fake .jfr creation: parse settings= path from JAVA_TOOL_OPTIONS to find workdir
-      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
-        $path = Join-Path $script:TestDir "$Name.cmd"
-        $jfrSnippet = @"
-`nset "jto=%JAVA_TOOL_OPTIONS%"
-for /f "tokens=1 delims=," %%a in ("%jto:*settings=%") do set "sp=%%a"
-for %%i in ("%sp%") do set "sdir=%%~dpi"
-echo fake > "%sdir%recording-fake.jfr"
-"@
-        Set-Content -Path $path -Value "@echo off`nsetlocal`n$WinBody$jfrSnippet"
-      } else {
-        $path = Join-Path $script:TestDir "$Name.sh"
-        $jfrSnippet = @"
-`n_dir=`$(echo "`$JAVA_TOOL_OPTIONS" | sed -n 's/.*settings=\([^ ,]*\).*/\1/p' | xargs dirname)
-echo fake > "`$_dir/recording-`$`$.jfr"
-"@
-        Set-Content -Path $path -Value "#!/bin/bash`n$UnixBody$jfrSnippet"
-        chmod +x $path
+    BeforeAll {
+      # Helper: create a script that performs an action AND creates a fake .jfr
+      # so the wrapper doesn't abort at the "no recordings" check.
+      function New-TestScript {
+        param([string]$Name, [string]$WinBody, [string]$UnixBody)
+        if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+          $path = Join-Path $script:TestDir "$Name.cmd"
+          $jfrSnippet = "`nset `"jto=%JAVA_TOOL_OPTIONS%`"`nfor /f `"tokens=1 delims=,`" %%a in (`"%jto:*settings=%`") do set `"sp=%%a`"`nfor %%i in (`"%sp%`") do set `"sdir=%%~dpi`"`necho fake > `"%sdir%recording-fake.jfr`""
+          Set-Content -Path $path -Value "@echo off`nsetlocal`n$WinBody$jfrSnippet"
+        } else {
+          $path = Join-Path $script:TestDir "$Name.sh"
+          $jfrSnippet = "`n_dir=`$(echo `"`$JAVA_TOOL_OPTIONS`" | sed -n 's/.*settings=\([^ ,]*\).*/\1/p' | xargs dirname)`necho fake > `"`$_dir/recording-`$`$.jfr`""
+          Set-Content -Path $path -Value "#!/bin/bash`n$UnixBody$jfrSnippet"
+          chmod +x $path
+        }
+        return $path
       }
-      return $path
     }
 
     It 'missing command after -- fails' {
