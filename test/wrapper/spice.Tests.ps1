@@ -737,7 +737,7 @@ if (`$jto -match 'settings=([^,]+)') {
     It 'target command runs on host' {
       $marker = Join-Path $script:TestDir 'host-ran.txt'
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-host-$PID"
-      $cmd = New-TestScript -Name 'touch' -WinBody "echo test > `"$marker`"" -UnixBody "touch `"$marker`""
+      $cmd = New-TestScript -Name 'touch' -WinBody "Set-Content -Path '$marker' -Value 'test'" -UnixBody "touch `"$marker`""
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
         $marker | Should -Exist
@@ -749,7 +749,7 @@ if (`$jto -match 'settings=([^,]+)') {
     It 'JAVA_TOOL_OPTIONS set for target' {
       $dump = Join-Path $script:TestDir 'jto-dump.txt'
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-jto-$PID"
-      $cmd = New-TestScript -Name 'dump-jto' -WinBody "echo %JAVA_TOOL_OPTIONS% > `"$dump`"" -UnixBody "echo `\"`\`$JAVA_TOOL_OPTIONS`\" > `"$dump`""
+      $cmd = New-TestScript -Name 'dump-jto' -WinBody "Set-Content -Path '$dump' -Value `$env:JAVA_TOOL_OPTIONS" -UnixBody "echo `\"`\`$JAVA_TOOL_OPTIONS`\" > `"$dump`""
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
         $dump | Should -Exist
@@ -764,7 +764,7 @@ if (`$jto -match 'settings=([^,]+)') {
 
     It 'workdir created under output dir' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-workdir-$PID"
-      $cmd = New-TestScript -Name 'noop-workdir' -WinBody 'rem noop' -UnixBody 'true'
+      $cmd = New-TestScript -Name 'noop-workdir' -WinBody '' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
         $found = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -776,7 +776,7 @@ if (`$jto -match 'settings=([^,]+)') {
 
     It 'workdir cleaned up without --keep-recording' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-cleanup-$PID"
-      $cmd = New-TestScript -Name 'noop-cleanup' -WinBody 'rem noop' -UnixBody 'true'
+      $cmd = New-TestScript -Name 'noop-cleanup' -WinBody '' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
         $found = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -788,7 +788,7 @@ if (`$jto -match 'settings=([^,]+)') {
 
     It 'recordings kept with --keep-recording' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-keep-$PID"
-      $cmd = New-TestScript -Name 'fake-jfr-keep' -WinBody 'rem noop' -UnixBody 'true'
+      $cmd = New-TestScript -Name 'fake-jfr-keep' -WinBody '' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
         ($r.RawOutput -join "`n") | Should -Match 'Recordings kept in:'
@@ -799,7 +799,7 @@ if (`$jto -match 'settings=([^,]+)') {
 
     It 'JFC extracted from container' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-jfc-$PID"
-      $cmd = New-TestScript -Name 'noop-jfc' -WinBody 'rem noop' -UnixBody 'true'
+      $cmd = New-TestScript -Name 'noop-jfc' -WinBody '' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
         $workdir = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
