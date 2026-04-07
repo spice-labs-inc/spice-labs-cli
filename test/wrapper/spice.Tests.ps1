@@ -787,22 +787,24 @@ Describe 'spice.ps1 wrapper' {
     It 'recordings kept with --keep-recording' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-keep-$PID"
       # Script that creates a fake .jfr recording in the workdir
+      # Create a script that writes a fake .jfr into the workdir.
+      # The workdir path is passed via --output to the wrapper, and we find
+      # it inside JAVA_TOOL_OPTIONS (the settings= path points there).
       if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
         $cmd = Join-Path $script:TestDir 'fake-jfr.cmd'
-        # Parse JAVA_TOOL_OPTIONS to find recording dir and create a .jfr
         Set-Content -Path $cmd -Value @"
 @echo off
-setlocal enabledelayedexpansion
-for /f "tokens=1 delims=," %%a in ("%JAVA_TOOL_OPTIONS:*filename=%") do set "recpath=%%a"
-for %%i in ("!recpath!") do set "recdir=%%~dpi"
-echo fake > "!recdir!recording-fake.jfr"
+setlocal
+set "jto=%JAVA_TOOL_OPTIONS%"
+for /f "tokens=1 delims=," %%a in ("%jto:*settings=%") do set "sp=%%a"
+for %%i in ("%sp%") do set "sdir=%%~dpi"
+echo fake > "%sdir%recording-fake.jfr"
 "@
       } else {
         $cmd = Join-Path $script:TestDir 'fake-jfr.sh'
         Set-Content -Path $cmd -Value @'
 #!/bin/bash
-recpath=$(echo "$JAVA_TOOL_OPTIONS" | sed -n 's/.*filename=\([^ ,]*\).*/\1/p')
-dir=$(dirname "$recpath")
+dir=$(echo "$JAVA_TOOL_OPTIONS" | sed -n 's/.*settings=\([^ ,]*\).*/\1/p' | xargs dirname)
 echo "fake-jfr" > "$dir/recording-$$.jfr"
 '@
         chmod +x $cmd
