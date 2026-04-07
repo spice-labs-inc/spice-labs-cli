@@ -127,6 +127,22 @@ public class RuntimeCollect {
     }
 
     @SuppressWarnings("unchecked")
+    /** Sanitize a JFR event name so each dot-separated segment is a valid Java identifier. */
+    private static String sanitizeJfrName(String name) {
+        String[] parts = name.split("\\.");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) sb.append('.');
+            String part = parts[i];
+            if (!part.isEmpty() && Character.isDigit(part.charAt(0))) {
+                sb.append('p').append(part);
+            } else {
+                sb.append(part);
+            }
+        }
+        return sb.toString();
+    }
+
     private static Map<String, JfrEventExtractor.ProbeDefinition> loadProbeIndex(Path configPath) {
         try {
             ObjectMapper mapper = new ObjectMapper();
@@ -137,8 +153,15 @@ public class RuntimeCollect {
             for (Map<String, String> p : probes) {
                 String id = p.get("id");
                 if (id != null) {
-                    index.put(id, new JfrEventExtractor.ProbeDefinition(
-                            id, p.get("class"), p.get("method"), p.get("label")));
+                    JfrEventExtractor.ProbeDefinition def = new JfrEventExtractor.ProbeDefinition(
+                            id, p.get("class"), p.get("method"), p.get("label"));
+                    // Index by both raw ID and sanitized JFR name so lookup works
+                    // regardless of whether the event name was sanitized by ancho
+                    index.put(id, def);
+                    String sanitized = sanitizeJfrName(id);
+                    if (!sanitized.equals(id)) {
+                        index.put(sanitized, def);
+                    }
                 }
             }
             return index;
