@@ -181,7 +181,7 @@
                                 <artifactItem>
                                     <groupId>io.spicelabs</groupId>
                                     <artifactId>ancho</artifactId>
-                                    <version>0.0.2</version>
+                                    <version>${ancho.version}</version>
                                     <classifier>fat</classifier>
                                     <destFileName>ancho.jar</destFileName>
                                     <outputDirectory>${project.build.directory}</outputDirectory>
