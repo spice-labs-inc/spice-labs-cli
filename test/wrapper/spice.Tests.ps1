@@ -700,9 +700,20 @@ Describe 'spice.ps1 wrapper' {
       function New-TestScript {
         param([string]$Name, [string]$WinBody, [string]$UnixBody)
         if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+          # On Windows, create a .ps1 script that does the action + creates a fake .jfr
+          # Then wrap it in a .cmd that calls powershell
+          $ps1Path = Join-Path $script:TestDir "$Name.ps1"
+          $ps1Body = @"
+$WinBody
+`$jto = `$env:JAVA_TOOL_OPTIONS
+if (`$jto -match 'settings=([^,]+)') {
+  `$d = Split-Path `$matches[1] -Parent
+  Set-Content -Path (Join-Path `$d 'recording-fake.jfr') -Value 'fake'
+}
+"@
+          Set-Content -Path $ps1Path -Value $ps1Body
           $path = Join-Path $script:TestDir "$Name.cmd"
-          $jfrSnippet = "`nset `"jto=%JAVA_TOOL_OPTIONS%`"`nfor /f `"tokens=1 delims=,`" %%a in (`"%jto:*settings=%`") do set `"sp=%%a`"`nfor %%i in (`"%sp%`") do set `"sdir=%%~dpi`"`necho fake > `"%sdir%recording-fake.jfr`""
-          Set-Content -Path $path -Value "@echo off`nsetlocal`n$WinBody$jfrSnippet"
+          Set-Content -Path $path -Value "@powershell -NoProfile -ExecutionPolicy Bypass -File `"$ps1Path`" %*"
         } else {
           $path = Join-Path $script:TestDir "$Name.sh"
           $jfrSnippet = "`n_dir=`$(echo `"`$JAVA_TOOL_OPTIONS`" | sed -n 's/.*settings=\([^ ,]*\).*/\1/p' | xargs dirname)`necho fake > `"`$_dir/recording-`$`$.jfr`""
