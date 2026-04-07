@@ -83,7 +83,7 @@ public class RuntimeCollect {
         long totalSize = recordings.stream().mapToLong(p -> {
             try { return Files.size(p); } catch (IOException e) { return 0; }
         }).sum();
-        log.info("Found {} recording(s), total size: {}",
+        log.debug("Found {} recording(s), total size: {}",
                 recordings.size(), SurveyRuntimeCommand.humanReadableSize(totalSize));
 
         // Load probe config if present in the workdir
@@ -91,11 +91,11 @@ public class RuntimeCollect {
         Path probeConfig = dir.resolve("probes.json");
         if (Files.exists(probeConfig)) {
             probeIndex = loadProbeIndex(probeConfig);
-            log.info("Loaded {} probe definitions", probeIndex.size());
+            log.debug("Loaded {} probe definitions", probeIndex.size());
         }
 
         // Parse
-        log.info("Parsing JFR recordings...");
+        log.debug("Parsing JFR recordings...");
         JfrEventExtractor.RawSurveyData data = JfrEventExtractor.extract(subject, recordings, probeIndex);
 
         // Print summary
@@ -114,15 +114,15 @@ public class RuntimeCollect {
             mapper.enable(SerializationFeature.INDENT_OUTPUT);
             mapper.writeValue(jsonPath.toFile(), data);
 
-            log.info("Uploading survey results...");
+            log.debug("Uploading survey results...");
             Ginger.builder()
                     .jwt(spicePass)
                     .runtimeSurveyFile(jsonPath)
                     .runtimeSubject(subject)
                     .run();
-            log.info("Upload complete.");
+            log.debug("Upload complete.");
         } else {
-            log.info("--no-upload: remove to send results to Spice Labs for full categorization.");
+            log.debug("--no-upload: remove to send results to Spice Labs for full categorization.");
         }
     }
 

@@ -126,14 +126,14 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
 
         // 2. Detect target JDK version
         String firstWord = command.get(0);
-        log.info("Detecting JDK version from command: {}", firstWord);
+        log.debug("Detecting JDK version from command: {}", firstWord);
         JdkVersionDetector.JdkVersion jdkVersion = JdkVersionDetector.detect(firstWord);
 
         if (jdkVersion == null) {
             log.warn("\u26A0\uFE0F  Could not detect JDK version. Assuming JDK 21 defaults.");
             jdkVersion = new JdkVersionDetector.JdkVersion(21, "unknown", true);
         } else {
-            log.info("Detected JDK {}{}", jdkVersion.major(),
+            log.debug("Detected JDK {}{}", jdkVersion.major(),
                     jdkVersion.isOpenJdk() ? " (OpenJDK)" : " (Oracle)");
         }
 
@@ -162,7 +162,7 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                     // Download probe config from server
                     probeConfigPath = tempDir.resolve("probes.json");
                     if (!noUpload && hasSpicePass(spicePass)) {
-                        log.info("Downloading probe config from server...");
+                        log.debug("Downloading probe config from server...");
                         boolean downloaded = Ginger.builder()
                                 .jwt(spicePass)
                                 .downloadRuntimeConfig(probeConfigPath);
@@ -172,8 +172,8 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                             agentPath = null;
                         }
                     } else {
-                        log.info("Running in offline mode (--no-upload), skipping probe config download.");
-                        log.info("Using native-only mode for offline operation.");
+                        log.debug("Running in offline mode (--no-upload), skipping probe config download.");
+                        log.debug("Using native-only mode for offline operation.");
                         nativeOnly = true;
                         agentPath = null;
                     }
@@ -187,7 +187,7 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
             // 6. Execute user command
             log.info("\uD83D\uDE80 Executing: {}", String.join(" ", command));
             int exitCode = executeCommand(command, javaToolOptions);
-            log.info("Command exited with code {}", exitCode);
+            log.debug("Command exited with code {}", exitCode);
 
             if (exitCode != 0) {
                 log.warn("\u26A0\uFE0F  Target command exited with non-zero code {}. Will still collect recordings.", exitCode);
@@ -197,24 +197,24 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
             List<Path> recordings = collectRecordings(tempDir, jdkVersion);
             if (recordings.isEmpty()) {
                 log.error("\u274c No JFR recordings found. The target application may not have produced any.");
-                log.info("Troubleshooting:");
-                log.info("  - Is the target application a Java process?");
-                log.info("  - Did it start and run long enough to produce events?");
-                log.info("  - Check for JFR initialization errors in the target's output.");
+                log.error("Troubleshooting:");
+                log.error("  - Is the target application a Java process?");
+                log.error("  - Did it start and run long enough to produce events?");
+                log.error("  - Check for JFR initialization errors in the target's output.");
                 return 1;
             }
 
             long totalSize = recordings.stream().mapToLong(p -> {
                 try { return Files.size(p); } catch (IOException e) { return 0; }
             }).sum();
-            log.info("Found {} recording(s), total size: {}",
+            log.debug("Found {} recording(s), total size: {}",
                     recordings.size(), humanReadableSize(totalSize));
             if (totalSize > JFR_SIZE_WARN_THRESHOLD) {
                 log.warn("\u26A0\uFE0F  Total recording size exceeds 1GB. This may indicate excessive instrumentation.");
             }
 
             // 8. Parse recordings
-            log.info("\uD83D\uDCCA Parsing JFR recordings...");
+            log.debug("Parsing JFR recordings...");
             JfrEventExtractor.RawSurveyData data = JfrEventExtractor.extract(subject, recordings);
 
             // 9. Print summary
@@ -227,11 +227,11 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                 mapper.enable(SerializationFeature.INDENT_OUTPUT);
                 mapper.writeValue(jsonPath.toFile(), data);
 
-                log.info("\uD83D\uDCE4 Uploading survey results...");
+                log.debug("Uploading survey results...");
                 doUpload(spicePass, jsonPath);
                 log.info("\u2705 Upload complete.");
             } else {
-                log.info("\u2139\uFE0F  --no-upload specified. Remove --no-upload to send results to Spice Labs for full categorization.");
+                log.debug("--no-upload specified. Remove --no-upload to send results to Spice Labs for full categorization.");
             }
 
             return exitCode;
@@ -417,54 +417,54 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
     // ── Console output ──────────────────────────────────────────────────
 
     void printSummary(JfrEventExtractor.RawSurveyData data) {
-        log.info("");
-        log.info("\uD83C\uDF36\uFE0F  Spice Labs Runtime Survey \u2014 JFR Analysis");
-        log.info("");
+        log.debug("");
+        log.debug("\uD83C\uDF36\uFE0F  Spice Labs Runtime Survey \u2014 JFR Analysis");
+        log.debug("");
 
         if (data.runtime() != null) {
             var rt = data.runtime();
-            if (rt.jvmVersion() != null) log.info("Runtime: {} ({})", rt.jvmVersion(), rt.jvmVendor());
-            if (rt.os() != null) log.info("OS:      {}", rt.os());
-            log.info("");
+            if (rt.jvmVersion() != null) log.debug("Runtime: {} ({})", rt.jvmVersion(), rt.jvmVendor());
+            if (rt.os() != null) log.debug("OS:      {}", rt.os());
+            log.debug("");
         }
 
         int totalEvents = data.probeEvents().size() + data.securityProviderEvents().size();
-        log.info("Recordings: {} file(s), {} distinct events",
+        log.debug("Recordings: {} file(s), {} distinct events",
                 data.recordings().size(), totalEvents);
-        log.info("");
+        log.debug("");
 
         if (!data.securityProviderEvents().isEmpty()) {
-            log.info("JDK Security Provider Events:");
+            log.debug("JDK Security Provider Events:");
             for (var evt : data.securityProviderEvents()) {
-                log.info("  {}: {}  {}x", evt.serviceType(), evt.algorithm(), evt.count());
+                log.debug("  {}: {}  {}x", evt.serviceType(), evt.algorithm(), evt.count());
             }
-            log.info("");
+            log.debug("");
         }
 
         if (!data.probeEvents().isEmpty()) {
-            log.info("Probe Events:");
+            log.debug("Probe Events:");
             for (var evt : data.probeEvents()) {
-                log.info("  {}.{}  {}x", evt.classFqn(), evt.methodName(), evt.count());
+                log.debug("  {}.{}  {}x", evt.classFqn(), evt.methodName(), evt.count());
             }
-            log.info("");
+            log.debug("");
         }
 
         if (!data.tlsHandshakes().isEmpty()) {
-            log.info("TLS Connections:");
+            log.debug("TLS Connections:");
             for (var tls : data.tlsHandshakes()) {
-                log.info("  {}:{}  {} / {}  {}x",
+                log.debug("  {}:{}  {} / {}  {}x",
                         tls.peerHost(), tls.peerPort(), tls.protocol(), tls.cipherSuite(), tls.count());
             }
-            log.info("");
+            log.debug("");
         }
 
         if (!data.certificates().isEmpty()) {
-            log.info("Certificates:");
+            log.debug("Certificates:");
             for (var cert : data.certificates()) {
-                log.info("  {}  {}-{} {}  expires {}",
+                log.debug("  {}  {}-{} {}  expires {}",
                         cert.subject(), cert.keyType(), cert.keyLength(), cert.sigAlgo(), cert.validUntil());
             }
-            log.info("");
+            log.debug("");
         }
     }
 
