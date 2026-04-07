@@ -694,6 +694,32 @@ Describe 'spice.ps1 wrapper' {
   # ── Runtime survey orchestration ───────────────────────────────────────
 
   Context 'Runtime survey' {
+    # Helper: create a script that performs an action AND creates a fake .jfr
+    # so the wrapper doesn't abort at the "no recordings" check.
+    function New-TestScript {
+      param([string]$Name, [string]$WinBody, [string]$UnixBody)
+      # Append fake .jfr creation: parse settings= path from JAVA_TOOL_OPTIONS to find workdir
+      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        $path = Join-Path $script:TestDir "$Name.cmd"
+        $jfrSnippet = @"
+`nset "jto=%JAVA_TOOL_OPTIONS%"
+for /f "tokens=1 delims=," %%a in ("%jto:*settings=%") do set "sp=%%a"
+for %%i in ("%sp%") do set "sdir=%%~dpi"
+echo fake > "%sdir%recording-fake.jfr"
+"@
+        Set-Content -Path $path -Value "@echo off`nsetlocal`n$WinBody$jfrSnippet"
+      } else {
+        $path = Join-Path $script:TestDir "$Name.sh"
+        $jfrSnippet = @"
+`n_dir=`$(echo "`$JAVA_TOOL_OPTIONS" | sed -n 's/.*settings=\([^ ,]*\).*/\1/p' | xargs dirname)
+echo fake > "`$_dir/recording-`$`$.jfr"
+"@
+        Set-Content -Path $path -Value "#!/bin/bash`n$UnixBody$jfrSnippet"
+        chmod +x $path
+      }
+      return $path
+    }
+
     It 'missing command after -- fails' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr')
       $r.ExitCode | Should -Be 1
@@ -707,14 +733,7 @@ Describe 'spice.ps1 wrapper' {
     It 'target command runs on host' {
       $marker = Join-Path $script:TestDir 'host-ran.txt'
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-host-$PID"
-      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
-        $cmd = Join-Path $script:TestDir 'touch.cmd'
-        Set-Content -Path $cmd -Value "@echo test > `"$marker`""
-      } else {
-        $cmd = Join-Path $script:TestDir 'touch.sh'
-        Set-Content -Path $cmd -Value "#!/bin/bash`ntouch `"$marker`""
-        chmod +x $cmd
-      }
+      $cmd = New-TestScript -Name 'touch' -WinBody "echo test > `"$marker`"" -UnixBody "touch `"$marker`""
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
         $marker | Should -Exist
@@ -726,14 +745,7 @@ Describe 'spice.ps1 wrapper' {
     It 'JAVA_TOOL_OPTIONS set for target' {
       $dump = Join-Path $script:TestDir 'jto-dump.txt'
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-jto-$PID"
-      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
-        $cmd = Join-Path $script:TestDir 'dump-jto.cmd'
-        Set-Content -Path $cmd -Value "@echo %JAVA_TOOL_OPTIONS% > `"$dump`""
-      } else {
-        $cmd = Join-Path $script:TestDir 'dump-jto.sh'
-        Set-Content -Path $cmd -Value "#!/bin/bash`necho `\"`\`$JAVA_TOOL_OPTIONS`\" > `"$dump`""
-        chmod +x $cmd
-      }
+      $cmd = New-TestScript -Name 'dump-jto' -WinBody "echo %JAVA_TOOL_OPTIONS% > `"$dump`"" -UnixBody "echo `\"`\`$JAVA_TOOL_OPTIONS`\" > `"$dump`""
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
         $dump | Should -Exist
@@ -748,14 +760,7 @@ Describe 'spice.ps1 wrapper' {
 
     It 'workdir created under output dir' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-workdir-$PID"
-      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
-        $cmd = Join-Path $script:TestDir 'noop.cmd'
-        Set-Content -Path $cmd -Value '@rem noop'
-      } else {
-        $cmd = Join-Path $script:TestDir 'noop.sh'
-        Set-Content -Path $cmd -Value "#!/bin/bash`ntrue"
-        chmod +x $cmd
-      }
+      $cmd = New-TestScript -Name 'noop-workdir' -WinBody 'rem noop' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
         $found = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -767,14 +772,7 @@ Describe 'spice.ps1 wrapper' {
 
     It 'workdir cleaned up without --keep-recording' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-cleanup-$PID"
-      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
-        $cmd = Join-Path $script:TestDir 'noop.cmd'
-        Set-Content -Path $cmd -Value '@rem noop'
-      } else {
-        $cmd = Join-Path $script:TestDir 'noop.sh'
-        Set-Content -Path $cmd -Value "#!/bin/bash`ntrue"
-        chmod +x $cmd
-      }
+      $cmd = New-TestScript -Name 'noop-cleanup' -WinBody 'rem noop' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
         $found = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -786,29 +784,7 @@ Describe 'spice.ps1 wrapper' {
 
     It 'recordings kept with --keep-recording' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-keep-$PID"
-      # Script that creates a fake .jfr recording in the workdir
-      # Create a script that writes a fake .jfr into the workdir.
-      # The workdir path is passed via --output to the wrapper, and we find
-      # it inside JAVA_TOOL_OPTIONS (the settings= path points there).
-      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
-        $cmd = Join-Path $script:TestDir 'fake-jfr.cmd'
-        Set-Content -Path $cmd -Value @"
-@echo off
-setlocal
-set "jto=%JAVA_TOOL_OPTIONS%"
-for /f "tokens=1 delims=," %%a in ("%jto:*settings=%") do set "sp=%%a"
-for %%i in ("%sp%") do set "sdir=%%~dpi"
-echo fake > "%sdir%recording-fake.jfr"
-"@
-      } else {
-        $cmd = Join-Path $script:TestDir 'fake-jfr.sh'
-        Set-Content -Path $cmd -Value @'
-#!/bin/bash
-dir=$(echo "$JAVA_TOOL_OPTIONS" | sed -n 's/.*settings=\([^ ,]*\).*/\1/p' | xargs dirname)
-echo "fake-jfr" > "$dir/recording-$$.jfr"
-'@
-        chmod +x $cmd
-      }
+      $cmd = New-TestScript -Name 'fake-jfr-keep' -WinBody 'rem noop' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
         ($r.RawOutput -join "`n") | Should -Match 'Recordings kept in:'
@@ -819,14 +795,7 @@ echo "fake-jfr" > "$dir/recording-$$.jfr"
 
     It 'JFC extracted from container' {
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-jfc-$PID"
-      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
-        $cmd = Join-Path $script:TestDir 'noop.cmd'
-        Set-Content -Path $cmd -Value '@rem noop'
-      } else {
-        $cmd = Join-Path $script:TestDir 'noop.sh'
-        Set-Content -Path $cmd -Value "#!/bin/bash`ntrue"
-        chmod +x $cmd
-      }
+      $cmd = New-TestScript -Name 'noop-jfc' -WinBody 'rem noop' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
         $workdir = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
