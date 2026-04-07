@@ -791,7 +791,9 @@ if (`$jto -match 'settings=([^,]+)') {
       $cmd = New-TestScript -Name 'fake-jfr-keep' -WinBody '' -UnixBody 'true'
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--keep-recording', '--output', $outdir, '--', $cmd)
-        ($r.RawOutput -join "`n") | Should -Match 'Recordings kept in:'
+        # Verify workdir was kept (not cleaned up)
+        $found = Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $found | Should -Not -BeNullOrEmpty
       } finally {
         Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
       }
