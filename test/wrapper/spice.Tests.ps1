@@ -33,7 +33,12 @@ class MockDocker {
     string entrypoint = null, volHost = null;
     for (int j = 0; j < args.Length - 1; j++) {
       if (args[j] == "--entrypoint") entrypoint = args[j+1];
-      if (args[j] == "-v" && args[j+1].Contains(":")) volHost = args[j+1].Split(':')[0];
+      if (args[j] == "-v" && args[j+1].Contains(":")) {
+        // Handle Windows drive letters (e.g. C:\path:C:\path)
+        var vol = args[j+1];
+        int sep = vol.IndexOf(':', vol.Length > 2 && vol[1] == ':' ? 2 : 0);
+        volHost = sep > 0 ? vol.Substring(0, sep) : vol;
+      }
     }
     // Phase 1: extraction
     if (entrypoint == "sh" && volHost != null && Directory.Exists(volHost)) {

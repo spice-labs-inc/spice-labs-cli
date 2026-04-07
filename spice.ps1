@@ -246,7 +246,7 @@ if ($isRuntimeSurvey) {
   $p1Args = @('run', '--rm', '--entrypoint', 'sh')
   $p1Args += @($userFlag)
   $p1Args += @($pullFlag)
-  $p1Args += @('-v', "${rtWorkdirDocker}:${rtWorkdirDocker}")
+  $p1Args += @('-v', "${rtWorkdirHost}:${rtWorkdirDocker}")
   $p1Args += @("${img}:${tag}")
   $p1Args += @('-c', "cp '${spiceCliDir}/ancho.jar' '${rtWorkdirDocker}/' 2>/dev/null; cp '${spiceCliDir}/spice-jfr.jfc' '${rtWorkdirDocker}/' 2>/dev/null")
   & docker @p1Args
@@ -323,7 +323,7 @@ if ($isRuntimeSurvey) {
   $p4Args += @($userFlag)
   $p4Args += @('--network', 'host')
   $p4Args += @($pullFlag)
-  $p4Args += @('-v', "${rtWorkdirDocker}:${rtWorkdirDocker}")
+  $p4Args += @('-v', "${rtWorkdirHost}:${rtWorkdirDocker}")
   $p4Args += @('-e', "SPICE_PASS=$spicePass")
   $p4Args += @("${img}:${tag}")
   $p4Args += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect')
