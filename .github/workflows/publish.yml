@@ -196,13 +196,58 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Download fat jar
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Write settings.xml for GitHub Packages
+        run: |
+          mkdir -p ~/.m2
+          cat <<EOF > ~/.m2/settings.xml
+          <settings>
+            <servers>
+              <server>
+                <id>github-spice-labs-ancho</id>
+                <username>${{ secrets.GH_USERNAME_SG }}</username>
+                <password>${{ secrets.GH_TOKEN }}</password>
+              </server>
+            </servers>
+            <profiles>
+              <profile>
+                <id>github</id>
+                <repositories>
+                  <repository>
+                    <id>github-spice-labs-ancho</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ancho</url>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>github</activeProfile>
+            </activeProfiles>
+          </settings>
+          EOF
+
+      - name: Download fat jar and ancho agent
         run: |
           mkdir -p target
           curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
             -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/octet-stream" \
             "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
+          ANCHO_VERSION=$(mvn help:evaluate -Dexpression=ancho.version -q -DforceStdout)
+          mvn --batch-mode dependency:copy \
+            -Dartifact=io.spicelabs:ancho:${ANCHO_VERSION}:jar:fat \
+            -DoutputDirectory=target \
+            -Dmdep.stripVersion=true \
+            -Dmdep.stripClassifier=true \
+            -Dmdep.overWriteIfNewer=true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
