@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration version="2.0" label="Spice Labs PQC Survey" provider="Spice Labs">
+  <!-- Security Provider Service events (JDK 12+) -->
+  <event name="jdk.SecurityProviderService">
+    <setting name="enabled">true</setting>
+    <setting name="stackTrace">true</setting>
+  </event>
+
+  <!-- TLS Handshake events -->
+  <event name="jdk.TLSHandshake">
+    <setting name="enabled">true</setting>
+    <setting name="stackTrace">true</setting>
+  </event>
+
+  <!-- X.509 Certificate events -->
+  <event name="jdk.X509Certificate">
+    <setting name="enabled">true</setting>
+    <setting name="stackTrace">false</setting>
+  </event>
+
+  <!-- X.509 Certificate Chain Validation -->
+  <event name="jdk.X509Validation">
+    <setting name="enabled">true</setting>
+    <setting name="stackTrace">false</setting>
+  </event>
+
+  <!-- Security Property Modification -->
+  <event name="jdk.SecurityPropertyModification">
+    <setting name="enabled">true</setting>
+    <setting name="stackTrace">true</setting>
+  </event>
+
+  <!-- Initial Security Properties (at JVM start) -->
+  <event name="jdk.InitialSecurityProperty">
+    <setting name="enabled">true</setting>
+    <setting name="stackTrace">false</setting>
+  </event>
+
+  <!-- JVM Information (version, vendor, etc.) -->
+  <event name="jdk.JVMInformation">
+    <setting name="enabled">true</setting>
+    <setting name="period">beginChunk</setting>
+  </event>
+
+  <!-- OS Information -->
+  <event name="jdk.OSInformation">
+    <setting name="enabled">true</setting>
+    <setting name="period">beginChunk</setting>
+  </event>
+
+  <!-- System Properties (for java.vm.vendor, etc.) -->
+  <event name="jdk.InitialSystemProperty">
+    <setting name="enabled">true</setting>
+    <setting name="period">beginChunk</setting>
+  </event>
+</configuration>

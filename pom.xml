@@ -52,10 +52,12 @@
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
         <goatrodeo.version>0.14.5</goatrodeo.version>
-        <ginger.version>0.2.4</ginger.version>
+        <ginger.version>0.3.0</ginger.version>
+        <ancho.version>0.0.4</ancho.version>
         <!--        Use these versions for local dev-->
         <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
         <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version> -->
+        <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <mockito.version>5.3.1</mockito.version>
@@ -76,6 +78,13 @@
             <groupId>io.spicelabs</groupId>
             <artifactId>ginger-j</artifactId>
             <version>${ginger.version}</version>
+        </dependency>
+        <!-- JFR agent for runtime surveys — extracted to temp at runtime, not shaded -->
+        <dependency>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>ancho</artifactId>
+            <version>${ancho.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -106,6 +115,12 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.jupiter.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
             <version>${junit.jupiter.version}</version>
             <scope>test</scope>
         </dependency>
@@ -153,6 +168,31 @@
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-ancho-agent</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>copy</goal></goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>io.spicelabs</groupId>
+                                    <artifactId>ancho</artifactId>
+                                    <version>${ancho.version}</version>
+                                    <classifier>fat</classifier>
+                                    <destFileName>ancho.jar</destFileName>
+                                    <outputDirectory>${project.build.directory}</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>3.5.0</version>
                 <executions>
@@ -163,6 +203,12 @@
                         </goals>
                         <configuration>
                             <finalName>${project.build.finalName}-fat</finalName>
+                            <artifactSet>
+                                <excludes>
+                                    <!-- Ancho is copied as a whole JAR resource, not shaded -->
+                                    <exclude>io.spicelabs:ancho</exclude>
+                                </excludes>
+                            </artifactSet>
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>

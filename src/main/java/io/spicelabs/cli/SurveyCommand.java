@@ -28,6 +28,7 @@ import picocli.CommandLine.Command;
     description = "Survey software artifacts",
     subcommands = {
         SurveyInventoryCommand.class,
+        SurveyRuntimeCommand.class,
     }
 )
 public class SurveyCommand implements Runnable {
