@@ -116,6 +116,7 @@ spice pass decode
 | `--keep-recording` | Don't delete JFR recordings after upload | `false` |
 | `--output` | Directory for temporary files | `~/.spicelabs/runtime-survey/` |
 | `--log-level` | `debug` \| `info` \| `warn` \| `error` | `info` |
+| `--log-file` | Path to log file (output appended to both console and file) | _(none)_ |
 | `--chunk-size` | Target chunk size in MB for uploads | `64` |
 
 Flags can appear anywhere before the `--` separator.
