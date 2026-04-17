@@ -54,6 +54,16 @@ class SpiceLabsCLITest {
   }
 
   @Test
+  void surveyInventory_noargs_help() {
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    int rc = cmd.execute("survey", "inventory");
+    // The PicoCLI test log shows a Usage message for spice survey inventory (yay!)
+    // but the spice command line does not (boo!)
+    // Is the wrapper swallowing extra output after the first error line?
+    assertEquals(2, rc);
+  }
+
+  @Test
   void surveyInventory_help() {
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
     int rc = cmd.execute("survey", "inventory", "--help");
