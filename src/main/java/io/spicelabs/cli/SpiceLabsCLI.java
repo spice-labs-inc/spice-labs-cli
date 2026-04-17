@@ -56,20 +56,31 @@ public class SpiceLabsCLI implements Runnable {
   public static void main(String[] args) {
     int exitCode;
     try {
-      CommandLine cmd = new CommandLine(new SpiceLabsCLI());
-      cmd.setParameterExceptionHandler((ex, a) -> {
-        CommandLine offending = ex.getCommandLine();
-        log.error("❌ {}", ex.getMessage());
-        offending.usage(offending.getErr(), offending.getColorScheme());
-        return offending.getCommandSpec().exitCodeOnInvalidInput();
-      });
-
-      exitCode = cmd.execute(args);
+      exitCode = newCommandLine().execute(args);
     } catch (Exception e) {
       log.error("Fatal error: {}", e.getMessage(), e);
       exitCode = 1;
     }
     System.exit(exitCode);
+  }
+
+  /**
+   * Build a CommandLine with the CLI's standard parameter exception handler.
+   * Used by main() and tests so both exercise identical error behavior.
+   */
+  static CommandLine newCommandLine() {
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    cmd.setParameterExceptionHandler((ex, a) -> {
+      CommandLine offending = ex.getCommandLine();
+      log.error("❌ {}", ex.getMessage());
+      if (ex instanceof CommandLine.MissingParameterException) {
+        offending.usage(offending.getErr(), offending.getColorScheme());
+      } else {
+        log.info("Use --help for usage information.");
+      }
+      return offending.getCommandSpec().exitCodeOnInvalidInput();
+    });
+    return cmd;
   }
 
   @Override

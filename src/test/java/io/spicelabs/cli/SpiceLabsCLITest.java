@@ -245,7 +245,7 @@ class SpiceLabsCLITest {
   @Test
   void surveyInventory_missingArgs_printsDetailedUsage() {
     StringWriter err = new StringWriter();
-    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    CommandLine cmd = SpiceLabsCLI.newCommandLine();
     cmd.setErr(new PrintWriter(err));
     int rc = cmd.execute("survey", "inventory");
     assertNotEquals(0, rc, "Missing required params should produce non-zero exit");
@@ -262,14 +262,16 @@ class SpiceLabsCLITest {
   }
 
   @Test
-  void topLevel_unknownOption_printsDetailedUsage() {
+  void topLevel_unknownOption_suppressesDetailedUsage() {
+    // Unknown flags are likely typos — full usage dump is excessive.
+    // The short "Use --help for usage information." hint is enough.
     StringWriter err = new StringWriter();
-    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    CommandLine cmd = SpiceLabsCLI.newCommandLine();
     cmd.setErr(new PrintWriter(err));
     int rc = cmd.execute("--nope");
     assertNotEquals(0, rc);
-    assertTrue(err.toString().contains("Usage:"),
-        "Expected 'Usage:' block in output, got:\n" + err);
+    assertFalse(err.toString().contains("Usage:"),
+        "Did not expect full 'Usage:' block for unknown flag, got:\n" + err);
   }
 
   // ── Survey inventory: full pipeline (survey + upload) ─────────────────────
