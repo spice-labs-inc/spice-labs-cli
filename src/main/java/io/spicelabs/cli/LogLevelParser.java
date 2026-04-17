@@ -15,33 +15,21 @@ limitations under the License. */
 
 package io.spicelabs.cli;
 
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
+import ch.qos.logback.classic.Level;
 
-/**
- * Parent command for Spice Pass operations.
- * Usage: spice pass &lt;subcommand&gt;
- */
-@Command(
-    name = "pass",
-    mixinStandardHelpOptions = true,
-    description = "Spice Pass utilities",
-    subcommands = {
-        PassDecodeCommand.class,
-    },
-    footer = {
-        "",
-        "Examples:",
-        "  spice pass decode",
-        "",
-        "Run 'spice pass <subcommand> --help' for per-subcommand details.",
-        ""
+final class LogLevelParser {
+  private LogLevelParser() {}
+
+  static Level parse(String raw) {
+    if (raw == null) return Level.INFO;
+    switch (raw.toUpperCase()) {
+      case "DEBUG": return Level.DEBUG;
+      case "INFO":  return Level.INFO;
+      case "WARN":  return Level.WARN;
+      case "ERROR": return Level.ERROR;
+      default:
+        throw new IllegalArgumentException(
+            "Invalid log level '" + raw + "'. Valid values: debug|info|warn|error");
     }
-)
-public class PassCommand implements Runnable {
-
-  @Override
-  public void run() {
-    new CommandLine(this).usage(System.out);
   }
 }

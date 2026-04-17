@@ -48,7 +48,25 @@ import picocli.CommandLine.Parameters;
 @Command(
     name = "inventory",
     description = "Survey artifact inventory and upload ADGs to Spice Labs",
-    mixinStandardHelpOptions = true
+    mixinStandardHelpOptions = true,
+    footer = {
+        "",
+        "Examples:",
+        "  # Survey a directory of artifacts and upload",
+        "  spice survey inventory my-app ./build/libs",
+        "",
+        "  # Survey a single file, skip upload, write output to ./out",
+        "  spice survey inventory my-app ./app.jar --no-upload --output ./out",
+        "",
+        "  # Attach JSON tag metadata",
+        "  spice survey inventory my-app ./dist --tag-json='{\"env\":\"prod\"}'",
+        "",
+        "  # Upload previously-surveyed ADGs",
+        "  spice survey inventory my-app ./out --upload-only",
+        "",
+        "SPICE_PASS must be set in the environment for upload.",
+        ""
+    }
 )
 public class SurveyInventoryCommand implements java.util.concurrent.Callable<Integer> {
 
@@ -110,16 +128,16 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
   @Override
   public Integer call() throws Exception {
-    configureLogging();
-
-    if (goatRodeoArgsRaw != null) {
-      goatRodeoArgs = ArgParser.parseKeyValueList(goatRodeoArgsRaw);
-    }
-    if (gingerArgsRaw != null) {
-      gingerArgs = ArgParser.parseKeyValueList(gingerArgsRaw);
-    }
-
     try {
+      configureLogging();
+
+      if (goatRodeoArgsRaw != null) {
+        goatRodeoArgs = ArgParser.parseKeyValueList(goatRodeoArgsRaw);
+      }
+      if (gingerArgsRaw != null) {
+        gingerArgs = ArgParser.parseKeyValueList(gingerArgsRaw);
+      }
+
       run();
       return 0;
     } catch (IllegalArgumentException ex) {
@@ -319,8 +337,8 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   }
 
   private void configureLogging() {
-    String levelStr = (logLevel == null) ? "INFO" : logLevel.toUpperCase();
-    Level level = Level.toLevel(levelStr, Level.INFO);
+    Level level = LogLevelParser.parse(logLevel);
+    String levelStr = level.toString();
 
     ch.qos.logback.classic.Logger rootLogger =
         (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);

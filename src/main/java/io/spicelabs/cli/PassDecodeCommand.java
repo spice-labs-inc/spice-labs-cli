@@ -27,7 +27,15 @@ import picocli.CommandLine.Command;
 @Command(
     name = "decode",
     description = "Decode and display Spice Pass (JWT) information",
-    mixinStandardHelpOptions = true
+    mixinStandardHelpOptions = true,
+    footer = {
+        "",
+        "Example:",
+        "  SPICE_PASS=$MY_TOKEN spice pass decode",
+        "",
+        "SPICE_PASS must be set in the environment.",
+        ""
+    }
 )
 public class PassDecodeCommand implements java.util.concurrent.Callable<Integer> {
 

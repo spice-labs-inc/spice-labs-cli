@@ -36,6 +36,17 @@ import picocli.CommandLine.Command;
     subcommands = {
         SurveyCommand.class,
         PassCommand.class,
+    },
+    footer = {
+        "",
+        "Examples:",
+        "  spice survey inventory my-app ./build/libs",
+        "  spice survey inventory my-app ./app.jar --no-upload --output ./out",
+        "  spice survey runtime my-app --jfr -- java -jar app.jar",
+        "  spice pass decode",
+        "",
+        "Run 'spice <command> --help' for details on each subcommand.",
+        ""
     }
 )
 public class SpiceLabsCLI implements Runnable {
@@ -47,9 +58,10 @@ public class SpiceLabsCLI implements Runnable {
     try {
       CommandLine cmd = new CommandLine(new SpiceLabsCLI());
       cmd.setParameterExceptionHandler((ex, a) -> {
+        CommandLine offending = ex.getCommandLine();
         log.error("❌ {}", ex.getMessage());
-        log.info("Use --help for usage information.");
-        return cmd.getCommandSpec().exitCodeOnInvalidInput();
+        offending.usage(offending.getErr(), offending.getColorScheme());
+        return offending.getCommandSpec().exitCodeOnInvalidInput();
       });
 
       exitCode = cmd.execute(args);
