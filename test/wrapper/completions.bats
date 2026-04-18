@@ -72,6 +72,11 @@ complete_at() {
   [[ "$result" == *"inventory"* ]]
 }
 
+@test "survey: completes runtime" {
+  result="$(complete_at "spice survey ")"
+  [[ "$result" == *"runtime"* ]]
+}
+
 @test "survey: completes --help" {
   result="$(complete_at "spice survey ")"
   [[ "$result" == *"--help"* ]]
@@ -108,6 +113,38 @@ complete_at() {
 @test "survey inventory: --tag-json has no completions" {
   result="$(complete_at "spice survey inventory myapp /path --tag-json ")"
   [ -z "$result" ]
+}
+
+# ── Survey runtime options ───────────────────────────────────────────────────
+
+@test "survey runtime: completes flags when dash typed" {
+  result="$(complete_at "spice survey runtime myapp --")"
+  [[ "$result" == *"--jfr"* ]]
+  [[ "$result" == *"--native-only"* ]]
+  [[ "$result" == *"--no-upload"* ]]
+  [[ "$result" == *"--keep-recording"* ]]
+  [[ "$result" == *"--output"* ]]
+  [[ "$result" == *"--chunk-size"* ]]
+  [[ "$result" == *"--log-level"* ]]
+  [[ "$result" == *"--log-file"* ]]
+}
+
+@test "survey runtime: does not offer inventory-only flags" {
+  result="$(complete_at "spice survey runtime myapp --")"
+  [[ "$result" != *"--tag-json"* ]]
+  [[ "$result" != *"--upload-only"* ]]
+  [[ "$result" != *"--goat-rodeo-args"* ]]
+  [[ "$result" != *"--ginger-args"* ]]
+  [[ "$result" != *"--max-records"* ]]
+  [[ "$result" != *"--threads"* ]]
+}
+
+@test "survey runtime: --log-level completes levels" {
+  result="$(complete_at "spice survey runtime myapp --log-level ")"
+  [[ "$result" == *"debug"* ]]
+  [[ "$result" == *"info"* ]]
+  [[ "$result" == *"warn"* ]]
+  [[ "$result" == *"error"* ]]
 }
 
 # ── Pass subcommand ──────────────────────────────────────────────────────────

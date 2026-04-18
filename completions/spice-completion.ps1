@@ -15,6 +15,7 @@ Register-ArgumentCompleter -Native -CommandName spice, spice.ps1 -ScriptBlock {
       'survey'    { $cmd = 'survey' }
       'pass'      { $cmd = 'pass' }
       'inventory' { if ($cmd -eq 'survey') { $subcmd = 'inventory' } }
+      'runtime'   { if ($cmd -eq 'survey') { $subcmd = 'runtime' } }
       'decode'    { if ($cmd -eq 'pass')   { $subcmd = 'decode' } }
     }
   }
@@ -46,7 +47,12 @@ Register-ArgumentCompleter -Native -CommandName spice, spice.ps1 -ScriptBlock {
             '--max-records', '--chunk-size', '--log-level', '--log-file',
             '--goat-rodeo-args', '--ginger-args', '--help', '--version')
         }
-        default { @('inventory', '--help', '--version') }
+        'runtime' {
+          @('--jfr', '--native-only', '--no-upload', '--keep-recording',
+            '--output', '--chunk-size', '--log-level', '--log-file',
+            '--help', '--version')
+        }
+        default { @('inventory', 'runtime', '--help', '--version') }
       }
     }
     'pass' {

@@ -359,6 +359,24 @@ refute_arg() {
   [ "$status" -eq 42 ]
 }
 
+# ── Nonexistent input path (#546) ────────────────────────────────────────
+
+@test "nonexistent input path: exits with clear error" {
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/does-not-exist"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"Input path does not exist"* ]]
+  [[ "$output" == *"$TEST_TMPDIR/does-not-exist"* ]]
+  [[ "$output" != *"cd:"* ]]
+}
+
+@test "nonexistent input path: does not invoke docker run" {
+  # If abs_path had let us through, docker would get a bad mount and the
+  # container would emit the SPICE_TEST_BEGIN marker.
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/does-not-exist"
+  [ "$status" -eq 2 ]
+  [[ "$output" != *"SPICE_TEST_BEGIN"* ]]
+}
+
 # ── Runtime survey orchestration ─────────────────────────────────────────
 
 @test "runtime survey: missing command after -- fails" {

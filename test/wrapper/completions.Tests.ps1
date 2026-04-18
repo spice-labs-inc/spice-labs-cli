@@ -82,6 +82,11 @@ Describe 'PowerShell tab completion' {
       $c | Should -Contain 'inventory'
     }
 
+    It 'completes runtime' {
+      $c = Get-SpiceCompletions 'spice survey '
+      $c | Should -Contain 'runtime'
+    }
+
     It 'completes --help' {
       $c = Get-SpiceCompletions 'spice survey '
       $c | Should -Contain '--help'
@@ -120,6 +125,40 @@ Describe 'PowerShell tab completion' {
     It '--tag-json has no completions' {
       $c = Get-SpiceCompletions 'spice survey inventory myapp /path --tag-json '
       $c | Should -BeNullOrEmpty
+    }
+  }
+
+  # ── Survey runtime options ─────────────────────────────────────────────────
+
+  Context 'Survey runtime options' {
+    It 'completes flags' {
+      $c = Get-SpiceCompletions 'spice survey runtime myapp --'
+      $c | Should -Contain '--jfr'
+      $c | Should -Contain '--native-only'
+      $c | Should -Contain '--no-upload'
+      $c | Should -Contain '--keep-recording'
+      $c | Should -Contain '--output'
+      $c | Should -Contain '--chunk-size'
+      $c | Should -Contain '--log-level'
+      $c | Should -Contain '--log-file'
+    }
+
+    It 'does not offer inventory-only flags' {
+      $c = Get-SpiceCompletions 'spice survey runtime myapp --'
+      $c | Should -Not -Contain '--tag-json'
+      $c | Should -Not -Contain '--upload-only'
+      $c | Should -Not -Contain '--goat-rodeo-args'
+      $c | Should -Not -Contain '--ginger-args'
+      $c | Should -Not -Contain '--max-records'
+      $c | Should -Not -Contain '--threads'
+    }
+
+    It '--log-level completes levels' {
+      $c = Get-SpiceCompletions 'spice survey runtime myapp --log-level '
+      $c | Should -Contain 'debug'
+      $c | Should -Contain 'info'
+      $c | Should -Contain 'warn'
+      $c | Should -Contain 'error'
     }
   }
 

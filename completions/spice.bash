@@ -45,8 +45,14 @@ _spice_completions() {
           else
             _filedir
           fi ;;
+        runtime)
+          if [[ "$cur" == -* ]]; then
+            COMPREPLY=($(compgen -W "--jfr --native-only --no-upload --keep-recording --output --chunk-size --log-level --log-file --help --version" -- "$cur"))
+          else
+            _filedir
+          fi ;;
         *)
-          COMPREPLY=($(compgen -W "inventory --help --version" -- "$cur")) ;;
+          COMPREPLY=($(compgen -W "inventory runtime --help --version" -- "$cur")) ;;
       esac ;;
     pass)
       case "$subcmd" in
