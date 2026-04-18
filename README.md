@@ -120,6 +120,19 @@ spice pass decode
 
 Flags can appear anywhere before the `--` separator.
 
+### `--tag-json` on Windows PowerShell 5.1
+
+PowerShell 5.1 strips outer single quotes before passing an argument to the CLI,
+so `--tag-json='{"env":"dev"}'` arrives as a bare `{env:dev}` literal and fails
+to parse. This is a PS5.1 quirk; PowerShell 7 handles the same syntax correctly.
+
+Workaround — assign the JSON to a variable first:
+
+```powershell
+$json = '{"env":"dev","team":"platform"}'
+spice survey inventory my-app C:\path\to\artifacts --tag-json=$json
+```
+
 ---
 
 ## 🐳 Docker

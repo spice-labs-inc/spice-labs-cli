@@ -30,6 +30,10 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import ch.qos.logback.classic.Level;
 import io.spicelabs.ginger.Ginger;
 import io.spicelabs.goatrodeo.GoatRodeo;
@@ -174,6 +178,10 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
     if (threads != null && threads < 1) {
       throw new IllegalArgumentException("--threads must be at least 1, got: " + threads);
+    }
+
+    if (tagJson != null && !tagJson.isBlank()) {
+      validateTagJson(tagJson);
     }
 
     if (threads == null) {
@@ -333,6 +341,24 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       log.info("Spice Pass Status: {}", decoder.getStatus());
     } catch (Exception e) {
       log.warn("Failed to decode SPICE_PASS: {}", e.getMessage());
+    }
+  }
+
+  private static void validateTagJson(String value) {
+    ObjectMapper mapper = new ObjectMapper();
+    JsonNode node;
+    try {
+      node = mapper.readTree(value);
+    } catch (JsonProcessingException ex) {
+      throw new IllegalArgumentException(
+          "--tag-json is not valid JSON: " + ex.getOriginalMessage() +
+          ". On PowerShell 5.1, assign the JSON to a variable first " +
+          "(e.g. $json = '{\"env\":\"dev\"}'; spice ... --tag-json=$json) " +
+          "— PS5.1 strips outer single quotes before passing the arg.");
+    }
+    if (node == null || !node.isObject()) {
+      throw new IllegalArgumentException(
+          "--tag-json must be a JSON object (e.g. '{\"env\":\"dev\"}'), got: " + value);
     }
   }
 

@@ -53,6 +53,11 @@ fi
 abs_path() {
   local path="$1"
   [[ "$path" == ~* ]] && path="${path/#\~/$HOME}"
+  if [ ! -e "$path" ]; then
+    echo "ERROR ❌ Input path does not exist: $path" >&2
+    echo "INFO  Use --help for usage information." >&2
+    exit 2
+  fi
   if [ -d "$path" ]; then
     (cd "$path" && pwd)
   else

@@ -240,6 +240,45 @@ class SpiceLabsCLITest {
         "Error should list valid values: " + msg);
   }
 
+  // ── #544: --tag-json validation ───────────────────────────────────────────
+
+  @Test
+  void surveyInventory_malformedTagJson_fails() throws Exception {
+    Path inputDir = Files.createTempDirectory("bad-tag-json");
+    Files.createFile(inputDir.resolve("dummy.jar"));
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    // This mimics what PS5.1 sends after stripping single quotes: a bare
+    // {key:value} literal that is not valid JSON.
+    int rc = cmd.execute("survey", "inventory",
+        "test-subject", inputDir.toString(),
+        "--no-upload", "--tag-json", "{env:dev}");
+    assertNotEquals(0, rc, "Malformed --tag-json should fail fast");
+  }
+
+  @Test
+  void surveyInventory_nonObjectTagJson_fails() throws Exception {
+    Path inputDir = Files.createTempDirectory("scalar-tag-json");
+    Files.createFile(inputDir.resolve("dummy.jar"));
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    int rc = cmd.execute("survey", "inventory",
+        "test-subject", inputDir.toString(),
+        "--no-upload", "--tag-json", "\"just-a-string\"");
+    assertNotEquals(0, rc, "--tag-json must be a JSON object");
+  }
+
+  @Test
+  void surveyInventory_validTagJson_accepted() throws Exception {
+    Path inputDir = Files.createTempDirectory("ok-tag-json");
+    createFilesInDir(inputDir, 3);
+    Path outputDir = Files.createTempDirectory("ok-tag-json-out");
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    int rc = cmd.execute("survey", "inventory",
+        "test-subject", inputDir.toString(),
+        "--no-upload", "--output", outputDir.toString(),
+        "--tag-json", "{\"env\":\"dev\",\"team\":\"platform\"}");
+    assertEquals(0, rc);
+  }
+
   // ── #531: missing-args prints detailed usage ─────────────────────────────
 
   @Test

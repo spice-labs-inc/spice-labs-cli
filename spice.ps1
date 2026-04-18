@@ -60,7 +60,13 @@ if ($ReleaseInfo) {
 function Get-AbsolutePath($path) {
   if ($path -eq "~") { $path = $HOME }
   elseif ($path -like "~/*" -or $path -like "~\*") { $path = Join-Path $HOME ($path -replace "^~[/\\]") }
-  return (Resolve-Path -LiteralPath $path).ProviderPath
+  try {
+    return (Resolve-Path -LiteralPath $path -ErrorAction Stop).ProviderPath
+  } catch {
+    Write-Host "ERROR ❌ Input path does not exist: $path"
+    Write-Host "INFO  Use --help for usage information."
+    exit 2
+  }
 }
 
 function Convert-ToDockerPath($path) {
