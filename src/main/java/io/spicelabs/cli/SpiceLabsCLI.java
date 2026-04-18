@@ -36,6 +36,17 @@ import picocli.CommandLine.Command;
     subcommands = {
         SurveyCommand.class,
         PassCommand.class,
+    },
+    footer = {
+        "",
+        "Examples:",
+        "  spice survey inventory my-app ./build/libs",
+        "  spice survey inventory my-app ./app.jar --no-upload --output ./out",
+        "  spice survey runtime my-app --jfr -- java -jar app.jar",
+        "  spice pass decode",
+        "",
+        "Run 'spice <command> --help' for details on each subcommand.",
+        ""
     }
 )
 public class SpiceLabsCLI implements Runnable {
@@ -45,19 +56,31 @@ public class SpiceLabsCLI implements Runnable {
   public static void main(String[] args) {
     int exitCode;
     try {
-      CommandLine cmd = new CommandLine(new SpiceLabsCLI());
-      cmd.setParameterExceptionHandler((ex, a) -> {
-        log.error("❌ {}", ex.getMessage());
-        log.info("Use --help for usage information.");
-        return cmd.getCommandSpec().exitCodeOnInvalidInput();
-      });
-
-      exitCode = cmd.execute(args);
+      exitCode = newCommandLine().execute(args);
     } catch (Exception e) {
       log.error("Fatal error: {}", e.getMessage(), e);
       exitCode = 1;
     }
     System.exit(exitCode);
+  }
+
+  /**
+   * Build a CommandLine with the CLI's standard parameter exception handler.
+   * Used by main() and tests so both exercise identical error behavior.
+   */
+  static CommandLine newCommandLine() {
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    cmd.setParameterExceptionHandler((ex, a) -> {
+      CommandLine offending = ex.getCommandLine();
+      log.error("❌ {}", ex.getMessage());
+      if (ex instanceof CommandLine.MissingParameterException) {
+        offending.usage(offending.getErr(), offending.getColorScheme());
+      } else {
+        log.info("Use --help for usage information.");
+      }
+      return offending.getCommandSpec().exitCodeOnInvalidInput();
+    });
+    return cmd;
   }
 
   @Override

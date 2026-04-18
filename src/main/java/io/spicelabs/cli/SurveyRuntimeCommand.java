@@ -42,7 +42,25 @@ import picocli.CommandLine.Unmatched;
 @Command(
     name = "runtime",
     description = "Survey runtime crypto usage via JFR instrumentation",
-    mixinStandardHelpOptions = true
+    mixinStandardHelpOptions = true,
+    footer = {
+        "",
+        "Examples:",
+        "  # Profile a running Java app via JFR and upload results",
+        "  spice survey runtime my-app --jfr -- java -jar app.jar",
+        "",
+        "  # Profile a Maven test run without uploading",
+        "  spice survey runtime my-app --jfr --no-upload -- mvn test",
+        "",
+        "  # Native-only (no Java agent injection)",
+        "  spice survey runtime my-app --jfr --native-only -- gradle test",
+        "",
+        "  # Keep the JFR recording on disk after the run",
+        "  spice survey runtime my-app --jfr --keep-recording --output ./rec -- java -jar app.jar",
+        "",
+        "Everything after `--` is the target command to instrument and run.",
+        ""
+    }
 )
 public class SurveyRuntimeCommand implements Callable<Integer> {
 
@@ -91,8 +109,8 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        configureLogging();
         try {
+            configureLogging();
             return run();
         } catch (IllegalArgumentException ex) {
             log.error("\u274c {}", ex.getMessage());
@@ -498,8 +516,7 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
     }
 
     private void configureLogging() {
-        String levelStr = (logLevel == null) ? "INFO" : logLevel.toUpperCase();
-        Level level = Level.toLevel(levelStr, Level.INFO);
+        Level level = LogLevelParser.parse(logLevel);
         ch.qos.logback.classic.Logger rootLogger =
                 (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
         rootLogger.setLevel(level);

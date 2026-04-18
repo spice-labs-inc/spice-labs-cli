@@ -3,6 +3,8 @@ package io.spicelabs.cli;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.InputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -196,6 +198,80 @@ class SpiceLabsCLITest {
         "test-subject", inputDir.toString(),
         "--no-upload", "--threads", "-1");
     assertNotEquals(0, rc);
+  }
+
+  // ── #545: --log-level validation ──────────────────────────────────────────
+
+  @Test
+  void surveyInventory_invalidLogLevel_fails() throws Exception {
+    Path inputDir = Files.createTempDirectory("bad-log-level");
+    Files.createFile(inputDir.resolve("dummy.jar"));
+    CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    int rc = cmd.execute("survey", "inventory",
+        "test-subject", inputDir.toString(),
+        "--no-upload", "--log-level", "verbose");
+    assertNotEquals(0, rc, "Invalid --log-level value should fail");
+  }
+
+  @Test
+  void surveyInventory_validLogLevels_accepted() throws Exception {
+    Path inputDir = Files.createTempDirectory("ok-log-level");
+    createFilesInDir(inputDir, 3);
+    Path outputDir = Files.createTempDirectory("ok-log-level-out");
+    for (String lvl : new String[] { "debug", "INFO", "Warn", "error" }) {
+      CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+      int rc = cmd.execute("survey", "inventory",
+          "test-subject", inputDir.toString(),
+          "--no-upload", "--output", outputDir.toString(),
+          "--log-level", lvl);
+      assertEquals(0, rc, "Expected --log-level=" + lvl + " to be accepted");
+    }
+  }
+
+  @Test
+  void invalidLogLevel_errorMessageListsValidValues() {
+    IllegalArgumentException ex = assertThrows(
+        IllegalArgumentException.class,
+        () -> LogLevelParser.parse("verbose"));
+    String msg = ex.getMessage();
+    assertTrue(msg.contains("verbose"), "Error should quote the bad value: " + msg);
+    assertTrue(msg.contains("debug") && msg.contains("info") &&
+               msg.contains("warn") && msg.contains("error"),
+        "Error should list valid values: " + msg);
+  }
+
+  // ── #531: missing-args prints detailed usage ─────────────────────────────
+
+  @Test
+  void surveyInventory_missingArgs_printsDetailedUsage() {
+    StringWriter err = new StringWriter();
+    CommandLine cmd = SpiceLabsCLI.newCommandLine();
+    cmd.setErr(new PrintWriter(err));
+    int rc = cmd.execute("survey", "inventory");
+    assertNotEquals(0, rc, "Missing required params should produce non-zero exit");
+
+    String output = err.toString();
+    assertTrue(output.contains("Usage:"),
+        "Expected detailed 'Usage:' block in output, got:\n" + output);
+    assertTrue(output.contains("inventory"),
+        "Expected subcommand name in usage, got:\n" + output);
+    // Spot-check that flag descriptions made it through — these only appear
+    // in the full usage block, not in the short error line.
+    assertTrue(output.contains("--no-upload"),
+        "Expected --no-upload in detailed usage, got:\n" + output);
+  }
+
+  @Test
+  void topLevel_unknownOption_suppressesDetailedUsage() {
+    // Unknown flags are likely typos — full usage dump is excessive.
+    // The short "Use --help for usage information." hint is enough.
+    StringWriter err = new StringWriter();
+    CommandLine cmd = SpiceLabsCLI.newCommandLine();
+    cmd.setErr(new PrintWriter(err));
+    int rc = cmd.execute("--nope");
+    assertNotEquals(0, rc);
+    assertFalse(err.toString().contains("Usage:"),
+        "Did not expect full 'Usage:' block for unknown flag, got:\n" + err);
   }
 
   // ── Survey inventory: full pipeline (survey + upload) ─────────────────────
