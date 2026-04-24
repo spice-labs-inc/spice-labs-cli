@@ -25,20 +25,31 @@ fi
 
 # ── Tab completion ───────────────────────────────────────────────────────────
 
-SOURCE_LINE="[ -f \"$COMPLETION_DIR/spice.bash\" ] && source \"$COMPLETION_DIR/spice.bash\""
+BASH_SOURCE_LINE="[ -f \"$COMPLETION_DIR/spice.bash\" ] && source \"$COMPLETION_DIR/spice.bash\""
+ZSH_SOURCE_BLOCK="autoload -U +X bashcompinit 2>/dev/null && bashcompinit 2>/dev/null
+[ -f \"$COMPLETION_DIR/spice.bash\" ] && source \"$COMPLETION_DIR/spice.bash\""
 COMPLETION_INSTALLED=0
 for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
   [ -f "$rc" ] || continue
-  if ! grep -qF "$COMPLETION_DIR/spice.bash" "$rc" 2>/dev/null; then
-    printf '\n# Spice CLI tab completion\n%s\n' "$SOURCE_LINE" >> "$rc"
-  fi
+  case "$rc" in
+    *.zshrc)
+      if ! grep -qF "bashcompinit" "$rc" 2>/dev/null || ! grep -qF "$COMPLETION_DIR/spice.bash" "$rc" 2>/dev/null; then
+        printf '\n# Spice CLI tab completion\n%s\n' "$ZSH_SOURCE_BLOCK" >> "$rc"
+      fi
+      ;;
+    *)
+      if ! grep -qF "$COMPLETION_DIR/spice.bash" "$rc" 2>/dev/null; then
+        printf '\n# Spice CLI tab completion\n%s\n' "$BASH_SOURCE_LINE" >> "$rc"
+      fi
+      ;;
+  esac
   COMPLETION_INSTALLED=1
 done
 if [ "$COMPLETION_INSTALLED" = "1" ]; then
   echo "✅ Tab completion installed (restart your shell or source your profile to activate)"
 else
   echo "💡 To enable tab completion, add this to your shell profile:"
-  echo "  $SOURCE_LINE"
+  echo "  $BASH_SOURCE_LINE"
 fi
 
 if [[ -z "${SPICE_PASS:-}" ]]; then
