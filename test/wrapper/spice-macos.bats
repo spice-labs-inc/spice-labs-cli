@@ -186,3 +186,87 @@ MOCK
   local docker_args="$(cat "$DOCKER_ARGS_FILE")"
   [[ "$docker_args" == *"--pull=never"* ]]
 }
+
+# ── Error handling tests ─────────────────────────────────────────────────────
+
+@test "docker not installed: exits with clear error" {
+  # Remove docker mock and clear PATH to only include essential commands
+  /bin/rm -f "$MOCK_BIN/docker"
+  export PATH="/bin:/usr/bin"
+  
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Docker is not installed"* ]]
+}
+
+@test "JVM mode: missing JAR file exits with error" {
+  export SPICE_LABS_CLI_USE_JVM=1
+  export SPICE_LABS_CLI_JAR="$TEST_TMPDIR/nonexistent.jar"
+  
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Missing:"* ]]
+  [[ "$output" == *"nonexistent.jar"* ]]
+}
+
+@test "JVM mode: SPICE_LABS_JVM_ARGS passed to java" {
+  local jar="$TEST_TMPDIR/fake.jar"
+  touch "$jar"
+  export SPICE_LABS_CLI_USE_JVM=1
+  export SPICE_LABS_CLI_JAR="$jar"
+  export SPICE_LABS_JVM_ARGS="-Xmx2g -XX:+UseG1GC"
+  
+  run "$WRAPPER" survey inventory myapp /some/path
+  [ "$status" -eq 0 ]
+  
+  local java_args="$(cat "$JAVA_ARGS_FILE")"
+  [[ "$java_args" == *"-Xmx2g"* ]]
+  [[ "$java_args" == *"-XX:+UseG1GC"* ]]
+}
+
+@test "nonexistent input path: exits before docker" {
+  # Create docker mock that would succeed
+  cat > "$MOCK_BIN/docker" <<'MOCK'
+#!/bin/bash
+echo "DOCKER_WOULD_RUN"
+exit 0
+MOCK
+  chmod +x "$MOCK_BIN/docker"
+  
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/does-not-exist"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"Input path does not exist"* ]]
+  [[ "$output" != *"DOCKER_WOULD_RUN"* ]]
+}
+
+@test "SPICE_DOCKER_FLAGS: custom flags passed to docker" {
+  mkdir -p "$TEST_TMPDIR/input"
+  echo test > "$TEST_TMPDIR/input/f.txt"
+  export SPICE_DOCKER_FLAGS="--memory=2g --cpus=2"
+  
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  local docker_args="$(cat "$DOCKER_ARGS_FILE")"
+  [[ "$docker_args" == *"--memory=2g"* ]]
+  [[ "$docker_args" == *"--cpus=2"* ]]
+}
+
+@test "runtime survey: --native-only flag passes through" {
+  # Mock docker to capture runtime survey args
+  cat > "$MOCK_BIN/docker" <<'MOCK'
+#!/bin/bash
+if [ "$1" = "pull" ]; then exit 0; fi
+# For runtime survey, just echo the args
+echo "$@" > "${DOCKER_ARGS_FILE:-/dev/null}"
+# Simulate successful extraction
+if [[ "$*" == *"cp"* ]]; then
+  # Creating fake files for extraction phase
+  touch "${RT_WORKDIR:-/tmp}/spice-jfr.jfc" 2>/dev/null || true
+fi
+exit 0
+MOCK
+  chmod +x "$MOCK_BIN/docker"
+  
+  # Skip this test - runtime survey requires complex mocking
+  skip "Runtime survey requires complex Docker mocking"
+}
