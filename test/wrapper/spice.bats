@@ -461,3 +461,178 @@ SCRIPT
   [ -f "$workdir/spice-jfr.jfc" ]
   rm -rf "$outdir"
 }
+
+# ── Path edge cases ──────────────────────────────────────────────────────────
+
+@test "path with spaces: directory input" {
+  local spaced_dir="$TEST_TMPDIR/path with spaces"
+  mkdir -p "$spaced_dir"
+  echo "test" > "$spaced_dir/file.txt"
+  run "$WRAPPER" survey inventory myapp "$spaced_dir"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  assert_arg "/mnt/input"
+}
+
+@test "path with spaces: file input" {
+  local spaced_file="$TEST_TMPDIR/file with spaces.txt"
+  echo "test" > "$spaced_file"
+  run "$WRAPPER" survey inventory myapp "$spaced_file"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  assert_arg "/mnt/input/file with spaces.txt"
+}
+
+@test "path with dollar sign: handled correctly" {
+  local dollar_dir="$TEST_TMPDIR/path\$with\$dollars"
+  mkdir -p "$dollar_dir"
+  echo "test" > "$dollar_dir/file.txt"
+  run "$WRAPPER" survey inventory myapp "$dollar_dir"
+  [ "$status" -eq 0 ]
+  assert_arg "/mnt/input"
+}
+
+@test "relative path: converted to absolute" {
+  mkdir -p "$TEST_TMPDIR/input"
+  echo "test" > "$TEST_TMPDIR/input/file.txt"
+  # Use pushd/popd instead of subshell with run
+  pushd "$TEST_TMPDIR" > /dev/null
+  run "$WRAPPER" survey inventory myapp "./input"
+  popd > /dev/null
+  [ "$status" -eq 0 ]
+  assert_arg "/mnt/input"
+}
+
+@test "parent directory reference: resolved correctly" {
+  mkdir -p "$TEST_TMPDIR/nested/input"
+  echo "test" > "$TEST_TMPDIR/nested/input/file.txt"
+  pushd "$TEST_TMPDIR/nested" > /dev/null
+  run "$WRAPPER" survey inventory myapp "../nested/input"
+  popd > /dev/null
+  [ "$status" -eq 0 ]
+  assert_arg "/mnt/input"
+}
+
+@test "symlink to directory: resolved to real path" {
+  mkdir -p "$TEST_TMPDIR/realdir"
+  echo "test" > "$TEST_TMPDIR/realdir/file.txt"
+  ln -s "$TEST_TMPDIR/realdir" "$TEST_TMPDIR/linkdir"
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/linkdir"
+  [ "$status" -eq 0 ]
+  assert_arg "/mnt/input"
+}
+
+@test "symlink to file: passes through as symlink path" {
+  echo "test" > "$TEST_TMPDIR/realfile.txt"
+  ln -s "$TEST_TMPDIR/realfile.txt" "$TEST_TMPDIR/linkfile.txt"
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/linkfile.txt"
+  [ "$status" -eq 0 ]
+  # The script resolves the symlink's directory but keeps the filename
+  # The mount is the directory containing the symlink
+  assert_arg "/mnt/input/linkfile.txt"
+}
+
+# ── Runtime survey error handling ────────────────────────────────────────────
+
+@test "runtime survey: target command failure propagates exit code" {
+  # Create a script that creates a fake JFR recording then exits with error
+  local script="$TEST_TMPDIR/exit-with-error.sh"
+  cat > "$script" <<'SCRIPT'
+#!/bin/bash
+# Extract the recording dir from JAVA_TOOL_OPTIONS filename= parameter
+recpath=$(echo "$JAVA_TOOL_OPTIONS" | sed -n 's/.*filename=\([^ ,]*\).*/\1/p')
+dir=$(dirname "$recpath")
+# Create a fake JFR recording so the collection phase succeeds
+echo "fake-jfr" > "$dir/recording-$$.jfr"
+# Exit with error code
+exit 42
+SCRIPT
+  chmod +x "$script"
+  
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload -- "$script"
+  [ "$status" -eq 42 ]
+}
+
+@test "runtime survey: JAVA_TOOL_OPTIONS preserved when already set" {
+  local dump="$TEST_TMPDIR/jto-dump.txt"
+  local script="$TEST_TMPDIR/dump-jto.sh"
+  cat > "$script" <<'SCRIPT'
+#!/bin/bash
+echo "$JAVA_TOOL_OPTIONS" > "$1"
+SCRIPT
+  chmod +x "$script"
+
+  export JAVA_TOOL_OPTIONS="-Xmx1g -Dexisting=true"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload -- "$script" "$dump"
+  [ -f "$dump" ]
+  local jto=$(cat "$dump")
+  [[ "$jto" == *"-Xmx1g"* ]]
+  [[ "$jto" == *"-Dexisting=true"* ]]
+  [[ "$jto" == *"-XX:StartFlightRecording="* ]]
+}
+
+# ── Argument parsing edge cases ──────────────────────────────────────────────
+
+@test "flag with equals sign in value" {
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input" --ginger-args "--opt=value=with=equals"
+  [ "$status" -eq 0 ]
+  assert_arg "--ginger-args"
+  assert_arg "--opt=value=with=equals"
+}
+
+@test "multiple consecutive flags" {
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input" --no-upload --upload-only --threads 4
+  [ "$status" -eq 0 ]
+  assert_arg "--no-upload"
+  assert_arg "--upload-only"
+  assert_arg "--threads"
+  assert_arg "4"
+}
+
+@test "flags before and after positional args" {
+  run "$WRAPPER" survey inventory --threads 4 myapp --log-level debug "$TEST_TMPDIR/input" --no-upload
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  assert_arg "/mnt/input"
+  assert_arg "--threads"
+  assert_arg "4"
+  assert_arg "--log-level"
+  assert_arg "debug"
+  assert_arg "--no-upload"
+}
+
+@test "tag-json with complex nested JSON" {
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input" --tag-json '{"env":"prod","nested":{"key":"val"},"arr":[1,2,3]}'
+  [ "$status" -eq 0 ]
+  assert_arg "--tag-json"
+  assert_arg '{"env":"prod","nested":{"key":"val"},"arr":[1,2,3]}'
+}
+
+# ── Environment variable edge cases ──────────────────────────────────────────
+
+@test "empty SPICE_PASS: passed as empty string" {
+  export SPICE_PASS=""
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  [ "$(container_env SPICE_PASS)" = "" ]
+}
+
+@test "SPICE_PASS with special characters" {
+  export SPICE_PASS='my$pecial&pass|word!'
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  [ "$(container_env SPICE_PASS)" = 'my$pecial&pass|word!' ]
+}
+
+@test "SPICE_LABS_JVM_ARGS passed to container" {
+  export SPICE_LABS_JVM_ARGS="-Xmx2g -XX:+UseG1GC"
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  [ "$(container_env SPICE_LABS_JVM_ARGS)" = "-Xmx2g -XX:+UseG1GC" ]
+}
