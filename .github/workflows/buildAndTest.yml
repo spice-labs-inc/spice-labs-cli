@@ -106,3 +106,15 @@ jobs:
 
       - name: Test with Maven
         run: mvn --batch-mode --update-snapshots -Pdefault-repos verify
+
+      - name: Run ShellCheck on shell scripts
+        run: |
+          shellcheck install.sh
+          shellcheck test/wrapper/entrypoint.sh
+          shellcheck spice
+
+      - name: Run PSScriptAnalyzer on PowerShell scripts
+        shell: pwsh
+        run: |
+          Invoke-ScriptAnalyzer -Path ./spice.ps1 -Severity Error -EnableExit
+          Invoke-ScriptAnalyzer -Path ./install.ps1 -Severity Error -EnableExit

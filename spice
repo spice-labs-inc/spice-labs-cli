@@ -271,7 +271,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
       ${PULL_FLAG:+$PULL_FLAG} \
       -e SPICE_PASS \
       "${IMAGE}:${TAG}" \
-      -cp ${SPICE_LABS_CLI_JAR} \
+      -cp "${SPICE_LABS_CLI_JAR}" \
       io.spicelabs.cli.RuntimeCollect \
       --download-probes > "$RT_PROBES" 2>/dev/null || true
 
