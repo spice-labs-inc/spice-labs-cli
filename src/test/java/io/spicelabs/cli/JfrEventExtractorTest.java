@@ -77,8 +77,8 @@ class JfrEventExtractorTest {
 
     @Test
     void callSite_deduplication() {
-        var cs1 = new JfrEventExtractor.CallSite("com.example.App.run() line 42", "main");
-        var cs2 = new JfrEventExtractor.CallSite("com.example.App.run() line 42", "main");
+        var cs1 = new JfrEventExtractor.CallSite("com.example.App", "com.example.App.run() line 42", "main");
+        var cs2 = new JfrEventExtractor.CallSite("com.example.App", "com.example.App.run() line 42", "main");
         assertEquals(cs1, cs2);
     }
 
@@ -330,6 +330,80 @@ class JfrEventExtractorTest {
             recording.stop();
             recording.dump(file);
         }
+    }
+
+    /** Mirrors a Phase 2 probe event: spice.probe.* with classGitoid + callerGitoids fields. */
+    @Name("spice.probe.testlink")
+    @Enabled(true)
+    @StackTrace(true)
+    static class SpiceProbeEvent extends Event {
+        String classGitoid;
+        String callerGitoids;
+    }
+
+    @Test
+    void extract_probeEvent_linksClassAndCallerToLoadedClasses() throws Exception {
+        Path jfrFile = tempDir.resolve("link.jfr");
+        try (Recording recording = new Recording()) {
+            recording.enable("spice.ClassLoaded");
+            recording.enable("spice.probe.testlink");
+            recording.start();
+
+            classLoaded(recording, "g-decl", "com.example.Probed");
+            classLoaded(recording, "g-caller", "com.example.Caller");
+
+            SpiceProbeEvent probe = new SpiceProbeEvent();
+            probe.classGitoid = "g-decl";
+            probe.callerGitoids = "g-caller";
+            probe.commit();
+
+            recording.stop();
+            recording.dump(jfrFile);
+        }
+
+        var data = JfrEventExtractor.extract("link-test", List.of(jfrFile));
+
+        int declId = idOf(data, "g-decl");
+        int callerId = idOf(data, "g-caller");
+        assertEquals(1, data.probeEvents().size());
+        var probe = data.probeEvents().get(0);
+        assertEquals(declId, probe.classId(), "classId must point to the declaring class");
+        assertTrue(probe.callerClassIds().contains(callerId),
+                "callerClassIds must include the caller's loadedClasses id");
+    }
+
+    @Test
+    void extract_probeEvent_withoutGitoids_hasNullClassIdAndEmptyCallers() throws Exception {
+        Path jfrFile = tempDir.resolve("nolink.jfr");
+        try (Recording recording = new Recording()) {
+            recording.enable("spice.probe.testlink");
+            recording.start();
+            SpiceProbeEvent probe = new SpiceProbeEvent(); // no gitoids set
+            probe.commit();
+            recording.stop();
+            recording.dump(jfrFile);
+        }
+
+        var data = JfrEventExtractor.extract("nolink-test", List.of(jfrFile));
+        assertEquals(1, data.probeEvents().size());
+        var probe = data.probeEvents().get(0);
+        assertNull(probe.classId(), "no classGitoid -> null classId");
+        assertTrue(probe.callerClassIds().isEmpty(), "no callerGitoids -> empty callerClassIds");
+    }
+
+    private static void classLoaded(Recording r, String gitoid, String className) {
+        SpiceClassLoadedEvent e = new SpiceClassLoadedEvent();
+        e.className = className;
+        e.classGitoid = gitoid;
+        e.classSha256 = "sha-" + gitoid;
+        e.codeSource = "file:/tmp/x.jar";
+        e.commit();
+    }
+
+    private static int idOf(JfrEventExtractor.RawSurveyData data, String gitoid) {
+        return data.loadedClasses().stream()
+                .filter(c -> gitoid.equals(c.classGitoid()))
+                .findFirst().orElseThrow().id();
     }
 
     @Test
