@@ -462,6 +462,9 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
         int totalEvents = data.probeEvents().size() + data.securityProviderEvents().size();
         log.debug("Recordings: {} file(s), {} distinct events",
                 data.recordings().size(), totalEvents);
+        if (!data.loadedClasses().isEmpty()) {
+            log.debug("Loaded classes: {} distinct hashes", data.loadedClasses().size());
+        }
         log.debug("");
 
         if (!data.securityProviderEvents().isEmpty()) {
@@ -584,6 +587,10 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                   <event name="jdk.InitialSystemProperty">
                     <setting name="enabled">true</setting>
                     <setting name="period">beginChunk</setting>
+                  </event>
+                  <event name="spice.ClassLoaded">
+                    <setting name="enabled">true</setting>
+                    <setting name="stackTrace">false</setting>
                   </event>
                 </configuration>
                 """;

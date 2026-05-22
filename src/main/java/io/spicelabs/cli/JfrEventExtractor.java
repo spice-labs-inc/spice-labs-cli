@@ -48,7 +48,8 @@ public class JfrEventExtractor {
             List<SecurityProviderEvent> securityProviderEvents,
             List<TlsHandshake> tlsHandshakes,
             List<CertificateRecord> certificates,
-            List<SecurityProperty> securityProperties
+            List<SecurityProperty> securityProperties,
+            List<LoadedClass> loadedClasses
     ) {}
 
     public record RuntimeInfo(
@@ -101,6 +102,23 @@ public class JfrEventExtractor {
     ) {}
 
     public record CallSite(String location, String thread) {}
+
+    /**
+     * A class loaded at runtime, hashed identically to goatrodeo's inventory hashes so the two
+     * can be correlated. {@code classGitoid}/{@code classSha256} match the inventory ADG node's
+     * primary id / {@code sha256:} alias; {@code jarGitoid}/{@code jarSha256} likewise match the
+     * originating jar (absent for exploded dirs and nested fat-jar entries). {@code id} is a stable
+     * per-survey index, referenced by later per-event class linking.
+     */
+    public record LoadedClass(
+            int id,
+            String className,
+            String classGitoid,
+            String classSha256,
+            String codeSource,
+            String jarGitoid,
+            String jarSha256
+    ) {}
 
     // ── Internal accumulators ───────────────────────────────────────────
 
@@ -180,6 +198,7 @@ public class JfrEventExtractor {
         Map<TlsKey, long[]> tlsMap = new LinkedHashMap<>();
         Map<String, CertificateRecord> certMap = new LinkedHashMap<>();
         Map<String, SecurityProperty> secPropMap = new LinkedHashMap<>();
+        Map<String, LoadedClass> classLoadMap = new LinkedHashMap<>();
         List<String> recordingNames = new ArrayList<>();
 
         // Runtime info — keep from first recording that has it
@@ -285,6 +304,22 @@ public class JfrEventExtractor {
                             else if ("java.vm.specification.version".equals(k) && javaVersion[0] == null) javaVersion[0] = v;
                         }
 
+                        // Must be a dedicated case: the default arm only handles "spice.probe.*",
+                        // so spice.ClassLoaded would otherwise be dropped.
+                        case "spice.ClassLoaded" -> {
+                            String classGitoid = event.getString("classGitoid");
+                            if (classGitoid != null) {
+                                classLoadMap.putIfAbsent(classGitoid, new LoadedClass(
+                                        0, // id assigned at materialization
+                                        event.getString("className"),
+                                        classGitoid,
+                                        event.getString("classSha256"),
+                                        event.getString("codeSource"),
+                                        event.getString("jarGitoid"),
+                                        event.getString("jarSha256")));
+                            }
+                        }
+
                         default -> {
                             // Spice probe events
                             if (eventType.startsWith("spice.probe.")) {
@@ -295,7 +330,7 @@ public class JfrEventExtractor {
                 }
             }
 
-            totalDistinctEvents = probeMap.size() + secProvMap.size();
+            totalDistinctEvents = probeMap.size() + secProvMap.size() + classLoadMap.size();
             if (totalDistinctEvents > MAX_DISTINCT_EVENTS && !truncated) {
                 log.warn("⚠️  {} distinct events exceed cap of {}. Results may be truncated.",
                         totalDistinctEvents, MAX_DISTINCT_EVENTS);
@@ -322,9 +357,17 @@ public class JfrEventExtractor {
         List<CertificateRecord> certificates = new ArrayList<>(certMap.values());
         List<SecurityProperty> securityProperties = new ArrayList<>(secPropMap.values());
 
-        log.info("Extracted: {} probe events, {} security provider events, {} TLS handshakes, {} certs, {} security properties from {} recording(s)",
+        // Assign stable per-survey ids at materialization (records are immutable, so rebuild).
+        List<LoadedClass> loadedClasses = new ArrayList<>(classLoadMap.size());
+        int loadedClassId = 0;
+        for (LoadedClass lc : classLoadMap.values()) {
+            loadedClasses.add(new LoadedClass(loadedClassId++, lc.className(), lc.classGitoid(),
+                    lc.classSha256(), lc.codeSource(), lc.jarGitoid(), lc.jarSha256()));
+        }
+
+        log.info("Extracted: {} probe events, {} security provider events, {} TLS handshakes, {} certs, {} security properties, {} loaded classes from {} recording(s)",
                 probeEvents.size(), secProvEvents.size(), tlsHandshakes.size(),
-                certificates.size(), securityProperties.size(), recordingPaths.size());
+                certificates.size(), securityProperties.size(), loadedClasses.size(), recordingPaths.size());
 
         return new RawSurveyData(
                 "1.0.0",
@@ -336,7 +379,8 @@ public class JfrEventExtractor {
                 secProvEvents,
                 tlsHandshakes,
                 certificates,
-                securityProperties
+                securityProperties,
+                loadedClasses
         );
     }
 

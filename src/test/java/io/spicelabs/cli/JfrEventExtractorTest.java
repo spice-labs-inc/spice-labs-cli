@@ -9,12 +9,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import jdk.jfr.Configuration;
+import jdk.jfr.Enabled;
+import jdk.jfr.Event;
 import jdk.jfr.FlightRecorder;
+import jdk.jfr.Name;
 import jdk.jfr.Recording;
+import jdk.jfr.StackTrace;
 
 /**
  * Tests for JfrEventExtractor.
@@ -53,7 +60,7 @@ class JfrEventExtractorTest {
     void rawSurveyData_hasCorrectTypeAndVersion() {
         var data = new JfrEventExtractor.RawSurveyData(
                 "1.0.0", "runtime-pqc-survey", "test-app",
-                null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         assertEquals("1.0.0", data.version());
         assertEquals("runtime-pqc-survey", data.type());
         assertEquals("test-app", data.subject());
@@ -188,6 +195,141 @@ class JfrEventExtractorTest {
         var data = JfrEventExtractor.extract("tls-test", List.of(jfrFile));
         assertNotNull(data);
         assertNotNull(data.tlsHandshakes());
+    }
+
+    // ── spice.ClassLoaded extraction ────────────────────────────────────
+
+    /** Mirrors the event ancho emits: @Name("spice.ClassLoaded") with String fields. */
+    @Name("spice.ClassLoaded")
+    @Enabled(true)
+    @StackTrace(false)
+    static class SpiceClassLoadedEvent extends Event {
+        String className;
+        String classGitoid;
+        String classSha256;
+        String codeSource;
+        String jarGitoid;
+        String jarSha256;
+    }
+
+    @Test
+    void extract_spiceClassLoaded_capturesDedupsAndAssignsIds() throws Exception {
+        Path jfrFile = tempDir.resolve("classloaded.jfr");
+        try (Recording recording = new Recording()) {
+            recording.enable("spice.ClassLoaded");
+            recording.start();
+
+            SpiceClassLoadedEvent e1 = new SpiceClassLoadedEvent();
+            e1.className = "com.example.Hello";
+            e1.classGitoid = "gitoid:blob:sha256:aaa";
+            e1.classSha256 = "aaa-sha";
+            e1.codeSource = "file:/tmp/hello.jar";
+            e1.jarGitoid = "gitoid:blob:sha256:jjj";
+            e1.jarSha256 = "jjj-sha";
+            e1.commit();
+
+            // Duplicate gitoid — must collapse to one entry.
+            SpiceClassLoadedEvent dup = new SpiceClassLoadedEvent();
+            dup.className = "com.example.Hello";
+            dup.classGitoid = "gitoid:blob:sha256:aaa";
+            dup.classSha256 = "aaa-sha";
+            dup.codeSource = "file:/tmp/hello.jar";
+            dup.commit();
+
+            // Distinct class from an exploded dir — no jar hashes.
+            SpiceClassLoadedEvent e2 = new SpiceClassLoadedEvent();
+            e2.className = "Main";
+            e2.classGitoid = "gitoid:blob:sha256:bbb";
+            e2.classSha256 = "bbb-sha";
+            e2.codeSource = "file:/tmp/app/";
+            e2.commit();
+
+            recording.stop();
+            recording.dump(jfrFile);
+        }
+
+        var data = JfrEventExtractor.extract("classloaded-test", List.of(jfrFile));
+        assertNotNull(data.loadedClasses());
+        assertEquals(2, data.loadedClasses().size(), "dedup by classGitoid");
+
+        var hello = data.loadedClasses().stream()
+                .filter(c -> "gitoid:blob:sha256:aaa".equals(c.classGitoid()))
+                .findFirst().orElseThrow();
+        assertEquals("com.example.Hello", hello.className());
+        assertEquals("aaa-sha", hello.classSha256());
+        assertEquals("file:/tmp/hello.jar", hello.codeSource());
+        assertEquals("gitoid:blob:sha256:jjj", hello.jarGitoid());
+        assertEquals("jjj-sha", hello.jarSha256());
+
+        var main = data.loadedClasses().stream()
+                .filter(c -> "gitoid:blob:sha256:bbb".equals(c.classGitoid()))
+                .findFirst().orElseThrow();
+        assertEquals("Main", main.className());
+        assertNull(main.jarGitoid(), "exploded dir → no jar gitoid");
+        assertNull(main.jarSha256(), "exploded dir → no jar sha256");
+
+        // Ids are sequential and distinct.
+        var ids = data.loadedClasses().stream()
+                .map(JfrEventExtractor.LoadedClass::id).sorted().toList();
+        assertEquals(List.of(0, 1), ids);
+    }
+
+    @Test
+    void loadedClasses_serializeAsCamelCaseJson() throws Exception {
+        // Locks the upload contract fennel consumes: a loadedClasses array with camelCase keys.
+        var lc = new JfrEventExtractor.LoadedClass(
+                0, "com.example.Hello", "gitoid:blob:sha256:aaa", "aaa-sha",
+                "file:/tmp/hello.jar", "gitoid:blob:sha256:jjj", "jjj-sha");
+        var data = new JfrEventExtractor.RawSurveyData(
+                "1.0.0", "runtime-pqc-survey", "app", null,
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(lc));
+
+        // Mirror production serialization (bare ObjectMapper). Parse back so the assertion is
+        // robust to indentation.
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(mapper.writeValueAsString(data));
+
+        JsonNode arr = root.get("loadedClasses");
+        assertNotNull(arr, "loadedClasses key must be present");
+        assertTrue(arr.isArray());
+        assertEquals(1, arr.size());
+
+        JsonNode e = arr.get(0);
+        assertEquals(0, e.get("id").asInt());
+        assertEquals("com.example.Hello", e.get("className").asText());
+        assertEquals("gitoid:blob:sha256:aaa", e.get("classGitoid").asText());
+        assertEquals("aaa-sha", e.get("classSha256").asText());
+        assertEquals("file:/tmp/hello.jar", e.get("codeSource").asText());
+        assertEquals("gitoid:blob:sha256:jjj", e.get("jarGitoid").asText());
+        assertEquals("jjj-sha", e.get("jarSha256").asText());
+    }
+
+    @Test
+    void extract_spiceClassLoaded_dedupsAcrossRecordings() throws Exception {
+        // Forked mvn/gradle JVMs each produce a recording; the same class must collapse to one entry.
+        Path jfr1 = tempDir.resolve("cl1.jfr");
+        Path jfr2 = tempDir.resolve("cl2.jfr");
+        writeClassLoadedRecording(jfr1, "gitoid:blob:sha256:shared", "com.example.Shared");
+        writeClassLoadedRecording(jfr2, "gitoid:blob:sha256:shared", "com.example.Shared");
+
+        var data = JfrEventExtractor.extract("merge-test", List.of(jfr1, jfr2));
+        assertEquals(1, data.loadedClasses().size(), "same gitoid across recordings → one entry");
+        assertEquals("com.example.Shared", data.loadedClasses().get(0).className());
+    }
+
+    private void writeClassLoadedRecording(Path file, String gitoid, String className) throws Exception {
+        try (Recording recording = new Recording()) {
+            recording.enable("spice.ClassLoaded");
+            recording.start();
+            SpiceClassLoadedEvent e = new SpiceClassLoadedEvent();
+            e.className = className;
+            e.classGitoid = gitoid;
+            e.classSha256 = "sha";
+            e.codeSource = "file:/tmp/x.jar";
+            e.commit();
+            recording.stop();
+            recording.dump(file);
+        }
     }
 
     @Test

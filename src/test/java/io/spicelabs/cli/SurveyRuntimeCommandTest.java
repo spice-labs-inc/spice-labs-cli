@@ -5,7 +5,13 @@ package io.spicelabs.cli;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -189,5 +195,35 @@ class SurveyRuntimeCommandTest {
         assertTrue(jfc.contains("jdk.X509Certificate"));
         assertTrue(jfc.contains("jdk.JVMInformation"));
         assertTrue(jfc.contains("jdk.SecurityPropertyModification"));
+        assertTrue(jfc.contains("spice.ClassLoaded"));
+    }
+
+    @Test
+    void bundledJfc_enablesSpiceClassLoaded() throws Exception {
+        String bundled = readBundledJfc();
+        assertTrue(bundled.contains("spice.ClassLoaded"),
+                "bundled spice-jfr.jfc must enable spice.ClassLoaded");
+    }
+
+    @Test
+    void bundledJfc_andDefaultJfc_enableTheSameEvents() throws Exception {
+        // The two JFC copies are hand-maintained; this guards against drift.
+        Set<String> bundled = eventNames(readBundledJfc());
+        Set<String> dflt = eventNames(SurveyRuntimeCommand.createDefaultJfc());
+        assertEquals(bundled, dflt, "bundled spice-jfr.jfc and createDefaultJfc() must enable the same events");
+    }
+
+    private static String readBundledJfc() throws Exception {
+        try (InputStream in = SurveyRuntimeCommand.class.getResourceAsStream("/jfr/spice-jfr.jfc")) {
+            assertNotNull(in, "bundled /jfr/spice-jfr.jfc must be on the classpath");
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static Set<String> eventNames(String jfc) {
+        Set<String> names = new TreeSet<>();
+        Matcher m = Pattern.compile("<event name=\"([^\"]+)\"").matcher(jfc);
+        while (m.find()) names.add(m.group(1));
+        return names;
     }
 }
