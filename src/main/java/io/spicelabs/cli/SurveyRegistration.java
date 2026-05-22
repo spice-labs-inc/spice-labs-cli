@@ -37,10 +37,10 @@ final class SurveyRegistration {
     DirectUploadService.InitSurveyResponse response =
         new DirectUploadService().initSurvey(uploadServer, spicePass, request, idempotencyKey, userAgent);
 
-    String ts = response.submissionTimestamp();
-    if (ts == null) {
+    Instant submissionTimestamp = response.submissionTimestamp();
+    if (submissionTimestamp == null) {
       throw new IllegalStateException("initSurvey response missing submission_timestamp");
     }
-    return new Context(response.parentId(), Instant.parse(ts), idempotencyKey, userAgent);
+    return new Context(response.parentId(), submissionTimestamp, idempotencyKey, userAgent);
   }
 }
