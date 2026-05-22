@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -227,17 +228,40 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       logProjectInfo(spicePass);
     }
 
+    // Register the survey with the server before any local work, so we get the
+    // server-minted submission timestamp (the authoritative bundle date) up front.
+    SurveyRegistration.Context survey = null;
+    if (!noUpload && !isEncryptOnly() && hasSpicePass(spicePass)) {
+      survey = initSurvey(spicePass);
+    }
+
     if (uploadOnly) {
-      doUpload(spicePass, Optional.of(input));
+      doUpload(spicePass, Optional.of(input), survey);
     } else if (noUpload) {
-      doSurvey();
+      doSurvey(null);
     } else {
-      doSurvey();
-      doUpload(spicePass, Optional.of(output));
+      doSurvey(survey);
+      doUpload(spicePass, Optional.of(output), survey);
     }
   }
 
-  protected void doSurvey() throws Exception {
+  /**
+   * Register the survey with the server before any local work, then keep the server-minted
+   * submission timestamp for use as the bundle date. Fails the run if registration fails.
+   */
+  private SurveyRegistration.Context initSurvey(String spicePass) throws Exception {
+    Map<String, Object> jsonTags = null;
+    if (tagJson != null && !tagJson.isBlank()) {
+      jsonTags = new ObjectMapper().readValue(tagJson, new TypeReference<Map<String, Object>>() {});
+    }
+    log.info("Registering survey with Spice Labs...");
+    SurveyRegistration.Context survey =
+        SurveyRegistration.register(spicePass, "INVENTORY_SURVEY", subject, jsonTags);
+    log.info("Survey registered (submission time {})", survey.submissionTimestamp());
+    return survey;
+  }
+
+  protected void doSurvey(SurveyRegistration.Context survey) throws Exception {
     log.info("📦 Surveying artifacts with GoatRodeo...");
 
     String originalScalaLevel = System.getProperty("scala.logging.level");
@@ -285,6 +309,10 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         builder.withTagJson(tagJson);
       }
 
+      if (survey != null) {
+        builder.withTagDate(survey.submissionTimestamp().toString());
+      }
+
       builder.run();
     } finally {
       if (singleFileDir != null) {
@@ -300,7 +328,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     }
   }
 
-  private void doUpload(String spicePass, Optional<Path> gingerInputDir) throws Exception {
+  private void doUpload(String spicePass, Optional<Path> gingerInputDir, SurveyRegistration.Context survey) throws Exception {
     log.info("📦 Uploading ADGs...");
 
     Map<String, String> gingerArgsMap = new HashMap<>(gingerArgs);
@@ -313,6 +341,13 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         .jwt(spicePass)
         .adgDir(gingerInputDir.orElse(input))
         .extraArgs(gingerArgsMap);
+
+    if (survey != null) {
+      ginger.parentId(survey.parentId())
+          .submissionTimestamp(survey.submissionTimestamp())
+          .idempotencyKey(survey.idempotencyKey())
+          .userAgent(survey.userAgent());
+    }
 
     if (output != null)
       ginger.outputDir(output);
@@ -402,6 +437,12 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
   private static boolean hasSpicePass(String spicePass) {
     return spicePass != null && !spicePass.isBlank();
+  }
+
+  /** Encrypt-only runs (via --ginger-args) never contact a server, so we skip survey registration. */
+  boolean isEncryptOnly() {
+    return gingerArgs.containsKey("--encrypt-only")
+        && !"false".equalsIgnoreCase(gingerArgs.get("--encrypt-only"));
   }
 
   static void deleteRecursively(Path path) {

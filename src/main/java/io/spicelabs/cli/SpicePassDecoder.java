@@ -76,6 +76,11 @@ public class SpicePassDecoder {
     return projectIdClaim.isNull() ? null : projectIdClaim.asString();
   }
 
+  public String getUploadServer() {
+    Claim claim = jwt.getClaim("x-upload-server");
+    return claim.isNull() ? null : claim.asString();
+  }
+
   public Instant getExpiresAt() {
     return jwt.getExpiresAt() != null ? jwt.getExpiresAt().toInstant() : null;
   }
