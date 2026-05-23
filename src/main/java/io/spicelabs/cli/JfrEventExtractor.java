@@ -140,7 +140,7 @@ public class JfrEventExtractor {
         long count;
         final List<CallSite> callSites = new ArrayList<>();
         final Set<String> seenSites = new LinkedHashSet<>();
-        // Phase 2 class linking: declaring-class gitoid (constant per probe) + caller-class gitoids.
+        // Class linking: declaring-class gitoid (constant per probe) + caller-class gitoids.
         String classGitoid;
         final Set<String> callerGitoids = new LinkedHashSet<>();
 
@@ -438,7 +438,7 @@ public class JfrEventExtractor {
                 k -> new ProbeAccumulator(eventType, finalClassFqn, finalMethodName, label));
         acc.count++;
 
-        // Phase 2: declaring-class + caller gitoids stamped by the agent (absent on older agents).
+        // Declaring-class + caller gitoids stamped by the agent (absent on older agents).
         if (event.hasField("classGitoid")) {
             String classGitoid = event.getString("classGitoid");
             if (classGitoid != null) {

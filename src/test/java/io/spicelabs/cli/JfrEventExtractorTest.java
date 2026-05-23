@@ -332,7 +332,7 @@ class JfrEventExtractorTest {
         }
     }
 
-    /** Mirrors a Phase 2 probe event: spice.probe.* with classGitoid + callerGitoids fields. */
+    /** Mirrors a probe event with class-linking fields: spice.probe.* with classGitoid + callerGitoids. */
     @Name("spice.probe.testlink")
     @Enabled(true)
     @StackTrace(true)
