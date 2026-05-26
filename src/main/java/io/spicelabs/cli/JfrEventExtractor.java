@@ -67,7 +67,9 @@ public class JfrEventExtractor {
             String methodName,
             String probeLabel,
             long count,
-            List<CallSite> callSites
+            List<CallSite> callSites,
+            Integer classId,
+            List<Integer> callerClassIds
     ) {}
 
     public record SecurityProviderEvent(
@@ -101,7 +103,7 @@ public class JfrEventExtractor {
             boolean modified
     ) {}
 
-    public record CallSite(String location, String thread) {}
+    public record CallSite(String className, String location, String thread) {}
 
     /**
      * A class loaded at runtime, hashed identically to goatrodeo's inventory hashes so the two
@@ -138,6 +140,9 @@ public class JfrEventExtractor {
         long count;
         final List<CallSite> callSites = new ArrayList<>();
         final Set<String> seenSites = new LinkedHashSet<>();
+        // Class linking: declaring-class gitoid (constant per probe) + caller-class gitoids.
+        String classGitoid;
+        final Set<String> callerGitoids = new LinkedHashSet<>();
 
         ProbeAccumulator(String eventType, String classFqn, String methodName, String probeLabel) {
             this.eventType = eventType;
@@ -146,10 +151,10 @@ public class JfrEventExtractor {
             this.probeLabel = probeLabel;
         }
 
-        void addCallSite(String location, String thread) {
+        void addCallSite(String className, String location, String thread) {
             String key = location + "|" + (thread != null ? thread : "");
             if (seenSites.add(key)) {
-                callSites.add(new CallSite(location, thread));
+                callSites.add(new CallSite(className, location, thread));
             }
         }
     }
@@ -166,10 +171,10 @@ public class JfrEventExtractor {
             this.serviceType = serviceType;
         }
 
-        void addCallSite(String location, String thread) {
+        void addCallSite(String className, String location, String thread) {
             String key = location + "|" + (thread != null ? thread : "");
             if (seenSites.add(key)) {
-                callSites.add(new CallSite(location, thread));
+                callSites.add(new CallSite(className, location, thread));
             }
         }
     }
@@ -341,8 +346,22 @@ public class JfrEventExtractor {
         RuntimeInfo runtime = new RuntimeInfo(
                 jvmVersion[0], jvmName[0], jvmVendor[0], javaVersion[0], os[0], pid[0]);
 
+        // Build loadedClasses first (with stable ids) + a gitoid -> id index for event linking.
+        List<LoadedClass> loadedClasses = new ArrayList<>(classLoadMap.size());
+        Map<String, Integer> gitoidToId = new LinkedHashMap<>();
+        int loadedClassId = 0;
+        for (LoadedClass lc : classLoadMap.values()) {
+            loadedClasses.add(new LoadedClass(loadedClassId, lc.className(), lc.classGitoid(),
+                    lc.classSha256(), lc.codeSource(), lc.jarGitoid(), lc.jarSha256()));
+            gitoidToId.put(lc.classGitoid(), loadedClassId);
+            loadedClassId++;
+        }
+
         List<ProbeEvent> probeEvents = probeMap.values().stream()
-                .map(a -> new ProbeEvent(a.eventType, a.classFqn, a.methodName, a.probeLabel, a.count, a.callSites))
+                .map(a -> new ProbeEvent(a.eventType, a.classFqn, a.methodName, a.probeLabel, a.count,
+                        a.callSites,
+                        gitoidToId.get(a.classGitoid),
+                        resolveClassIds(a.callerGitoids, gitoidToId)))
                 .toList();
 
         List<SecurityProviderEvent> secProvEvents = secProvMap.values().stream()
@@ -356,14 +375,6 @@ public class JfrEventExtractor {
 
         List<CertificateRecord> certificates = new ArrayList<>(certMap.values());
         List<SecurityProperty> securityProperties = new ArrayList<>(secPropMap.values());
-
-        // Assign stable per-survey ids at materialization (records are immutable, so rebuild).
-        List<LoadedClass> loadedClasses = new ArrayList<>(classLoadMap.size());
-        int loadedClassId = 0;
-        for (LoadedClass lc : classLoadMap.values()) {
-            loadedClasses.add(new LoadedClass(loadedClassId++, lc.className(), lc.classGitoid(),
-                    lc.classSha256(), lc.codeSource(), lc.jarGitoid(), lc.jarSha256()));
-        }
 
         log.info("Extracted: {} probe events, {} security provider events, {} TLS handshakes, {} certs, {} security properties, {} loaded classes from {} recording(s)",
                 probeEvents.size(), secProvEvents.size(), tlsHandshakes.size(),
@@ -427,6 +438,24 @@ public class JfrEventExtractor {
                 k -> new ProbeAccumulator(eventType, finalClassFqn, finalMethodName, label));
         acc.count++;
 
+        // Declaring-class + caller gitoids stamped by the agent (absent on older agents).
+        if (event.hasField("classGitoid")) {
+            String classGitoid = event.getString("classGitoid");
+            if (classGitoid != null) {
+                acc.classGitoid = classGitoid;
+            }
+        }
+        if (event.hasField("callerGitoids")) {
+            String callers = event.getString("callerGitoids");
+            if (callers != null && !callers.isEmpty()) {
+                for (String g : callers.split("\n")) {
+                    if (!g.isEmpty()) {
+                        acc.callerGitoids.add(g);
+                    }
+                }
+            }
+        }
+
         // Add application-level call site (skip JDK/agent frames)
         if (st != null) {
             String thread = event.getThread() != null ? event.getThread().getJavaName() : null;
@@ -434,7 +463,7 @@ public class JfrEventExtractor {
                 String cn = frame.getMethod().getType().getName();
                 if (isApplicationCode(cn)) {
                     String site = cn + "." + frame.getMethod().getName() + "() line " + frame.getLineNumber();
-                    acc.addCallSite(site, thread);
+                    acc.addCallSite(cn, site, thread);
                     break;
                 }
             }
@@ -451,10 +480,25 @@ public class JfrEventExtractor {
             String cn = frame.getMethod().getType().getName();
             if (isApplicationCode(cn)) {
                 String site = cn + "." + frame.getMethod().getName() + "() line " + frame.getLineNumber();
-                acc.addCallSite(site, thread);
+                acc.addCallSite(cn, site, thread);
                 break;
             }
         }
+    }
+
+    /** Resolve a set of caller gitoids to compact loadedClasses ids, dropping any not present. */
+    private static List<Integer> resolveClassIds(Set<String> gitoids, Map<String, Integer> gitoidToId) {
+        if (gitoids == null || gitoids.isEmpty()) {
+            return List.of();
+        }
+        List<Integer> ids = new ArrayList<>();
+        for (String gitoid : gitoids) {
+            Integer id = gitoidToId.get(gitoid);
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        return ids;
     }
 
     static boolean isApplicationCode(String className) {
