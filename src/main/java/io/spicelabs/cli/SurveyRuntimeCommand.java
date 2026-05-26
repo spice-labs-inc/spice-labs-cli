@@ -245,8 +245,13 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                 mapper.enable(SerializationFeature.INDENT_OUTPUT);
                 mapper.writeValue(jsonPath.toFile(), data);
 
+                log.info("Registering survey with Spice Labs...");
+                SurveyRegistration.Context survey =
+                        SurveyRegistration.register(spicePass, "RUNTIME_SURVEY", subject, null);
+                log.info("Survey registered (submission time {})", survey.submissionTimestamp());
+
                 log.debug("Uploading survey results...");
-                doUpload(spicePass, jsonPath);
+                doUpload(spicePass, jsonPath, survey);
                 log.info("\u2705 Upload complete.");
             } else {
                 log.debug("--no-upload specified. Remove --no-upload to send results to Spice Labs for full categorization.");
@@ -419,17 +424,25 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
 
     // ── Upload ──────────────────────────────────────────────────────────
 
-    private void doUpload(String spicePass, Path rawEventsJson) throws Exception {
+    private void doUpload(String spicePass, Path rawEventsJson, SurveyRegistration.Context survey) throws Exception {
         Map<String, String> gingerArgsMap = new HashMap<>();
         if (chunkSizeMB != null) {
             gingerArgsMap.put("--target-chunk-size", chunkSizeMB.toString());
         }
 
-        Ginger.builder()
+        Ginger ginger = Ginger.builder()
                 .jwt(spicePass)
                 .runtimeSurveyFile(rawEventsJson)
-                .extraArgs(gingerArgsMap)
-                .run();
+                .extraArgs(gingerArgsMap);
+
+        if (survey != null) {
+            ginger.parentId(survey.parentId())
+                    .submissionTimestamp(survey.submissionTimestamp())
+                    .idempotencyKey(survey.idempotencyKey())
+                    .userAgent(survey.userAgent());
+        }
+
+        ginger.run();
     }
 
     // ── Console output ──────────────────────────────────────────────────
