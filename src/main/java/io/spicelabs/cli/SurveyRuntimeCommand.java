@@ -231,27 +231,62 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                 log.warn("\u26A0\uFE0F  Total recording size exceeds 1GB. This may indicate excessive instrumentation.");
             }
 
-            // 8. Parse recordings
-            log.debug("Parsing JFR recordings...");
-            JfrEventExtractor.RawSurveyData data = JfrEventExtractor.extract(subject, recordings);
+            // 8. Register the survey with the server (so the dashboard sees the row before we
+            // start parsing) and build a progress publisher for the ANALYZE sub-job.
+            SurveyRegistration.Context survey = null;
+            AnalyzeProgressPublisher analyzeProgress = null;
+            if (!noUpload) {
+                log.info("Registering survey with Spice Labs...");
+                survey = SurveyRegistration.register(spicePass, "RUNTIME_SURVEY", subject, null);
+                log.info("Survey registered (submission time {})", survey.submissionTimestamp());
+                if (survey.analyzeSubJobId() != null) {
+                    Ginger statusPublisher = Ginger.builder()
+                            .jwt(spicePass)
+                            .parentId(survey.parentId())
+                            .idempotencyKey(survey.idempotencyKey())
+                            .userAgent(survey.userAgent());
+                    analyzeProgress = new AnalyzeProgressPublisher(statusPublisher::publishStatus, survey.analyzeSubJobId());
+                    analyzeProgress.start();
+                }
+            }
 
-            // 9. Print summary
+            // 9. Parse recordings
+            log.debug("Parsing JFR recordings...");
+            JfrEventExtractor.RawSurveyData data;
+            try {
+                JfrProgressCallback parseCallback = analyzeProgress == null
+                        ? null
+                        : analyzeProgress::onProgress;
+                data = JfrEventExtractor.extract(subject, recordings, null, parseCallback);
+            } catch (Exception e) {
+                if (analyzeProgress != null) {
+                    analyzeProgress.fail(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+                }
+                throw e;
+            }
+
+            // 10. Print summary
             printSummary(data);
 
-            // 10. Upload or save locally
+            // 11. Upload or save locally
             if (!noUpload) {
                 Path jsonPath = tempDir.resolve("survey-data.json");
                 ObjectMapper mapper = new ObjectMapper();
                 mapper.enable(SerializationFeature.INDENT_OUTPUT);
                 mapper.writeValue(jsonPath.toFile(), data);
 
-                log.info("Registering survey with Spice Labs...");
-                SurveyRegistration.Context survey =
-                        SurveyRegistration.register(spicePass, "RUNTIME_SURVEY", subject, null);
-                log.info("Survey registered (submission time {})", survey.submissionTimestamp());
-
                 log.debug("Uploading survey results...");
-                doUpload(spicePass, jsonPath, survey);
+                if (analyzeProgress != null) {
+                    analyzeProgress.building();
+                }
+                try {
+                    doUpload(spicePass, jsonPath, survey, analyzeProgress);
+                } catch (Exception e) {
+                    if (analyzeProgress != null) {
+                        analyzeProgress.fail(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+                    }
+                    throw e;
+                }
                 log.info("\u2705 Upload complete.");
             } else {
                 log.debug("--no-upload specified. Remove --no-upload to send results to Spice Labs for full categorization.");
@@ -424,7 +459,8 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
 
     // ── Upload ──────────────────────────────────────────────────────────
 
-    private void doUpload(String spicePass, Path rawEventsJson, SurveyRegistration.Context survey) throws Exception {
+    private void doUpload(String spicePass, Path rawEventsJson, SurveyRegistration.Context survey,
+            AnalyzeProgressPublisher analyzeProgress) throws Exception {
         Map<String, String> gingerArgsMap = new HashMap<>();
         if (chunkSizeMB != null) {
             gingerArgsMap.put("--target-chunk-size", chunkSizeMB.toString());
@@ -440,6 +476,10 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                     .submissionTimestamp(survey.submissionTimestamp())
                     .idempotencyKey(survey.idempotencyKey())
                     .userAgent(survey.userAgent());
+        }
+
+        if (analyzeProgress != null) {
+            ginger.afterBundleWrapped(analyzeProgress::complete);
         }
 
         ginger.run();

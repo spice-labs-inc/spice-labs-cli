@@ -190,10 +190,15 @@ public class JfrEventExtractor {
      * @return raw survey data ready for JSON serialization and upload
      */
     public static RawSurveyData extract(String subject, List<Path> recordingPaths) throws Exception {
-        return extract(subject, recordingPaths, null);
+        return extract(subject, recordingPaths, null, null);
     }
 
     public static RawSurveyData extract(String subject, List<Path> recordingPaths, Map<String, ProbeDefinition> probeIndex) throws Exception {
+        return extract(subject, recordingPaths, probeIndex, null);
+    }
+
+    public static RawSurveyData extract(String subject, List<Path> recordingPaths, Map<String, ProbeDefinition> probeIndex,
+                                        JfrProgressCallback progress) throws Exception {
         if (recordingPaths == null || recordingPaths.isEmpty()) {
             throw new IllegalArgumentException("No recording files provided");
         }
@@ -217,13 +222,35 @@ public class JfrEventExtractor {
         long totalDistinctEvents = 0;
         boolean truncated = false;
 
+        int totalRecordings = recordingPaths.size();
+        int recordingIndex = 0;
+        // Liveness ticks within a single recording — same (current, total), updated_at advances.
+        // Goat-rodeo uses the same rule (every 1k items or 30s); we use 1s here because
+        // JFR events stream much faster than goat-rodeo's per-artifact processing.
+        long eventsSinceTick = 0L;
+        long lastTickMillis = System.currentTimeMillis();
+        final long EVENT_TICK_INTERVAL = 1000L;
+        final long TIME_TICK_INTERVAL_MS = 1000L;
+        if (progress != null) {
+            progress.onProgress(0, totalRecordings);
+        }
+
         for (Path recording : recordingPaths) {
             recordingNames.add(recording.getFileName().toString());
-            log.info("Parsing recording: {}", recording.getFileName());
+            log.info("Parsing recording {} of {}: {}", recordingIndex + 1, totalRecordings, recording.getFileName());
 
             try (RecordingFile rf = new RecordingFile(recording)) {
                 while (rf.hasMoreEvents()) {
                     RecordedEvent event = rf.readEvent();
+                    if (progress != null) {
+                        eventsSinceTick++;
+                        long now = System.currentTimeMillis();
+                        if (eventsSinceTick >= EVENT_TICK_INTERVAL || (now - lastTickMillis) >= TIME_TICK_INTERVAL_MS) {
+                            progress.onProgress(recordingIndex, totalRecordings);
+                            eventsSinceTick = 0;
+                            lastTickMillis = now;
+                        }
+                    }
                     String eventType = event.getEventType().getName();
 
                     switch (eventType) {
@@ -340,6 +367,13 @@ public class JfrEventExtractor {
                 log.warn("⚠️  {} distinct events exceed cap of {}. Results may be truncated.",
                         totalDistinctEvents, MAX_DISTINCT_EVENTS);
                 truncated = true;
+            }
+
+            recordingIndex++;
+            if (progress != null) {
+                progress.onProgress(recordingIndex, totalRecordings);
+                eventsSinceTick = 0L;
+                lastTickMillis = System.currentTimeMillis();
             }
         }
 

@@ -39,9 +39,12 @@ class SurveyRegistrationTest {
   @Test
   void register_postsToSurveys_andReturnsServerTimestamp() throws Exception {
     UUID parentId = UUID.randomUUID();
+    UUID analyzeSubJobId = UUID.randomUUID();
     server.enqueue(new MockResponse()
         .setResponseCode(201)
-        .setBody("{\"parent_id\":\"" + parentId + "\",\"submission_timestamp\":\"2026-05-20T12:00:00Z\"}"));
+        .setBody("{\"parent_id\":\"" + parentId
+            + "\",\"submission_timestamp\":\"2026-05-20T12:00:00Z\""
+            + ",\"analyze_sub_job_id\":\"" + analyzeSubJobId + "\"}"));
 
     // The pass's upload URL points at the mock server; ginger-j derives /surveys from it.
     String uploadServer = server.url("/api/v1/org/o/project/p/bundle/upload").toString();
@@ -51,6 +54,8 @@ class SurveyRegistrationTest {
         SurveyRegistration.register(pass, "INVENTORY_SURVEY", "my-subject", null);
 
     assertEquals(parentId, ctx.parentId());
+    assertEquals(analyzeSubJobId, ctx.analyzeSubJobId(),
+        "analyzeSubJobId must round-trip from initSurvey for ANALYZE progress publishes");
     assertEquals("2026-05-20T12:00:00Z", ctx.submissionTimestamp().toString(),
         "the bundle date must be the server value, verbatim");
     assertNotNull(ctx.idempotencyKey());
