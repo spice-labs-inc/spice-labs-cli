@@ -16,8 +16,14 @@ import io.spicelabs.ginger.DirectUploadService;
  */
 final class SurveyRegistration {
 
-  /** Server-supplied survey identity and timestamp, threaded through survey + upload. */
-  record Context(UUID parentId, Instant submissionTimestamp, UUID idempotencyKey, String userAgent) {}
+  /**
+   * Server-supplied survey identity and timestamp, threaded through survey + upload.
+   * {@code analyzeSubJobId} is the sub-job daikon mints at {@code initSurvey} for the
+   * local analyze pass — progress publishes during goat-rodeo / JFR parsing target it.
+   * It may be {@code null} when running against an older daikon that doesn't mint it.
+   */
+  record Context(UUID parentId, Instant submissionTimestamp, UUID idempotencyKey, String userAgent,
+                 UUID analyzeSubJobId) {}
 
   private SurveyRegistration() {}
 
@@ -41,6 +47,7 @@ final class SurveyRegistration {
     if (submissionTimestamp == null) {
       throw new IllegalStateException("initSurvey response missing submission_timestamp");
     }
-    return new Context(response.parentId(), submissionTimestamp, idempotencyKey, userAgent);
+    return new Context(response.parentId(), submissionTimestamp, idempotencyKey, userAgent,
+        response.analyzeSubJobId());
   }
 }

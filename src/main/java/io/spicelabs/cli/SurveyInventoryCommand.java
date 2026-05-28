@@ -235,13 +235,26 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       survey = initSurvey(spicePass);
     }
 
+    // Progress publisher for the ANALYZE sub-job. Only wired when we ran a real initSurvey
+    // and daikon minted an analyzeSubJobId; the upload-only / no-upload paths skip it
+    // because no local analyze runs (upload-only) or no survey was registered (no-upload).
+    AnalyzeProgressPublisher analyzeProgress = null;
+    if (survey != null && survey.analyzeSubJobId() != null) {
+      Ginger statusPublisher = Ginger.builder()
+          .jwt(spicePass)
+          .parentId(survey.parentId())
+          .idempotencyKey(survey.idempotencyKey())
+          .userAgent(survey.userAgent());
+      analyzeProgress = new AnalyzeProgressPublisher(statusPublisher::publishStatus, survey.analyzeSubJobId());
+    }
+
     if (uploadOnly) {
-      doUpload(spicePass, Optional.of(input), survey);
+      doUpload(spicePass, Optional.of(input), survey, null);
     } else if (noUpload) {
-      doSurvey(null);
+      doSurvey(null, null);
     } else {
-      doSurvey(survey);
-      doUpload(spicePass, Optional.of(output), survey);
+      doSurvey(survey, analyzeProgress);
+      doUpload(spicePass, Optional.of(output), survey, analyzeProgress);
     }
   }
 
@@ -261,7 +274,8 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     return survey;
   }
 
-  protected void doSurvey(SurveyRegistration.Context survey) throws Exception {
+  protected void doSurvey(SurveyRegistration.Context survey, AnalyzeProgressPublisher analyzeProgress)
+      throws Exception {
     log.info("📦 Surveying artifacts with GoatRodeo...");
 
     String originalScalaLevel = System.getProperty("scala.logging.level");
@@ -313,7 +327,19 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         builder.withTagDate(survey.submissionTimestamp().toString());
       }
 
-      builder.run();
+      if (analyzeProgress != null) {
+        builder.withProgressListener(analyzeProgress);
+        analyzeProgress.start();
+      }
+
+      try {
+        builder.run();
+      } catch (Exception e) {
+        if (analyzeProgress != null) {
+          analyzeProgress.fail(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+        }
+        throw e;
+      }
     } finally {
       if (singleFileDir != null) {
         deleteRecursively(singleFileDir);
@@ -328,7 +354,8 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     }
   }
 
-  private void doUpload(String spicePass, Optional<Path> gingerInputDir, SurveyRegistration.Context survey) throws Exception {
+  private void doUpload(String spicePass, Optional<Path> gingerInputDir, SurveyRegistration.Context survey,
+      AnalyzeProgressPublisher analyzeProgress) throws Exception {
     log.info("📦 Uploading ADGs...");
 
     Map<String, String> gingerArgsMap = new HashMap<>(gingerArgs);
@@ -352,7 +379,18 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     if (output != null)
       ginger.outputDir(output);
 
-    ginger.run();
+    if (analyzeProgress != null) {
+      analyzeProgress.building();
+      ginger.afterBundleWrapped(analyzeProgress::complete);
+    }
+    try {
+      ginger.run();
+    } catch (Exception e) {
+      if (analyzeProgress != null) {
+        analyzeProgress.fail(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+      }
+      throw e;
+    }
   }
 
   private String resolveSpicePass() {
