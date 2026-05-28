@@ -94,32 +94,79 @@ public class RuntimeCollect {
             log.debug("Loaded {} probe definitions", probeIndex.size());
         }
 
+        // Register the survey with the server before parsing so the dashboard sees the
+        // row up front, daikon mints the parent + ANALYZE sub-job, and the upload that
+        // follows can present the idempotency key the new /bundle/upload/init requires.
+        SurveyRegistration.Context survey = null;
+        AnalyzeProgressPublisher analyzeProgress = null;
+        String spicePass = null;
+        if (!noUpload) {
+            spicePass = System.getenv("SPICE_PASS");
+            if (spicePass == null || spicePass.isBlank()) {
+                log.error("SPICE_PASS not set");
+                System.exit(1);
+            }
+            log.info("Registering survey with Spice Labs...");
+            survey = SurveyRegistration.register(spicePass, "RUNTIME_SURVEY", subject, null);
+            log.info("Survey registered (submission time {})", survey.submissionTimestamp());
+            if (survey.analyzeSubJobId() != null) {
+                Ginger statusPublisher = Ginger.builder()
+                        .jwt(spicePass)
+                        .parentId(survey.parentId())
+                        .idempotencyKey(survey.idempotencyKey())
+                        .userAgent(survey.userAgent());
+                analyzeProgress = new AnalyzeProgressPublisher(
+                        statusPublisher::publishStatus, survey.analyzeSubJobId());
+                analyzeProgress.start();
+            }
+        }
+
         // Parse
         log.debug("Parsing JFR recordings...");
-        JfrEventExtractor.RawSurveyData data = JfrEventExtractor.extract(subject, recordings, probeIndex);
+        JfrEventExtractor.RawSurveyData data;
+        try {
+            JfrProgressCallback parseCallback = analyzeProgress == null
+                    ? null
+                    : analyzeProgress::onProgress;
+            data = JfrEventExtractor.extract(subject, recordings, probeIndex, parseCallback);
+        } catch (Exception e) {
+            if (analyzeProgress != null) {
+                analyzeProgress.fail(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            }
+            throw e;
+        }
 
         // Print summary
         new SurveyRuntimeCommand().printSummary(data);
 
         // Upload
         if (!noUpload) {
-            String spicePass = System.getenv("SPICE_PASS");
-            if (spicePass == null || spicePass.isBlank()) {
-                log.error("SPICE_PASS not set");
-                System.exit(1);
-            }
-
             Path jsonPath = dir.resolve("survey-data.json");
             ObjectMapper mapper = new ObjectMapper();
             mapper.enable(SerializationFeature.INDENT_OUTPUT);
             mapper.writeValue(jsonPath.toFile(), data);
 
             log.debug("Uploading survey results...");
-            Ginger.builder()
+            Ginger ginger = Ginger.builder()
                     .jwt(spicePass)
                     .runtimeSurveyFile(jsonPath)
                     .runtimeSubject(subject)
-                    .run();
+                    .parentId(survey.parentId())
+                    .submissionTimestamp(survey.submissionTimestamp())
+                    .idempotencyKey(survey.idempotencyKey())
+                    .userAgent(survey.userAgent());
+            if (analyzeProgress != null) {
+                analyzeProgress.building();
+                ginger.afterBundleWrapped(analyzeProgress::complete);
+            }
+            try {
+                ginger.run();
+            } catch (Exception e) {
+                if (analyzeProgress != null) {
+                    analyzeProgress.fail(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+                }
+                throw e;
+            }
             log.debug("Upload complete.");
         } else {
             log.debug("--no-upload: remove to send results to Spice Labs for full categorization.");
