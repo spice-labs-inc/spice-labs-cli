@@ -11,7 +11,7 @@ env:
 jobs:
   publish_jars:
     name: Publish CLI JARs to GitHub Packages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       packages: write
@@ -176,7 +176,7 @@ jobs:
 
   docker_image:
     name: Build and Push Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: publish_jars
     permissions:
       contents: read
@@ -290,7 +290,7 @@ jobs:
   notify:
     needs: [publish_jars, docker_image]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check deployment status
         id: deployment-status
