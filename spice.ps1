@@ -167,6 +167,7 @@ if ($isRuntimeSurvey) {
   $rtUserCmd = @()
   $rtSubject = ""
   $rtOutputPath = ""
+  $rtAnchor = ""
   $rtNoUpload = $false
   $rtNativeOnly = $false
   $rtKeepRecording = $false
@@ -193,6 +194,12 @@ if ($isRuntimeSurvey) {
     if ($arg -match '^--output=(.*)$') { $rtOutputPath = $matches[1]; continue }
     elseif ($rtPrev -eq '--output') { $rtOutputPath = $arg; $rtPrev = ""; continue }
     elseif ($arg -eq '--output') { $rtPrev = $arg; continue }
+
+    # Capture --anchor value (the host jar this survey is of; mounted into the
+    # collect container below so its gitoid can be hashed for CBOM correlation)
+    if ($arg -match '^--anchor=(.*)$') { $rtAnchor = $matches[1]; continue }
+    elseif ($rtPrev -eq '--anchor') { $rtAnchor = $arg; $rtPrev = ""; continue }
+    elseif ($arg -eq '--anchor') { $rtPrev = $arg; continue }
 
     # Handle value-consuming flags
     if ($rtPrev) {
@@ -325,11 +332,20 @@ if ($isRuntimeSurvey) {
   $rtCollectArgs = @($rtSubject, $rtWorkdirDocker)
   if ($rtNoUpload) { $rtCollectArgs += '--no-upload' }
 
+  $rtAnchorMount = @()
+  if ($rtAnchor) {
+    $rtAnchorHost = (Get-AbsolutePath $rtAnchor)
+    $rtAnchorDocker = Convert-ToDockerPath $rtAnchorHost
+    $rtAnchorMount = @('-v', "${rtAnchorHost}:${rtAnchorDocker}:ro")
+    $rtCollectArgs += @('--anchor', $rtAnchorDocker)
+  }
+
   $p4Args = @('run', '--rm', '--entrypoint', 'java')
   $p4Args += @($userFlag)
   $p4Args += @('--network', 'host')
   $p4Args += @($pullFlag)
   $p4Args += @('-v', "${rtWorkdirHost}:${rtWorkdirDocker}")
+  $p4Args += $rtAnchorMount
   $p4Args += @('-e', "SPICE_PASS=$spicePass")
   $p4Args += @("${img}:${tag}")
   $p4Args += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect')
