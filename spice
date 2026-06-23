@@ -154,6 +154,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   RT_USER_CMD=()
   RT_SUBJECT=""
   RT_OUTPUT_PATH=""
+  RT_ANCHOR=""
   RT_NO_UPLOAD=0
   RT_NATIVE_ONLY=0
   RT_KEEP_RECORDING=0
@@ -185,6 +186,20 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
       rt_prev=""
       continue
     elif [[ "$arg" == "--output" ]]; then
+      rt_prev="$arg"
+      continue
+    fi
+
+    # Capture --anchor value (the host jar this survey is of; mounted into the
+    # collect container below so its gitoid can be hashed for CBOM correlation)
+    if [[ "$arg" == --anchor=* ]]; then
+      RT_ANCHOR="${arg#--anchor=}"
+      continue
+    elif [[ "$rt_prev" == "--anchor" ]]; then
+      RT_ANCHOR="$arg"
+      rt_prev=""
+      continue
+    elif [[ "$arg" == "--anchor" ]]; then
       rt_prev="$arg"
       continue
     fi
@@ -321,11 +336,19 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   RT_COLLECT_ARGS=("$RT_SUBJECT" "$RT_WORKDIR")
   [ "$RT_NO_UPLOAD" = "1" ] && RT_COLLECT_ARGS+=("--no-upload")
 
+  RT_ANCHOR_MOUNT=()
+  if [ -n "$RT_ANCHOR" ]; then
+    RT_ANCHOR_ABS="$(abs_path "$RT_ANCHOR")"
+    RT_ANCHOR_MOUNT=("-v" "${RT_ANCHOR_ABS}:${RT_ANCHOR_ABS}:ro")
+    RT_COLLECT_ARGS+=("--anchor" "${RT_ANCHOR_ABS}")
+  fi
+
   docker run --rm --entrypoint java \
     --user "$(id -u):$(id -g)" \
     --network host \
     ${PULL_FLAG:+$PULL_FLAG} \
     -v "${RT_WORKDIR}:${RT_WORKDIR}" \
+    ${RT_ANCHOR_MOUNT[@]+"${RT_ANCHOR_MOUNT[@]}"} \
     -e SPICE_PASS \
     "${IMAGE}:${TAG}" \
     -cp /opt/spice-labs-cli/spice-labs-cli.jar \

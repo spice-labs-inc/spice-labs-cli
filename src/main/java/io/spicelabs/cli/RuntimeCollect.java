@@ -59,7 +59,15 @@ public class RuntimeCollect {
 
         String subject = args[0];
         Path dir = Path.of(args[1]);
-        boolean noUpload = args.length > 2 && "--no-upload".equals(args[2]);
+        boolean noUpload = false;
+        Path anchorPath = null;
+        for (int i = 2; i < args.length; i++) {
+            if ("--no-upload".equals(args[i])) {
+                noUpload = true;
+            } else if ("--anchor".equals(args[i]) && i + 1 < args.length) {
+                anchorPath = Path.of(args[++i]);
+            }
+        }
 
         if (!Files.isDirectory(dir)) {
             log.error("Directory not found: {}", dir);
@@ -92,6 +100,26 @@ public class RuntimeCollect {
         if (Files.exists(probeConfig)) {
             probeIndex = loadProbeIndex(probeConfig);
             log.debug("Loaded {} probe definitions", probeIndex.size());
+        }
+
+        // Anchor: the build artifact this survey is of, hashed so the results can be correlated
+        // into a CBOM. Validated + hashed up front; warn loudly if absent so the user knows why
+        // no CBOM is produced.
+        JfrEventExtractor.Anchor anchorData = null;
+        if (anchorPath != null) {
+            if (!Files.isRegularFile(anchorPath)) {
+                log.error("--anchor file not found: {}", anchorPath);
+                System.exit(1);
+            }
+            byte[] anchorBytes = Files.readAllBytes(anchorPath);
+            anchorData = new JfrEventExtractor.Anchor(
+                    anchorPath.getFileName().toString(),
+                    Gitoids.sha256Hex(anchorBytes),
+                    Gitoids.gitoidBlobSha256(anchorBytes));
+            log.info("Anchored to {} (gitoid {})", anchorPath.getFileName(), anchorData.gitoid());
+        } else {
+            log.warn("No --anchor given; this survey will not produce a CBOM. "
+                    + "Pass --anchor <path-to-jar> to enable it.");
         }
 
         // Register the survey with the server before parsing so the dashboard sees the
@@ -134,6 +162,10 @@ public class RuntimeCollect {
                 analyzeProgress.fail(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
             }
             throw e;
+        }
+
+        if (anchorData != null) {
+            data = data.toBuilder().anchor(anchorData).build();
         }
 
         // Print summary
