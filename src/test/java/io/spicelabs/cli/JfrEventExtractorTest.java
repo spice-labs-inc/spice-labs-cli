@@ -58,9 +58,9 @@ class JfrEventExtractorTest {
 
     @Test
     void rawSurveyData_hasCorrectTypeAndVersion() {
-        var data = new JfrEventExtractor.RawSurveyData(
-                "1.0.0", "runtime-pqc-survey", "test-app",
-                null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        var data = JfrEventExtractor.RawSurveyData.builder()
+                .version("1.0.0").type("runtime-pqc-survey").subject("test-app")
+                .build();
         assertEquals("1.0.0", data.version());
         assertEquals("runtime-pqc-survey", data.type());
         assertEquals("test-app", data.subject());
@@ -280,9 +280,10 @@ class JfrEventExtractorTest {
         var lc = new JfrEventExtractor.LoadedClass(
                 0, "com.example.Hello", "gitoid:blob:sha256:aaa", "aaa-sha",
                 "file:/tmp/hello.jar", "gitoid:blob:sha256:jjj", "jjj-sha");
-        var data = new JfrEventExtractor.RawSurveyData(
-                "1.0.0", "runtime-pqc-survey", "app", null,
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(lc));
+        var data = JfrEventExtractor.RawSurveyData.builder()
+                .version("1.0.0").type("runtime-pqc-survey").subject("app")
+                .loadedClasses(List.of(lc))
+                .build();
 
         // Mirror production serialization (bare ObjectMapper). Parse back so the assertion is
         // robust to indentation.
@@ -302,6 +303,23 @@ class JfrEventExtractorTest {
         assertEquals("file:/tmp/hello.jar", e.get("codeSource").asText());
         assertEquals("gitoid:blob:sha256:jjj", e.get("jarGitoid").asText());
         assertEquals("jjj-sha", e.get("jarSha256").asText());
+    }
+
+    @Test
+    void anchor_serializesAsCamelCaseJson() throws Exception {
+        // Locks the upload contract: an anchor object with path/sha256/gitoid (the CBOM join key).
+        var data = JfrEventExtractor.RawSurveyData.builder()
+                .version("1.0.0").type("runtime-pqc-survey").subject("app")
+                .anchor(new JfrEventExtractor.Anchor("bar.jar", "abc-sha", "gitoid:blob:sha256:abc"))
+                .build();
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode anchor = mapper.readTree(mapper.writeValueAsString(data)).get("anchor");
+
+        assertNotNull(anchor, "anchor key must be present");
+        assertEquals("bar.jar", anchor.get("path").asText());
+        assertEquals("abc-sha", anchor.get("sha256").asText());
+        assertEquals("gitoid:blob:sha256:abc", anchor.get("gitoid").asText());
     }
 
     @Test
