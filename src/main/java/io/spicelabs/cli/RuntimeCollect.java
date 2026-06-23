@@ -102,9 +102,9 @@ public class RuntimeCollect {
             log.debug("Loaded {} probe definitions", probeIndex.size());
         }
 
-        // Anchor: the build artifact this survey is of, hashed so the results can be correlated
-        // into a CBOM. Validated + hashed up front; warn loudly if absent so the user knows why
-        // no CBOM is produced.
+        // Anchor: the build artifact this survey is of, hashed so the survey can be correlated with
+        // an inventory survey into a combined CBOM. Validated + hashed up front; warn loudly if absent
+        // so the user knows why no combined CBOM.
         JfrEventExtractor.Anchor anchorData = null;
         if (anchorPath != null) {
             if (!Files.isRegularFile(anchorPath)) {
@@ -118,7 +118,7 @@ public class RuntimeCollect {
                     Gitoids.gitoidBlobSha256(anchorBytes));
             log.info("Anchored to {} (gitoid {})", anchorPath.getFileName(), anchorData.gitoid());
         } else {
-            log.warn("No --anchor given; this survey will not produce a CBOM. "
+            log.warn("No --anchor given; this survey will not correlate into a combined CBOM. "
                     + "Pass --anchor <path-to-jar> to enable it.");
         }
 
