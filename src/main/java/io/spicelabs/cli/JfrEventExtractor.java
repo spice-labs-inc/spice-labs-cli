@@ -49,8 +49,65 @@ public class JfrEventExtractor {
             List<TlsHandshake> tlsHandshakes,
             List<CertificateRecord> certificates,
             List<SecurityProperty> securityProperties,
-            List<LoadedClass> loadedClasses
-    ) {}
+            List<LoadedClass> loadedClasses,
+            Anchor anchor
+    ) {
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        /** This survey's fields as a builder, for adding or overriding one field. */
+        public Builder toBuilder() {
+            return builder()
+                    .version(version).type(type).subject(subject).runtime(runtime)
+                    .recordings(recordings).probeEvents(probeEvents)
+                    .securityProviderEvents(securityProviderEvents).tlsHandshakes(tlsHandshakes)
+                    .certificates(certificates).securityProperties(securityProperties)
+                    .loadedClasses(loadedClasses).anchor(anchor);
+        }
+
+        /** Builder so callers don't pass a dozen positional args. */
+        public static final class Builder {
+            private String version;
+            private String type;
+            private String subject;
+            private RuntimeInfo runtime;
+            private List<String> recordings;
+            private List<ProbeEvent> probeEvents;
+            private List<SecurityProviderEvent> securityProviderEvents;
+            private List<TlsHandshake> tlsHandshakes;
+            private List<CertificateRecord> certificates;
+            private List<SecurityProperty> securityProperties;
+            private List<LoadedClass> loadedClasses;
+            private Anchor anchor;
+
+            public Builder version(String v) { this.version = v; return this; }
+            public Builder type(String v) { this.type = v; return this; }
+            public Builder subject(String v) { this.subject = v; return this; }
+            public Builder runtime(RuntimeInfo v) { this.runtime = v; return this; }
+            public Builder recordings(List<String> v) { this.recordings = v; return this; }
+            public Builder probeEvents(List<ProbeEvent> v) { this.probeEvents = v; return this; }
+            public Builder securityProviderEvents(List<SecurityProviderEvent> v) { this.securityProviderEvents = v; return this; }
+            public Builder tlsHandshakes(List<TlsHandshake> v) { this.tlsHandshakes = v; return this; }
+            public Builder certificates(List<CertificateRecord> v) { this.certificates = v; return this; }
+            public Builder securityProperties(List<SecurityProperty> v) { this.securityProperties = v; return this; }
+            public Builder loadedClasses(List<LoadedClass> v) { this.loadedClasses = v; return this; }
+            public Builder anchor(Anchor v) { this.anchor = v; return this; }
+
+            public RawSurveyData build() {
+                return new RawSurveyData(version, type, subject, runtime, recordings, probeEvents,
+                        securityProviderEvents, tlsHandshakes, certificates, securityProperties,
+                        loadedClasses, anchor);
+            }
+        }
+    }
+
+    /**
+     * The build artifact (jar/war/ear) this survey is of, identified by content hash. {@code sha256}
+     * and {@code gitoid} match goatrodeo's inventory hashes so a CBOM can correlate this survey with
+     * the inventory ADG and other surveys. {@code path} is the file name, for display only.
+     */
+    public record Anchor(String path, String sha256, String gitoid) {}
 
     public record RuntimeInfo(
             String jvmVersion,
@@ -414,19 +471,19 @@ public class JfrEventExtractor {
                 probeEvents.size(), secProvEvents.size(), tlsHandshakes.size(),
                 certificates.size(), securityProperties.size(), loadedClasses.size(), recordingPaths.size());
 
-        return new RawSurveyData(
-                "1.0.0",
-                "runtime-pqc-survey",
-                subject,
-                runtime,
-                recordingNames,
-                probeEvents,
-                secProvEvents,
-                tlsHandshakes,
-                certificates,
-                securityProperties,
-                loadedClasses
-        );
+        return RawSurveyData.builder()
+                .version("1.0.0")
+                .type("runtime-pqc-survey")
+                .subject(subject)
+                .runtime(runtime)
+                .recordings(recordingNames)
+                .probeEvents(probeEvents)
+                .securityProviderEvents(secProvEvents)
+                .tlsHandshakes(tlsHandshakes)
+                .certificates(certificates)
+                .securityProperties(securityProperties)
+                .loadedClasses(loadedClasses)
+                .build();
     }
 
     // ── Probe event processing ──────────────────────────────────────────

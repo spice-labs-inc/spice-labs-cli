@@ -104,6 +104,11 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
             description = "Target chunk size in MB for uploads (default: 64)")
     Integer chunkSizeMB;
 
+    @Option(names = "--anchor",
+            description = "Path to the jar/war/ear this survey is of. It is hashed (sha256 + gitoid) "
+                    + "so the results can be correlated into a CBOM. Without --anchor, no CBOM is produced.")
+    Path anchor;
+
     // For testing — allow injection
     String spicePassOverride;
 
@@ -140,6 +145,24 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
         if (!noUpload && !hasSpicePass(spicePass)) {
             throw new IllegalArgumentException(
                     "SPICE_PASS must be set for upload. Use --no-upload to run locally.");
+        }
+
+        // Anchor: the build artifact this survey is of, hashed so the results can be correlated into
+        // a CBOM. Validated + hashed up front; warn loudly if absent so the user knows why no CBOM.
+        JfrEventExtractor.Anchor anchorData = null;
+        if (anchor != null) {
+            if (!Files.isRegularFile(anchor)) {
+                throw new IllegalArgumentException("--anchor file not found: " + anchor);
+            }
+            byte[] anchorBytes = Files.readAllBytes(anchor);
+            anchorData = new JfrEventExtractor.Anchor(
+                    anchor.getFileName().toString(),
+                    Gitoids.sha256Hex(anchorBytes),
+                    Gitoids.gitoidBlobSha256(anchorBytes));
+            log.info("Anchored to {} (gitoid {})", anchor.getFileName(), anchorData.gitoid());
+        } else {
+            log.warn("No --anchor given; this survey won't produce a CBOM. "
+                    + "Pass --anchor <path-to-jar> to enable it.");
         }
 
         // 2. Detect target JDK version
@@ -263,6 +286,10 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                     analyzeProgress.fail(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
                 }
                 throw e;
+            }
+
+            if (anchorData != null) {
+                data = data.toBuilder().anchor(anchorData).build();
             }
 
             // 10. Print summary
