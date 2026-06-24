@@ -56,6 +56,7 @@ spice survey runtime <subject> --jfr -- <command>
 ```
 
 - **`subject`** — label identifying the system being surveyed
+- **`--anchor <path>`** — the jar/war/ear this survey is of. It is hashed so the runtime survey can be correlated with an inventory survey that indexed the same artifact, producing a combined CBOM. Without `--anchor`, the runtime survey still produces its own CBOM but is not correlated.
 - **`--`** — separates CLI options from the target command
 - **`command`** — the JVM command to instrument (e.g. `java -jar app.jar`, `mvn test`)
 
@@ -69,6 +70,9 @@ spice survey inventory my-app ./build/output --no-upload
 
 # Runtime survey — instrument a Java application
 spice survey runtime my-app --jfr -- java -jar app.jar
+
+# Runtime survey — anchor to the artifact so results correlate into a combined CBOM
+spice survey runtime my-app --anchor ./build/app.jar --jfr -- java -jar ./build/app.jar
 
 # Runtime survey — instrument Maven tests
 spice survey runtime my-app --jfr -- mvn test
@@ -111,6 +115,7 @@ spice pass decode
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--jfr` | **Required.** Use JFR instrumentation | — |
+| `--anchor` | Path to the jar/war/ear being surveyed; hashed so the runtime survey correlates with an inventory survey that indexed the same artifact, producing a combined CBOM | _(none)_ |
 | `--native-only` | Use only native JDK security events (no agent) | `false` |
 | `--no-upload` | Analyze locally, don't upload results | `false` |
 | `--keep-recording` | Don't delete JFR recordings after upload | `false` |

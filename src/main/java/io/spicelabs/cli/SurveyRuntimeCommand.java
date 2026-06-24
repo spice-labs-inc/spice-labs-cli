@@ -106,7 +106,9 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
 
     @Option(names = "--anchor",
             description = "Path to the jar/war/ear this survey is of. It is hashed (sha256 + gitoid) "
-                    + "so the results can be correlated into a CBOM. Without --anchor, no CBOM is produced.")
+                    + "so the survey can be correlated with an inventory survey that indexed it, "
+                    + "producing a combined CBOM. Without --anchor, the survey still produces its own "
+                    + "CBOM but is not correlated.")
     Path anchor;
 
     // For testing — allow injection
@@ -147,8 +149,9 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                     "SPICE_PASS must be set for upload. Use --no-upload to run locally.");
         }
 
-        // Anchor: the build artifact this survey is of, hashed so the results can be correlated into
-        // a CBOM. Validated + hashed up front; warn loudly if absent so the user knows why no CBOM.
+        // Anchor: the build artifact this survey is of, hashed so the survey can be correlated with an
+        // inventory survey into a combined CBOM. Validated + hashed up front; warn loudly if absent so
+        // the user knows why no combined CBOM.
         JfrEventExtractor.Anchor anchorData = null;
         if (anchor != null) {
             if (!Files.isRegularFile(anchor)) {
@@ -161,7 +164,7 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                     Gitoids.gitoidBlobSha256(anchorBytes));
             log.info("Anchored to {} (gitoid {})", anchor.getFileName(), anchorData.gitoid());
         } else {
-            log.warn("No --anchor given; this survey won't produce a CBOM. "
+            log.warn("No --anchor given; this survey will not correlate into a combined CBOM. "
                     + "Pass --anchor <path-to-jar> to enable it.");
         }
 
