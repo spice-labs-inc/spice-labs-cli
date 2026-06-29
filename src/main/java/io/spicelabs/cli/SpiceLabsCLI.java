@@ -18,6 +18,7 @@ package io.spicelabs.cli;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import picocli.AutoComplete;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
@@ -36,6 +37,11 @@ import picocli.CommandLine.Command;
     subcommands = {
         SurveyCommand.class,
         PassCommand.class,
+        // Emits a bash/zsh completion script generated from the live command model —
+        // including any plugin subcommands mounted via ServiceLoader (e.g. `registry`).
+        AutoComplete.GenerateCompletion.class,
+        // PowerShell equivalent: built-ins + each plugin's contributed fragment.
+        GeneratePowershellCompletion.class,
     },
     footer = {
         "",
