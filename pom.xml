@@ -48,16 +48,12 @@
         <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
         <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
 
-        <slf4j.version>2.0.17</slf4j.version>
-        <logback.version>1.5.18</logback.version>
-        <picocli.version>4.7.6</picocli.version>
-        <spice-plugin-api.version>0.0.1-SNAPSHOT</spice-plugin-api.version>
-        <goatrodeo.version>0.16.1</goatrodeo.version>
-        <ginger.version>0.3.3</ginger.version>
+        <!-- The spice runtime classpath (picocli, goatrodeo_3, ginger-j, slf4j, logback,
+             java-jwt, commons-lang3, spice-plugin-api) is defined once in the spice-build
+             peer's `spice-runtime` aggregator POM, published in lock-step at this same
+             version by this repo's CI (consumed below via ${project.version}). -->
         <ancho.version>0.0.5</ancho.version>
-        <!--        Use these versions for local dev-->
-        <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
-        <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version> -->
+        <!--        Use this version for local dev-->
         <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
@@ -65,54 +61,24 @@
     </properties>
 
     <dependencies>
-        <dependency>
-            <groupId>info.picocli</groupId>
-            <artifactId>picocli</artifactId>
-            <version>${picocli.version}</version>
-        </dependency>
-        <!-- Plugin SPI (SpiceCommandPlugin/SpiceContext), defined in the spice-build peer.
-             Bundled in the CLI so plugins on the classpath link against a single contract. -->
+        <!-- The whole spice runtime classpath, defined once in the spice-build peer.
+             type=pom pulls its dependencies (picocli, goatrodeo_3, ginger-j, slf4j,
+             logback, java-jwt, commons-lang3, spice-plugin-api) transitively; the shade
+             plugin bundles them. Plugins depend on this same artifact as `provided`. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
-            <artifactId>spice-plugin-api</artifactId>
-            <version>${spice-plugin-api.version}</version>
+            <artifactId>spice-runtime</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
         </dependency>
-        <dependency>
-            <groupId>io.spicelabs</groupId>
-            <artifactId>goatrodeo_3</artifactId>
-            <version>${goatrodeo.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.spicelabs</groupId>
-            <artifactId>ginger-j</artifactId>
-            <version>${ginger.version}</version>
-        </dependency>
-        <!-- JFR agent for runtime surveys — extracted to temp at runtime, not shaded -->
+        <!-- JFR agent for runtime surveys — extracted to temp at runtime, not shaded.
+             Kept separate (not in spice-runtime): it is injected into the target JVM via
+             -javaagent, never on the CLI's own classpath. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>ancho</artifactId>
             <version>${ancho.version}</version>
             <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>${slf4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.auth0</groupId>
-            <artifactId>java-jwt</artifactId>
-            <version>4.4.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-lang3</artifactId>
-            <version>3.18.0</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -221,7 +187,10 @@
                         <goals><goal>run</goal></goals>
                         <configuration>
                             <target>
+                                <delete dir="${project.build.directory}/plugins"/>
                                 <mkdir dir="${project.build.directory}/plugins"/>
+                                <!-- keeps the dir non-empty so the Dockerfile COPY always succeeds -->
+                                <touch file="${project.build.directory}/plugins/.keep"/>
                                 <copy todir="${project.build.directory}/plugins" flatten="true" failonerror="false">
                                     <fileset dir="${project.basedir}/plugins" followsymlinks="true" erroronmissingdir="false">
                                         <include name="**/*.jar"/>
