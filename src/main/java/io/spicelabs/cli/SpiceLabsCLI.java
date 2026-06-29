@@ -80,6 +80,9 @@ public class SpiceLabsCLI implements Runnable {
       }
       return offending.getCommandSpec().exitCodeOnInvalidInput();
     });
+    // Discover and mount any subcommand plugins present on the classpath (e.g. the
+    // proprietary `registry` plugin). Built-in commands are unaffected when none exist.
+    PluginLoader.registerPlugins(cmd, DefaultSpiceContext.create());
     return cmd;
   }
 

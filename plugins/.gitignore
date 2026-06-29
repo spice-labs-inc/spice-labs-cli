@@ -1,0 +1,5 @@
+# Plugin components are symlinked in here per build; never commit them.
+# A public/OSS build leaves this directory empty.
+*
+!.gitignore
+!README.md
