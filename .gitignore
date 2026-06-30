@@ -1,4 +1,5 @@
 target
+dist
 dependency-reduced-pom.xml
 .idea
 spice-labs-cli.iml

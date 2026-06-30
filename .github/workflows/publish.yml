@@ -146,6 +146,40 @@ jobs:
         run: |
           echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
 
+      # Publish the shared spice-build artifacts (spice-plugin-api + spice-runtime) in
+      # lock-step with the CLI: same version, same release run, before the CLI build (the
+      # CLI depends on spice-runtime via ${project.version}, resolved from the local repo
+      # the deploy installs to).
+      - name: Checkout spice-build peer
+        uses: actions/checkout@v6
+        with:
+          repository: spice-labs-inc/spice-build
+          path: spice-build
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Set spice-build module versions to match the release
+        run: |
+          mvn --batch-mode -f spice-build/spice-plugin-api/pom.xml versions:set \
+            -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
+          mvn --batch-mode -f spice-build/spice-runtime/pom.xml versions:set \
+            -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
+
+      - name: Publish spice-build artifacts (GitHub Packages)
+        run: |
+          mvn --batch-mode -f spice-build/spice-plugin-api/pom.xml clean deploy -P github
+          mvn --batch-mode -f spice-build/spice-runtime/pom.xml clean deploy -P github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
+
+      - name: Publish spice-build artifacts (Maven Central)
+        run: |
+          mvn --batch-mode -f spice-build/spice-plugin-api/pom.xml clean deploy -P maven-central
+          mvn --batch-mode -f spice-build/spice-runtime/pom.xml clean deploy -P maven-central
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
+
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
 
@@ -171,8 +205,6 @@ jobs:
             spice.ps1
             install.sh
             install.ps1
-            completions/spice.bash
-            completions/spice-completion.ps1
 
   docker_image:
     name: Build and Push Docker Image
@@ -234,7 +266,7 @@ jobs:
 
       - name: Download fat jar and ancho agent
         run: |
-          mkdir -p target
+          mkdir -p target target/plugins && touch target/plugins/.keep
           curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
             -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/octet-stream" \
