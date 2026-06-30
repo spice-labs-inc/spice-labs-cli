@@ -101,6 +101,21 @@ jobs:
           EOF
 
 
+      # spice-labs-cli depends on io.spicelabs:spice-runtime (and, transitively,
+      # spice-plugin-api), defined in the spice-build peer. Build and install them first so
+      # the CLI build resolves them locally — they aren't published at this version.
+      - name: Checkout spice-build peer
+        uses: actions/checkout@v6
+        with:
+          repository: spice-labs-inc/spice-build
+          path: spice-build
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Install spice-build artifacts (spice-plugin-api + spice-runtime)
+        run: |
+          mvn --batch-mode -f spice-build/spice-plugin-api/pom.xml -DskipTests install
+          mvn --batch-mode -f spice-build/spice-runtime/pom.xml -DskipTests install
+
       - name: Install Dependencies and Build
         run: mvn --batch-mode --update-snapshots -DskipTests -Pdefault-repos install
 
