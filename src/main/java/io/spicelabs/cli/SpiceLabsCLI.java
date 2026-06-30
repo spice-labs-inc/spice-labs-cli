@@ -18,6 +18,7 @@ package io.spicelabs.cli;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import picocli.AutoComplete;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
@@ -36,6 +37,11 @@ import picocli.CommandLine.Command;
     subcommands = {
         SurveyCommand.class,
         PassCommand.class,
+        // Emits a bash/zsh completion script generated from the live command model —
+        // including any plugin subcommands mounted via ServiceLoader (e.g. `registry`).
+        AutoComplete.GenerateCompletion.class,
+        // PowerShell equivalent: built-ins + each plugin's contributed fragment.
+        GeneratePowershellCompletion.class,
     },
     footer = {
         "",
@@ -80,6 +86,15 @@ public class SpiceLabsCLI implements Runnable {
       }
       return offending.getCommandSpec().exitCodeOnInvalidInput();
     });
+    // Discover and mount any subcommand plugins present on the classpath (e.g. the
+    // proprietary `registry` plugin). Built-in commands are unaffected when none exist.
+    PluginLoader.registerPlugins(cmd, DefaultSpiceContext.create());
+    // Hide the picocli-provided `generate-completion` from --help (it stays invokable —
+    // install.sh calls it). The PowerShell generator is already hidden via its annotation.
+    CommandLine genCompletion = cmd.getSubcommands().get("generate-completion");
+    if (genCompletion != null) {
+      genCompletion.getCommandSpec().usageMessage().hidden(true);
+    }
     return cmd;
   }
 

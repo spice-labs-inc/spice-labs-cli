@@ -5,7 +5,7 @@
 [![GitHub Package](https://img.shields.io/badge/GitHub-Packages-blue?logo=github)](https://github.com/spice-labs-inc/spice-labs-cli/packages/)
 [![Docker Image Version (latest by date)](https://img.shields.io/docker/v/spicelabs/spice-labs-cli?sort=date&label=Docker%20Hub)](https://hub.docker.com/r/spicelabs/spice-labs-cli)
 
-Surveys software artifacts for post-quantum cryptographic readiness. Supports **inventory surveys** (static dependency analysis) and **runtime surveys** (JFR-based runtime crypto detection).
+Surveys software artifacts for post-quantum cryptographic readiness. Supports **inventory surveys** (static dependency analysis) and **runtime surveys** (JFR-based runtime crypto detection), and is **extensible via plugins** that contribute additional commands (see [Plugins](#-plugins)).
 
 ---
 
@@ -203,6 +203,29 @@ See the [Spice Labs Surveyor GitHub Action](https://github.com/spice-labs-inc/ac
 
 ---
 
+## 🧩 Plugins
+
+`spice` can be extended with **plugins** that contribute extra top-level commands. Plugins
+are discovered at runtime via `java.util.ServiceLoader` — a plugin is included purely by
+being **present on the classpath**, with no compile-time coupling to the CLI. The public CLI
+ships no plugins; an internal build adds them by symlinking their built jars into `plugins/`.
+
+For example, the `spice registry` command (bulk, stateful surveying of an entire artifact
+registry) is provided by the [`allspice`](https://github.com/spice-labs-inc/allspice) plugin —
+it appears only when that plugin is on the classpath.
+
+To include a plugin in a build, symlink its repository root into `plugins/` (the build
+collects `plugins/<name>/dist/**/*.jar`):
+
+```bash
+ln -s /path/to/a-plugin plugins/a-plugin
+mvn -DskipTests package
+```
+
+- **Authoring a plugin:** see [`docs/PLUGINS.md`](docs/PLUGINS.md).
+- **A minimal worked example:** [`sample/hello-plugin`](sample/hello-plugin) — adds a
+  `spice hello` command in ~30 lines.
+
 ## 🛠️ Building Locally
 
 Requirements: JDK 21+, Maven 3.6+
@@ -212,6 +235,9 @@ git clone https://github.com/spice-labs-inc/spice-labs-cli.git
 cd spice-labs-cli
 mvn clean package -DskipTests
 ```
+
+To build with a plugin included (e.g. `allspice`'s `registry`), symlink it into `plugins/`
+before packaging — see [`docs/PLUGINS.md`](docs/PLUGINS.md) and `allspice`'s integration guide.
 
 Run with Docker:
 

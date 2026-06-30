@@ -69,6 +69,7 @@ abs_path() {
 is_subcommand() {
   case "$1" in
     survey|inventory|static|runtime|pass|decode) return 0 ;;
+    registry|discover|run|status|list|retry) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -99,8 +100,13 @@ if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
     elif [[ "$arg" == "--log-file" ]]; then prev="$arg"; continue
     else FILTERED+=("$arg"); prev=""; fi
   done
+  # Plugins (e.g. the `registry` command) ride beside the jar in plugins/; add them to
+  # the classpath. -cp (not -jar) requires naming the main class explicitly.
+  PLUGINS_DIR="$(dirname "$SPICE_LABS_CLI_JAR")/plugins"
+  CP="$SPICE_LABS_CLI_JAR"
+  [ -d "$PLUGINS_DIR" ] && CP="${SPICE_LABS_CLI_JAR}:${PLUGINS_DIR}/*"
   # shellcheck disable=SC2086
-  exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" ${FILTERED[@]+"${FILTERED[@]}"}
+  exec java $JVM_ARGS -cp "$CP" io.spicelabs.cli.SpiceLabsCLI ${FILTERED[@]+"${FILTERED[@]}"}
 fi
 
 # ── Docker checks ────────────────────────────────────────────────────────────
@@ -364,6 +370,86 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   fi
 
   exit $(( RT_TARGET_RC != 0 ? RT_TARGET_RC : RT_COLLECT_RC ))
+fi
+
+# ── Registry (allspice) detection ─────────────────────────────────────────────
+# `registry` has its own grammar: --config/--discovery/--output are file paths and there
+# are no subject/input positionals. Mount each path flag's directory at the SAME path in
+# the container (so args need no remapping beyond becoming absolute), which also lets the
+# git-backed state dir — created next to the config — persist on the host.
+
+IS_REGISTRY=0
+for arg in "$@"; do
+  [[ "$arg" == -* ]] && continue          # skip leading global flags
+  [ "$arg" = "registry" ] && IS_REGISTRY=1
+  break                                    # first positional decides
+done
+
+if [ "$IS_REGISTRY" = "1" ]; then
+  REG_ARGS=()
+  REG_VOLUMES=()
+  REG_SEEN_DIRS=""
+  reg_prev=""
+
+  reg_dir_of() {                           # echo the directory to mount for a path (file may not yet exist)
+    local p="$1"
+    if [ -d "$p" ]; then (cd "$p" && pwd)
+    else (cd "$(dirname "$p")" 2>/dev/null && pwd) || {
+      echo "ERROR ❌ Directory does not exist for path: $p" >&2; exit 2; }
+    fi
+  }
+  reg_abs_of() {                           # echo the absolute path (file may not yet exist)
+    local p="$1"
+    if [ -d "$p" ]; then (cd "$p" && pwd)
+    else echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"; fi
+  }
+  reg_mount() {                            # add a same-path volume for the given path's dir (deduped)
+    local dir; dir="$(reg_dir_of "$1")"
+    case ":$REG_SEEN_DIRS:" in *":$dir:"*) ;; *)
+      REG_SEEN_DIRS="$REG_SEEN_DIRS:$dir"
+      REG_VOLUMES+=("-v" "${dir}:${dir}") ;;
+    esac
+  }
+
+  for arg in "$@"; do
+    # Strip --log-file (handled at shell level)
+    if [[ "$arg" == --log-file=* ]]; then continue
+    elif [[ "$reg_prev" == "--log-file" ]]; then reg_prev=""; continue
+    elif [[ "$arg" == "--log-file" ]]; then reg_prev="$arg"; continue; fi
+
+    # Path flags (=joined form)
+    case "$arg" in
+      --config=*|--discovery=*|--output=*)
+        flag="${arg%%=*}"; val="${arg#*=}"
+        reg_mount "$val"
+        REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
+        continue ;;
+      --config|--discovery|--output)
+        reg_prev="$arg"; continue ;;
+    esac
+
+    # Path flags (space-separated value)
+    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" ]]; then
+      reg_mount "$arg"
+      REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
+      reg_prev=""
+      continue
+    fi
+
+    REG_ARGS+=("$arg")
+  done
+  [ -n "$reg_prev" ] && REG_ARGS+=("$reg_prev")
+
+  exec docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    --network host \
+    ${PULL_FLAG:+$PULL_FLAG} \
+    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
+    ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
+    -e SPICE_PASS \
+    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
+    "${IMAGE}:${TAG}" \
+    ${REG_ARGS[@]+"${REG_ARGS[@]}"}
 fi
 
 # ── Find paths in args and build docker command ──────────────────────────────

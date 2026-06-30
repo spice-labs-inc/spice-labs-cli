@@ -659,8 +659,11 @@ Describe 'spice.ps1 wrapper' {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', '/some/path', '--threads', '4')
         $javaArgs = @(Get-Content $script:JavaArgsFile -ErrorAction SilentlyContinue)
         $javaArgs | Should -Not -BeNullOrEmpty
-        ($javaArgs -join ' ') | Should -Match '-jar'
+        # JVM mode now launches via -cp (so classpath plugins load) + explicit main class,
+        # not -jar.
+        ($javaArgs -join ' ') | Should -Match '-cp'
         ($javaArgs -join ' ') | Should -Match 'fake\.jar'
+        ($javaArgs -join ' ') | Should -Match 'io\.spicelabs\.cli\.SpiceLabsCLI'
         ($javaArgs -join ' ') | Should -Match 'survey'
         ($javaArgs -join ' ') | Should -Match '--threads'
       } finally {

@@ -6,7 +6,6 @@ set -euo pipefail
 TARGET_DIR="${HOME}/.local/bin"
 COMPLETION_DIR="${HOME}/.local/share/spice/completions"
 SCRIPT_URL="https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice"
-COMPLETION_URL="https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice.bash"
 
 echo "📦 Installing spice to ${TARGET_DIR}"
 
@@ -14,7 +13,22 @@ mkdir -p "$TARGET_DIR"
 mkdir -p "$COMPLETION_DIR"
 curl -fsSL "$SCRIPT_URL" -o "$TARGET_DIR/spice"
 chmod +x "$TARGET_DIR/spice"
-curl -fsSL "$COMPLETION_URL" -o "$COMPLETION_DIR/spice.bash" 2>/dev/null || true
+
+# Generate plugin-aware tab completion from the configured image (no static fallback):
+# the script reflects whatever plugins (e.g. `registry`) that image ships. Needs Docker
+# and the image; skipped gracefully otherwise. SKIP_PULL keeps stdout clean for capture.
+IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
+TAG="${SPICE_IMAGE_TAG:-latest}"
+if command -v docker &>/dev/null && docker pull -q "${IMAGE}:${TAG}" &>/dev/null \
+   && SPICE_LABS_CLI_SKIP_PULL=1 "$TARGET_DIR/spice" generate-completion > "$COMPLETION_DIR/spice.bash.tmp" 2>/dev/null \
+   && [ -s "$COMPLETION_DIR/spice.bash.tmp" ]; then
+  mv "$COMPLETION_DIR/spice.bash.tmp" "$COMPLETION_DIR/spice.bash"
+  echo "✅ Generated tab completion from ${IMAGE}:${TAG}"
+else
+  rm -f "$COMPLETION_DIR/spice.bash.tmp"
+  echo "💡 Skipped tab completion (needs Docker + the spice image). Generate it later with:"
+  echo "   spice generate-completion > \"$COMPLETION_DIR/spice.bash\""
+fi
 
 if [[ ":$PATH:" != *":$TARGET_DIR:"* ]]; then
   echo "⚠️  ${TARGET_DIR} is not in your PATH. Add this line to your shell profile:"
