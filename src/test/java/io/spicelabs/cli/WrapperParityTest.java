@@ -154,6 +154,41 @@ class WrapperParityTest {
     assertParityOrBashOnly("survey", "--help");
   }
 
+  // ── registry (allspice plugin) ──────────────────────────────────────────────
+
+  @Test
+  void registryDiscover_spaceSeparatedPaths() throws Exception {
+    Path dir = Files.createTempDirectory("parity-reg-discover");
+    Path cfg = dir.resolve("nexus.toml");
+    Files.writeString(cfg, "x = 1\n");
+    Path out = dir.resolve("discovery.toml"); // does not exist yet (parent does)
+
+    assertParityOrBashOnly(
+        "registry", "discover", "--config", cfg.toString(), "--output", out.toString());
+  }
+
+  @Test
+  void registryRun_joinedPaths() throws Exception {
+    Path dir = Files.createTempDirectory("parity-reg-run");
+    Path cfg = dir.resolve("nexus.toml");
+    Files.writeString(cfg, "x = 1\n");
+    Path disc = dir.resolve("discovery.toml");
+    Files.writeString(disc, "");
+
+    assertParityOrBashOnly(
+        "registry", "run", "--config=" + cfg, "--discovery=" + disc);
+  }
+
+  @Test
+  void registryStatus_withJson() throws Exception {
+    Path dir = Files.createTempDirectory("parity-reg-status");
+    Path cfg = dir.resolve("nexus.toml");
+    Files.writeString(cfg, "x = 1\n");
+
+    assertParityOrBashOnly(
+        "registry", "status", "--config", cfg.toString(), "--json");
+  }
+
   // ── Infra ─────────────────────────────────────────────────────────────────
 
   /**

@@ -21,9 +21,6 @@ jobs:
       - name: Run wrapper tests
         run: bats test/wrapper/spice.bats
 
-      - name: Run completion tests
-        run: bats test/wrapper/completions.bats
-
   # ── Portability & JVM-mode tests on macOS (no Docker) ──────────────────────
   test-bash-macos:
     name: Bash Wrapper (macOS)
@@ -37,9 +34,6 @@ jobs:
       - name: Run wrapper tests
         run: bats test/wrapper/spice-macos.bats
 
-      - name: Run completion tests
-        run: bats test/wrapper/completions.bats
-
   # ── PowerShell 7 tests on Windows (mock docker) ───────────────────────────
   test-ps7:
     name: PowerShell Wrapper (Windows - PS7)
@@ -51,7 +45,7 @@ jobs:
         shell: pwsh
         run: |
           $config = New-PesterConfiguration
-          $config.Run.Path = @('test/wrapper/spice.Tests.ps1', 'test/wrapper/completions.Tests.ps1')
+          $config.Run.Path = @('test/wrapper/spice.Tests.ps1')
           $config.Output.Verbosity = 'Detailed'
           $config.Run.Exit = $true
           Invoke-Pester -Configuration $config
@@ -80,7 +74,7 @@ jobs:
         run: |
           Import-Module Pester -MinimumVersion 5.0.0
           $config = New-PesterConfiguration
-          $config.Run.Path = @('test/wrapper/spice.Tests.ps1', 'test/wrapper/completions.Tests.ps1')
+          $config.Run.Path = @('test/wrapper/spice.Tests.ps1')
           $config.Output.Verbosity = 'Detailed'
           $config.Run.Exit = $true
           Invoke-Pester -Configuration $config

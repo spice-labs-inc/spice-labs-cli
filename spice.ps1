@@ -77,7 +77,8 @@ function Convert-ToDockerPath($path) {
   return $path
 }
 
-$subcommands = @('survey', 'inventory', 'static', 'runtime', 'pass', 'decode')
+$subcommands = @('survey', 'inventory', 'static', 'runtime', 'pass', 'decode',
+  'registry', 'discover', 'run', 'status', 'list', 'retry')
 
 $valueFlags = @('--output', '--threads', '--max-records', '--chunk-size',
   '--log-level', '--log-file', '--tag-json', '--goat-rodeo-args', '--ginger-args')
@@ -98,7 +99,11 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
     elseif ($arg -eq "--log-file") { $prev = $arg; continue }
     else { $filtered += $arg; $prev = "" }
   }
-  & java $jvmArgs -jar $jar @filtered
+  # Plugins (e.g. the `registry` command) ride beside the jar in plugins/; add them to
+  # the classpath. -cp (not -jar) requires naming the main class explicitly.
+  $pluginsDir = Join-Path (Split-Path $jar -Parent) 'plugins'
+  $cp = if (Test-Path $pluginsDir) { "$jar$([IO.Path]::PathSeparator)$pluginsDir/*" } else { $jar }
+  & java $jvmArgs -cp $cp io.spicelabs.cli.SpiceLabsCLI @filtered
   exit $LASTEXITCODE
 }
 
@@ -361,6 +366,80 @@ if ($isRuntimeSurvey) {
   }
 
   if ($rtTargetRc -ne 0) { exit $rtTargetRc } else { exit $rtCollectRc }
+}
+
+# ── Registry (allspice) detection ─────────────────────────────────────────────
+# Mirror of the bash wrapper: --config/--discovery/--output are file paths and there are
+# no subject/input positionals. Mount each path flag's directory at the same path (so the
+# git-backed state dir created next to the config persists on the host) and pass absolute
+# paths through.
+
+$isRegistry = $false
+foreach ($arg in $args) {
+  if ($arg -like '-*') { continue }
+  if ($arg -eq 'registry') { $isRegistry = $true }
+  break
+}
+
+if ($isRegistry) {
+  function Resolve-RegDir($p) {       # directory to mount (file may not yet exist)
+    if (Test-Path -LiteralPath $p -PathType Container) { return (Resolve-Path -LiteralPath $p).ProviderPath }
+    $parent = Split-Path -Parent $p; if (-not $parent) { $parent = "." }
+    try { return (Resolve-Path -LiteralPath $parent -ErrorAction Stop).ProviderPath }
+    catch { Write-Host "ERROR ❌ Directory does not exist for path: $p"; exit 2 }
+  }
+  function Resolve-RegAbs($p) {        # absolute path (file may not yet exist)
+    if (Test-Path -LiteralPath $p -PathType Container) { return (Resolve-Path -LiteralPath $p).ProviderPath }
+    $parent = Split-Path -Parent $p; if (-not $parent) { $parent = "." }
+    $leaf = Split-Path -Leaf $p
+    return (Join-Path (Resolve-Path -LiteralPath $parent -ErrorAction Stop).ProviderPath $leaf)
+  }
+
+  $regArgs = @()
+  $regVolumes = @()
+  $regSeen = @{}
+  $regPrev = ""
+
+  foreach ($arg in $args) {
+    if ($arg -match '^--log-file=') { continue }
+    elseif ($regPrev -eq '--log-file') { $regPrev = ""; continue }
+    elseif ($arg -eq '--log-file') { $regPrev = $arg; continue }
+
+    if ($arg -match '^(--config|--discovery|--output)=(.*)$') {
+      $flag = $matches[1]; $val = $matches[2]
+      $hostDir = Resolve-RegDir $val; $dockerDir = Convert-ToDockerPath $hostDir
+      if (-not $regSeen.ContainsKey($dockerDir)) { $regSeen[$dockerDir] = $true; $regVolumes += '-v'; $regVolumes += "${hostDir}:${dockerDir}" }
+      $regArgs += "$flag=$(Convert-ToDockerPath (Resolve-RegAbs $val))"
+      continue
+    }
+    if ($arg -in @('--config', '--discovery', '--output')) { $regPrev = $arg; continue }
+    if ($regPrev -in @('--config', '--discovery', '--output')) {
+      $hostDir = Resolve-RegDir $arg; $dockerDir = Convert-ToDockerPath $hostDir
+      if (-not $regSeen.ContainsKey($dockerDir)) { $regSeen[$dockerDir] = $true; $regVolumes += '-v'; $regVolumes += "${hostDir}:${dockerDir}" }
+      $regArgs += $regPrev; $regArgs += (Convert-ToDockerPath (Resolve-RegAbs $arg))
+      $regPrev = ""
+      continue
+    }
+    $regArgs += $arg
+  }
+  if ($regPrev) { $regArgs += $regPrev }
+
+  $envArgs = @()
+  if ($env:SPICE_LABS_JVM_ARGS) { $envArgs += "-e"; $envArgs += "SPICE_LABS_JVM_ARGS" }
+  $dockerFlags = @()
+  if ($env:SPICE_DOCKER_FLAGS) { $dockerFlags = $env:SPICE_DOCKER_FLAGS -split '\s+' }
+
+  $ErrorActionPreference = 'Continue'
+  docker run --rm `
+    @userFlag `
+    @pullFlag @dockerFlags `
+    --network host `
+    @regVolumes `
+    -e "SPICE_PASS=$spicePass" `
+    @envArgs `
+    "${img}:${tag}" `
+    @regArgs
+  exit $LASTEXITCODE
 }
 
 # ── Find paths in args and build docker command ──────────────────────────────
