@@ -171,11 +171,12 @@
                 </executions>
             </plugin>
 
-            <!-- Collect plugin jars symlinked into plugins/ (their own jar + runtime
-                 deps) into target/plugins/, flattened. These ride alongside the CLI fat
-                 jar on the runtime classpath (-cp "...:plugins/*") so each plugin's
-                 META-INF/services provider is discovered. Tolerates an empty/absent dir
-                 (a public build ships no plugins). -->
+            <!-- Collect plugin jars into target/plugins/, flattened, to ride alongside the
+                 CLI fat jar on the runtime classpath (-cp "...:plugins/*") so each plugin's
+                 META-INF/services provider is discovered. Convention: symlink a plugin's
+                 repo root to plugins/<name> and the build picks up plugins/<name>/dist/*.jar
+                 (the standard spice-plugin output dir). Tolerates an empty/absent dir (a
+                 public build ships no plugins). -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
@@ -193,7 +194,7 @@
                                 <touch file="${project.build.directory}/plugins/.keep"/>
                                 <copy todir="${project.build.directory}/plugins" flatten="true" failonerror="false">
                                     <fileset dir="${project.basedir}/plugins" followsymlinks="true" erroronmissingdir="false">
-                                        <include name="**/*.jar"/>
+                                        <include name="*/dist/**/*.jar"/>
                                     </fileset>
                                 </copy>
                             </target>

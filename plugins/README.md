@@ -8,19 +8,20 @@ by being **present on the classpath** — `spice` has no compile-time knowledge 
 
 ## How it works
 
-Symlink a built plugin component into this directory:
+Symlink a plugin's **repository root** into this directory:
 
 ```
-plugins/allspice -> ../../allspice/<plugin-module>/target/plugin-dist
+plugins/allspice -> /path/to/allspice        # the repo root, not a deep subdir
 ```
 
-The target should be a directory containing the plugin's jar **and its runtime
-dependency jars** (everything not already bundled in the CLI fat jar). The component
-name is irrelevant — **any** symlink (or directory) here is included.
+By convention a plugin repo stages its jars — the plugin's own jar **and its runtime
+dependency jars** (everything not already bundled in the CLI fat jar) — into a top-level
+`dist/` directory. The symlink name is irrelevant — **any** symlink (or directory) here
+is included.
 
-At `mvn package`, every `*.jar` found under `plugins/` (following symlinks) is collected,
-flattened, into `target/plugins/`. At runtime the launcher puts both the CLI fat jar and
-`plugins/*` on the classpath:
+At `mvn package`, every `*.jar` under `plugins/<name>/dist/` (following symlinks) is
+collected, flattened, into `target/plugins/`. At runtime the launcher puts both the CLI
+fat jar and `plugins/*` on the classpath:
 
 ```
 java -cp "spice-labs-cli.jar:plugins/*" io.spicelabs.cli.SpiceLabsCLI ...
