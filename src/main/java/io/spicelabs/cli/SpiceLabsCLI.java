@@ -89,6 +89,12 @@ public class SpiceLabsCLI implements Runnable {
     // Discover and mount any subcommand plugins present on the classpath (e.g. the
     // proprietary `registry` plugin). Built-in commands are unaffected when none exist.
     PluginLoader.registerPlugins(cmd, DefaultSpiceContext.create());
+    // Hide the picocli-provided `generate-completion` from --help (it stays invokable —
+    // install.sh calls it). The PowerShell generator is already hidden via its annotation.
+    CommandLine genCompletion = cmd.getSubcommands().get("generate-completion");
+    if (genCompletion != null) {
+      genCompletion.getCommandSpec().usageMessage().hidden(true);
+    }
     return cmd;
   }
 
