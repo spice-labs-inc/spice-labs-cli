@@ -38,12 +38,15 @@ jobs:
 
       - name: Validate and extract version from tag
         id: validate
+        env:
+          # tag_name is "vX.Y.Z" (no refs/tags/ prefix) for the release event.
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          if [[ "${TAG_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             VERSION="${BASH_REMATCH[1]}"
             echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           else
-            echo "Tag does not match semantic version pattern v*.*.*" >&2
+            echo "Tag does not match semantic version pattern v*.*.* (got: ${TAG_NAME})" >&2
             exit 1
           fi
 
