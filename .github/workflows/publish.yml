@@ -1,339 +1,253 @@
-name: Publish The Spice Labs Surveyor CLI Container Images
+name: Deploy
 
 on:
-  release:
-    types: [published]
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - junkyard
+          - prod
+          - dev
+          - astewart
 
 env:
-  PLATFORMS: linux/amd64, linux/arm64
-  IMAGE_NAME: ${{ github.repository }}
+  OWNER: spice-labs-inc
 
 jobs:
-  publish_jars:
-    name: Publish CLI JARs to GitHub Packages
+  resolve:
+    name: Resolve images
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
-      packages: write
-      id-token: write
-    outputs:
-      version: ${{ steps.validate.outputs.VERSION }}
-      thread-ts: ${{ steps.release-notification.outputs.thread-ts }}
-      channel-id: ${{ steps.release-notification.outputs.channel-id }}
-
-    steps:
-      - name: Notify release
-        id: release-notification
-        uses: spice-labs-inc/action-release-notification@v3.3
-        with:
-          type: release
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          username-mapping: ${{ vars.GH_SLACK_USERNAME_MAPPING }}
-          github-token: ${{ github.token }}
-
-      - name: Checkout with LFS
-        uses: actions/checkout@v6
-        with:
-          lfs: true
-
-      - name: Validate and extract version from tag
-        id: validate
-        env:
-          # tag_name is "vX.Y.Z" (no refs/tags/ prefix) for the release event.
-          TAG_NAME: ${{ github.event.release.tag_name }}
-        run: |
-          if [[ "${TAG_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          else
-            echo "Tag does not match semantic version pattern v*.*.* (got: ${TAG_NAME})" >&2
-            exit 1
-          fi
-
-      - name: Set up JDK 21 and GitHub Maven auth
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "21"
-          cache: "maven"
-          server-id: github
-          server-username: ${{ secrets.GH_USERNAME_SG }}
-          server-password: ${{ secrets.GH_TOKEN }}
-          token: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
-          gpg-private-key: ${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}
-          gpg-passphrase: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
-
-      - name: Write settings.xml for GitHub + Maven Central
-        run: |
-          mkdir -p ~/.m2
-          cat <<EOF > ~/.m2/settings.xml
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-
-            <servers>
-              <server>
-                <id>github-spice-labs-goatrodeo</id>
-                <username>${{ secrets.GH_USERNAME_SG }}</username>
-                <password>${{ secrets.GH_TOKEN }}</password>
-              </server>
-              <server>
-                <id>github-spice-labs-ginger</id>
-                <username>${{ secrets.GH_USERNAME_SG }}</username>
-                <password>${{ secrets.GH_TOKEN }}</password>
-              </server>
-              <server>
-                <id>github</id>
-                <username>${{ secrets.GH_USERNAME_SG }}</username>
-                <password>${{ secrets.GH_TOKEN }}</password>
-              </server>
-              <server>
-                <id>central</id>
-                <username>${{ secrets.MAVEN_CENTRAL_USERNAME }}</username>
-                <password>${{ secrets.MAVEN_CENTRAL_PASSWORD }}</password>
-              </server>
-            </servers>
-
-            <profiles>
-              <profile>
-                <id>github</id>
-                <repositories>
-                  <repository>
-                    <id>github-spice-labs-goatrodeo</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-                  </repository>
-                  <repository>
-                    <id>github-spice-labs-ginger</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-                  </repository>
-                </repositories>
-              </profile>
-
-              <profile>
-                <id>maven-central</id>
-                <repositories>
-                  <repository>
-                    <id>github-spice-labs-goatrodeo</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-                  </repository>
-                  <repository>
-                    <id>github-spice-labs-ginger</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-                  </repository>
-                </repositories>
-              </profile>
-              
-              <profile>
-                <id>default-repos</id>
-                <repositories>
-                  <repository>
-                    <id>github-spice-labs-goatrodeo</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
-                  </repository>
-                  <repository>
-                    <id>github-spice-labs-ginger</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-                  </repository>
-                </repositories>
-              </profile>
-            </profiles>
-            
-            <activeProfiles>
-              <activeProfile>default-repos</activeProfile>
-            </activeProfiles>
-
-          </settings>
-          EOF
-
-      - name: Import GPG key
-        run: |
-          echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
-
-      - name: Update version in pom.xml using Maven plugin
-        run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
-
-      - name: Build and publish all jars (regular + fat)
-        id: build-jars-github
-        run: mvn --batch-mode clean deploy -P github
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
-
-      - name: Build and publish all jars (regular + fat)
-        id: build-jars-maven-central
-        run: mvn --batch-mode clean deploy -P maven-central
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
-
-      - name: Upload wrapper scripts and completions to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            spice
-            spice.ps1
-            install.sh
-            install.ps1
-            completions/spice.bash
-            completions/spice-completion.ps1
-
-  docker_image:
-    name: Build and Push Docker Image
-    runs-on: ubuntu-24.04
-    needs: publish_jars
-    permissions:
-      contents: read
+      pull-requests: read
       packages: write
       attestations: write
       id-token: write
-
+    outputs:
+      environment: ${{ steps.meta.outputs.environment }}
+      sha: ${{ steps.meta.outputs.sha }}
+      images: ${{ steps.resolve.outputs.images }}
+      images_keys: ${{ steps.resolve.outputs.images_keys }}
     steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set Up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          platforms: ${{ env.PLATFORMS }}
-
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Write settings.xml for GitHub Packages
-        run: |
-          mkdir -p ~/.m2
-          cat <<EOF > ~/.m2/settings.xml
-          <settings>
-            <servers>
-              <server>
-                <id>github-spice-labs-ancho</id>
-                <username>${{ secrets.GH_USERNAME_SG }}</username>
-                <password>${{ secrets.GH_TOKEN }}</password>
-              </server>
-            </servers>
-            <profiles>
-              <profile>
-                <id>github</id>
-                <repositories>
-                  <repository>
-                    <id>github-spice-labs-ancho</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/ancho</url>
-                  </repository>
-                </repositories>
-              </profile>
-            </profiles>
-            <activeProfiles>
-              <activeProfile>github</activeProfile>
-            </activeProfiles>
-          </settings>
-          EOF
-
-      - name: Download fat jar and ancho agent
-        run: |
-          mkdir -p target
-          curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
-            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
-          ANCHO_VERSION=$(mvn help:evaluate -Dexpression=ancho.version -q -DforceStdout)
-          mvn --batch-mode dependency:copy \
-            -Dartifact=io.spicelabs:ancho:${ANCHO_VERSION}:jar:fat \
-            -DoutputDirectory=target \
-            -Dmdep.stripVersion=true \
-            -Dmdep.stripClassifier=true \
-            -Dmdep.overWriteIfNewer=true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
-
-      - name: Check if release is a pre-release
-        id: prerelease
-        run: |
-          IS_PRERELEASE=$(gh release view ${{ github.ref_name }} --json isPrerelease -q '.isPrerelease')
-          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+      - name: Determine deploy tag and environment
+        id: meta
         env:
           GH_TOKEN: ${{ github.token }}
-
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: spicelabs/spice-labs-cli
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-          flavor: |
-            latest=${{ steps.prerelease.outputs.is_prerelease == 'false' }}
-
-      - name: Build and Push Docker image
-        id: push
-        uses: docker/build-push-action@v6
-        with:
-          platforms: ${{ env.PLATFORMS }}
-          context: .
-          push: true
-          provenance: mode=max
-          sbom: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-  notify:
-    needs: [publish_jars, docker_image]
-    if: always()
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check deployment status
-        id: deployment-status
-        shell: bash
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+          INPUT_ENVIRONMENT: ${{ github.event.inputs.environment }}
         run: |
-          # Check job outcomes
-          JAR_STATUS="${{ needs.publish_jars.result }}"
-          DOCKER_STATUS="${{ needs.docker_image.result }}"
-
-          # Determine overall success
-          if [ "$JAR_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ]; then
-            echo "overall_status=success" >> $GITHUB_OUTPUT
-            echo "message=✅ All components deployed successfully!" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          # Uniform tag to deploy for every image that was built:
+          #   merged PR / dispatch on main -> sha-<github.sha>
+          #   dispatch on a feature branch  -> pr-<N> (from the open PR)
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            environment="${INPUT_ENVIRONMENT}"
+            branch="${GITHUB_REF#refs/heads/}"
+            if [ "${branch}" = "main" ]; then
+              tag="sha-${GITHUB_SHA}"
+            else
+              pr=$(gh api "/repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${OWNER}:${branch}&per_page=1" \
+                   --jq '.[0].number // empty')
+              [ -n "${pr}" ] || { echo "No open PR found for branch: ${branch}" >&2; exit 1; }
+              tag="pr-${pr}"
+            fi
+          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${PR_MERGED}" = "true" ]; then
+            environment="staging"
+            tag="sha-${GITHUB_SHA}"       # merge commit
           else
-            echo "overall_status=failure" >> $GITHUB_OUTPUT
-            
-            # Build detailed failure message
-            MESSAGE="❌ Deployment failed:"
-            if [ "$JAR_STATUS" != "success" ]; then
-              MESSAGE="$MESSAGE ❌ JAR publishing failed."
-            else
-              MESSAGE="$MESSAGE ✅ JAR publishing succeeded."
-            fi
-            
-            if [ "$DOCKER_STATUS" != "success" ]; then
-              MESSAGE="$MESSAGE ❌ Docker build/push failed."
-            else
-              MESSAGE="$MESSAGE ✅ Docker build/push succeeded."
-            fi
-            
-            echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+            echo "Unsupported event: ${GITHUB_EVENT_NAME}" >&2
+            exit 1
+          fi
+          {
+            echo "environment=${environment}"
+            echo "tag=${tag}"
+            echo "sha=${GITHUB_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Resolve image refs
+        id: resolve
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_SHA: ${{ github.sha }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          declare -A IMG=(
+            [spice]="ghcr.io/${OWNER}/spice-labs-cli"
+            [enterprise]="ghcr.io/${OWNER}/spice-labs-cli-enterprise"
+          )
+
+          # Merged PR: retag pr-<N> -> sha-<merge sha> for every image that has it.
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            for key in spice enterprise; do
+              image="${IMG[$key]}"
+              if docker manifest inspect "${image}:pr-${PR_NUMBER}" >/dev/null 2>&1; then
+                docker buildx imagetools create "${image}:pr-${PR_NUMBER}" \
+                  --tag "${image}:sha-${GITHUB_SHA}"
+              fi
+            done
           fi
 
-      - name: Notify deployment result
+          # Deploy only the images built at the chosen tag (the ones changed by
+          # this PR / merge). Others keep their current deployed version.
+          map='{}'
+          for key in spice enterprise; do
+            image="${IMG[$key]}"
+            docker manifest inspect "${image}:${TAG}" >/dev/null 2>&1 || continue
+            digest=$(docker buildx imagetools inspect "${image}:${TAG}" --format '{{json .Manifest.Digest}}' | tr -d '"')
+            map=$(jq --arg k "$key" --arg t "$TAG" --arg d "$digest" --arg r "${image}:${TAG}@${digest}" \
+              '.[$k] = {tag:$t, digest:$d, ref:$r}' <<< "$map")
+          done
+
+          # `map` is multi-line JSON; use the heredoc file-command form so the
+          # whole object becomes one `images` output value instead of one
+          # broken entry per line.
+          {
+            echo "images<<EOF"
+            echo "${map}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "images_keys=$(jq -c 'keys' <<< "$map")" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: Deploy and notify
+    needs: resolve
+    if: needs.resolve.result == 'success' && !cancelled()
+    runs-on: ubuntu-24.04
+    # Reference the environment so GitHub records a native Deployment
+    # (Deployments tab + per-commit deployment statuses) for this publish.
+    environment: ${{ needs.resolve.outputs.environment }}
+    permissions:
+      packages: write
+      contents: read
+      attestations: write
+      id-token: write
+      deployments: write
+    steps:
+      - name: Build deployment patch
+        id: patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          IMAGES: ${{ needs.resolve.outputs.images }}
+        run: |
+          set -euo pipefail
+          version=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name // empty' 2>/dev/null || true)
+          yq=""
+          for key in $(jq -r 'keys[]' <<< "$IMAGES"); do
+            ref=$(jq -r --arg k "$key" '.[$k].ref' <<< "$IMAGES")
+            yq="${yq:+${yq} | }.data[\"values.${key}_image\"] = \"${ref}\""
+          done
+          target=$(jq -r '.spice.ref // empty' <<< "$IMAGES")
+          if [ -n "$target" ]; then
+            yq="${yq:+${yq} | }.data.target_image = \"${target}\""
+          fi
+          {
+            echo "version=${version}"
+            echo "yq<<EOF"
+            echo "$yq"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Release to ${{ needs.resolve.outputs.environment }}
+        uses: spice-labs-inc/action-release-immediately@v3.1
+        with:
+          name: "spice-labs-cli"
+          version: "${{ steps.patch.outputs.version }}"
+          environment: "${{ needs.resolve.outputs.environment }}"
+          token: "${{ secrets.GH_TOKEN }}"
+          yq: ${{ steps.patch.outputs.yq }}
+
+      - name: Notify Slack of ${{ needs.resolve.outputs.environment }} deployment
         uses: spice-labs-inc/action-release-notification@v3.3
         with:
-          type: ${{ steps.deployment-status.outputs.overall_status == 'success' && 'deployment-success' || 'deployment-failure' }}
+          type: staging
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           username-mapping: ${{ vars.GH_SLACK_USERNAME_MAPPING }}
           github-token: ${{ github.token }}
-          environment: production
-          thread-ts: ${{ needs.publish_jars.outputs.thread-ts }}
-          channel-id: ${{ needs.publish_jars.outputs.channel-id }}
+          environment: ${{ needs.resolve.outputs.environment }}
+
+  extract-adg:
+    name: Upload ADG — ${{ matrix.key }}
+    needs: resolve
+    # An empty matrix vector (e.g. a merged PR that built no images, where
+    # resolve emits images_keys=[]) is a hard error evaluated before this
+    # `if`. Guard on a non-empty matrix so the job is skipped instead of
+    # erroring the run. fromJSON()[0] != null is robust to `[]`/`[ ]`
+    # formatting differences.
+    if: always() && needs.resolve.result == 'success' && !cancelled() && fromJSON(needs.resolve.outputs.images_keys)[0] != null
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: read
+    strategy:
+      matrix:
+        key: ${{ fromJson(needs.resolve.outputs.images_keys) }}
+      fail-fast: false
+    steps:
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Export image
+        env:
+          IMAGES: ${{ needs.resolve.outputs.images }}
+        run: |
+          mkdir -p target/adg
+          ref=$(jq -r --arg k "${{ matrix.key }}" '.[$k].ref' <<< "$IMAGES")
+          docker manifest inspect "$ref" >/dev/null
+          docker pull "$ref"
+          docker save "$ref" -o "target/adg/${{ matrix.key }}.tar"
+
+      - name: Index and Upload ADG
+        uses: spice-labs-inc/action-spice-labs-surveyor@v5
+        with:
+          spice_pass: ${{ secrets.SPICE_PASS }}
+          input: ./
+          subject: ${{ matrix.key }}
+
+  export-otel:
+    name: Export OpenTelemetry traces
+    needs:
+      - resolve
+      - release
+      - extract-adg
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      checks: read
+    steps:
+      - name: Export workflow traces to Honeycomb
+        uses: dash0hq/otel-cicd-action@v4
+        with:
+          otlpEndpoint: "grpc://api.eu1.honeycomb.io:443/"
+          otlpHeaders: "x-honeycomb-team=${{ secrets.HONEYCOMB_API_KEY }},x-honeycomb-dataset=build"
+          githubToken: "${{ secrets.GITHUB_TOKEN }}"

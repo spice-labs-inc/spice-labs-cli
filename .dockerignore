@@ -1,0 +1,54 @@
+# Keep the build context lean. The Dockerfile COPYs source + pom.xml; everything
+# else here is runtime state, IDE/tooling cruft, or local-only artifacts that
+# should never enter the image.
+
+# Build artifacts
+target/
+**/target/
+*.class
+dependency-reduced-pom.xml
+
+# IDE / tooling
+.classpath
+.project
+.settings/
+.idea/
+.vscode/
+.bsp/
+.metals/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# CI / docs (not needed in the image)
+.github/
+CONTRIBUTING.md
+FAQ.md
+README.md
+LICENSE
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Test fixtures & wrapper test harness (not part of the runtime image)
+test/
+completions/
+docker/
+
+# Secrets / local config
+.env
+.env.local
+.env.*.local
+credentials.json
+*.pem
+*.key
+config.local.toml
+config.local.json
+config.local.yaml
