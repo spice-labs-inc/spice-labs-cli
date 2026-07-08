@@ -82,8 +82,10 @@ jobs:
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          # PAT (not the repo-scoped GITHUB_TOKEN) so the runner can inspect
+          # and retag the private org-scoped enterprise image.
+          username: ${{ secrets.GH_USERNAME_SG }}
+          password: ${{ secrets.GH_TOKEN }}
 
       - name: Resolve image refs
         id: resolve
@@ -211,8 +213,9 @@ jobs:
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          # PAT: the enterprise image is a private org-scoped package.
+          username: ${{ secrets.GH_USERNAME_SG }}
+          password: ${{ secrets.GH_TOKEN }}
 
       - name: Export image
         env:

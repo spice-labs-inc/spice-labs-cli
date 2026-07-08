@@ -286,8 +286,11 @@ jobs:
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          # Use the PAT (not the repo-scoped GITHUB_TOKEN) so the runner can
+          # pull the private allspice base image owned by the org. The
+          # GITHUB_TOKEN only has read access to packages in this repo.
+          username: ${{ secrets.GH_USERNAME_SG }}
+          password: ${{ secrets.GH_TOKEN }}
 
       - name: Resolve allspice base tag
         id: allspice
