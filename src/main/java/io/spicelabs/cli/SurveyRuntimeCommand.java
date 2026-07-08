@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
 import ch.qos.logback.classic.Level;
+import io.spicelabs.coordinates.Coordinates;
 import io.spicelabs.ginger.Ginger;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -160,8 +161,8 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
             byte[] anchorBytes = Files.readAllBytes(anchor);
             anchorData = new JfrEventExtractor.Anchor(
                     anchor.getFileName().toString(),
-                    Gitoids.sha256Hex(anchorBytes),
-                    Gitoids.gitoidBlobSha256(anchorBytes));
+                    Coordinates.sha256(anchorBytes),
+                    Coordinates.gitoidBlobSha256(anchorBytes));
             log.info("Anchored to {} (gitoid {})", anchor.getFileName(), anchorData.gitoid());
         } else {
             log.warn("No --anchor given; this survey will not correlate into a combined CBOM. "

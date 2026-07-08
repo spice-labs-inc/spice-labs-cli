@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import io.spicelabs.coordinates.Coordinates;
 import io.spicelabs.ginger.Ginger;
 
 /**
@@ -114,8 +115,8 @@ public class RuntimeCollect {
             byte[] anchorBytes = Files.readAllBytes(anchorPath);
             anchorData = new JfrEventExtractor.Anchor(
                     anchorPath.getFileName().toString(),
-                    Gitoids.sha256Hex(anchorBytes),
-                    Gitoids.gitoidBlobSha256(anchorBytes));
+                    Coordinates.sha256(anchorBytes),
+                    Coordinates.gitoidBlobSha256(anchorBytes));
             log.info("Anchored to {} (gitoid {})", anchorPath.getFileName(), anchorData.gitoid());
         } else {
             log.warn("No --anchor given; this survey will not correlate into a combined CBOM. "
