@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.Test;
 
-class GitoidsTest {
+import io.spicelabs.coordinates.Coordinates;
+
+class AnchorHashesTest {
 
     // Reference values (independently computed):
     //   printf 'abc'      | sha256sum  -> sha256: alias
@@ -16,16 +18,16 @@ class GitoidsTest {
     // Both must match goatrodeo so a runtime-survey anchor hash joins the inventory ADG.
 
     @Test
-    void sha256HexMatchesPlainSha256() {
+    void sha256MatchesPlainSha256() {
         assertEquals(
                 "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-                Gitoids.sha256Hex("abc".getBytes(UTF_8)));
+                Coordinates.sha256("abc".getBytes(UTF_8)));
     }
 
     @Test
     void gitoidBlobSha256MatchesGoatrodeoFormula() {
         assertEquals(
                 "gitoid:blob:sha256:c1cf6e465077930e88dc5136641d402f72a229ddd996f627d60e9639eaba35a6",
-                Gitoids.gitoidBlobSha256("abc".getBytes(UTF_8)));
+                Coordinates.gitoidBlobSha256("abc".getBytes(UTF_8)));
     }
 }

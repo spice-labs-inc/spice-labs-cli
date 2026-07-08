@@ -54,6 +54,7 @@
         <goatrodeo.version>0.16.1</goatrodeo.version>
         <ginger.version>0.3.3</ginger.version>
         <ancho.version>0.0.5</ancho.version>
+        <coordinates.version>1.1.0</coordinates.version>
         <!--        Use these versions for local dev-->
         <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
         <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version> -->
@@ -78,6 +79,11 @@
             <groupId>io.spicelabs</groupId>
             <artifactId>ginger-j</artifactId>
             <version>${ginger.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>coordinates</artifactId>
+            <version>${coordinates.version}</version>
         </dependency>
         <!-- JFR agent for runtime surveys — extracted to temp at runtime, not shaded -->
         <dependency>
