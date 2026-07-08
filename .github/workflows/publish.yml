@@ -84,7 +84,7 @@ jobs:
           registry: ghcr.io
           # PAT (not the repo-scoped GITHUB_TOKEN) so the runner can inspect
           # and retag the private org-scoped enterprise image.
-          username: ${{ secrets.GH_USERNAME_SG }}
+          username: SpicyGrzl
           password: ${{ secrets.GH_TOKEN }}
 
       - name: Resolve image refs
@@ -214,7 +214,7 @@ jobs:
         with:
           registry: ghcr.io
           # PAT: the enterprise image is a private org-scoped package.
-          username: ${{ secrets.GH_USERNAME_SG }}
+          username: SpicyGrzl
           password: ${{ secrets.GH_TOKEN }}
 
       - name: Export image

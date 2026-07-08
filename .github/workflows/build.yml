@@ -182,7 +182,7 @@ jobs:
 
       - name: Run Tests
         env:
-          GH_USERNAME_SG: ${{ secrets.GH_USERNAME_SG }}
+          GH_USERNAME_SG: SpicyGrzl
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -289,7 +289,7 @@ jobs:
           # Use the PAT (not the repo-scoped GITHUB_TOKEN) so the runner can
           # pull the private allspice base image owned by the org. The
           # GITHUB_TOKEN only has read access to packages in this repo.
-          username: ${{ secrets.GH_USERNAME_SG }}
+          username: SpicyGrzl
           password: ${{ secrets.GH_TOKEN }}
 
       - name: Resolve allspice base tag

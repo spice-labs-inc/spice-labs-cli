@@ -61,7 +61,7 @@ jobs:
           java-version: "21"
           cache: "maven"
           server-id: github
-          server-username: ${{ secrets.GH_USERNAME_SG }}
+          server-username: SpicyGrzl
           server-password: ${{ secrets.GH_TOKEN }}
           token: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
           gpg-private-key: ${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}
@@ -70,7 +70,7 @@ jobs:
       - name: Write settings.xml for GitHub + Maven Central
         uses: ./.github/actions/maven-settings
         with:
-          github-username: ${{ secrets.GH_USERNAME_SG }}
+          github-username: SpicyGrzl
           github-token: ${{ secrets.GH_TOKEN }}
           central-username: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           central-password: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -141,7 +141,7 @@ jobs:
       - name: Write settings.xml for GitHub Packages
         uses: ./.github/actions/maven-settings
         with:
-          github-username: ${{ secrets.GH_USERNAME_SG }}
+          github-username: SpicyGrzl
           github-token: ${{ secrets.GH_TOKEN }}
           central-username: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           central-password: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -276,7 +276,7 @@ jobs:
           registry: ghcr.io
           # PAT: the enterprise image and its allspice base are private
           # org-scoped packages the repo-scoped GITHUB_TOKEN can't read.
-          username: ${{ secrets.GH_USERNAME_SG }}
+          username: SpicyGrzl
           password: ${{ secrets.GH_TOKEN }}
 
       - name: Retag enterprise image sha-<sha> -> vX.Y.Z
