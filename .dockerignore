@@ -23,7 +23,9 @@ dependency-reduced-pom.xml
 Thumbs.db
 
 # Git
-.git/
+# .git/ is NOT ignored — the git-commit-id-maven-plugin reads it at build
+# time to stamp commit/branch info into git.properties. Excluding it makes
+# `mvn package` fail with ".git directory is not found!".
 .gitignore
 
 # CI / docs (not needed in the image)
