@@ -187,19 +187,24 @@ jobs:
           MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
         run: |
-          # Run the test suite inside the deps cache image so the Maven
-          # resolution is identical to what produced the runtime JAR. The
-          # settings.xml with GitHub Packages auth is written from env so the
-          # private Spice deps (goatrodeo_3, ginger-j, ancho) resolve.
+          # Build a throwaway intermediate image that COPYs the source in
+          # (instead of -v mounting the workspace) so Maven doesn't leave
+          # root-owned files on the runner. The deps cache image already has
+          # the Maven local repo warm; the settings.xml with GitHub Packages
+          # auth is written from env at run time so the private Spice deps
+          # (goatrodeo_3, ginger-j, ancho) resolve.
+          cat <<'EOF' | docker buildx build --load -t spice-test -f - .
+          FROM ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
+          WORKDIR /workspace
+          COPY . .
+          ENTRYPOINT ["sh", "-c"]
+          EOF
           docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
             -e GH_USERNAME_SG \
             -e GH_TOKEN \
             -e MAVEN_CENTRAL_USERNAME \
             -e MAVEN_CENTRAL_PASSWORD \
-            ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }} \
-            sh -c '
+            spice-test '
               mkdir -p ~/.m2
               cat > ~/.m2/settings.xml <<SXML
           <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
