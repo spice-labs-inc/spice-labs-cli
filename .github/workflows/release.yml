@@ -274,10 +274,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          # PAT: the enterprise image and its allspice base are private
-          # org-scoped packages the repo-scoped GITHUB_TOKEN can't read.
-          username: SpicyGrzl
-          password: ${{ secrets.GH_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Retag enterprise image sha-<sha> -> vX.Y.Z
         id: retag
