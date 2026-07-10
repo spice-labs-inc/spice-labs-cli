@@ -123,6 +123,41 @@ refute_arg() {
   assert_arg "--help"
 }
 
+@test "--features enterprise switches to enterprise image and strips flag" {
+  # Unset SPICE_IMAGE so --features can select the enterprise image.
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+
+  run "$WRAPPER" --features enterprise survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  refute_arg "--features"
+  refute_arg "enterprise"
+}
+
+@test "--features=enterprise switches to enterprise image and strips flag" {
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+
+  run "$WRAPPER" --features=enterprise survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  refute_arg "--features"
+  refute_arg "enterprise"
+}
+
+@test "SPICE_IMAGE env overrides --features enterprise" {
+  SPICE_IMAGE="spice-wrapper-test" run "$WRAPPER" --features enterprise survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+}
+
 # ── Output directory ─────────────────────────────────────────────────────────
 
 @test "--output (space) creates dir and mounts volume" {

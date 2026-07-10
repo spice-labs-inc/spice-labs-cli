@@ -69,6 +69,9 @@ class MockDocker {
         if (a == "-e") { prev = a; continue; }
         prev = "";
         if (a.StartsWith("spice-")) { found = true; continue; }
+        // Detect image refs like ghcr.io/...:tag or spicelabs/spice-labs-cli:latest
+        if (a.Length > 0 && char.IsLower(a[0]) && !a.StartsWith("--") && a != "run" && a != "host" && a != "never"
+            && (a.Contains(":") || a.Contains("/"))) { found = true; continue; }
       }
     }
     Console.WriteLine("===SPICE_TEST_BEGIN===");
@@ -258,14 +261,20 @@ pwsh -NoProfile -File "$mockDockerPs1" "`\`$@"
       [Parameter(Mandatory)]
       [string[]]$Arguments,
       [string]$SpicePass = 'test-pass-value',
-      [string]$DockerFlags
+      [string]$DockerFlags,
+      [AllowNull()]
+      [string]$SpiceImage = 'spice-wrapper-test'
     )
 
     # Put mock docker first on PATH
     $env:PATH = "$($script:MockBinDir)$([System.IO.Path]::PathSeparator)$($env:PATH)"
 
     $env:SPICE_LABS_CLI_SKIP_PULL = '1'
-    $env:SPICE_IMAGE = 'spice-wrapper-test'
+    if ($null -eq $SpiceImage) {
+      Remove-Item env:SPICE_IMAGE -ErrorAction SilentlyContinue
+    } else {
+      $env:SPICE_IMAGE = $SpiceImage
+    }
     $env:SPICE_IMAGE_TAG = 'latest'
     $env:SPICE_PASS = $SpicePass
     $env:DOCKER_ARGS_FILE = $script:DockerArgsFile
@@ -406,6 +415,35 @@ Describe 'spice.ps1 wrapper' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', '--help')
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain '--help'
+    }
+
+    It '--features enterprise switches to enterprise image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'enterprise'
+      $r.ContainerArgs | Should -Contain 'survey'
+      $r.ContainerArgs | Should -Contain 'inventory'
+      $r.ContainerArgs | Should -Contain 'myapp'
+    }
+
+    It '--features=enterprise switches to enterprise image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'enterprise'
+    }
+
+    It 'SPICE_IMAGE env overrides --features enterprise' {
+      $r = Invoke-SpiceWrapper -SpiceImage 'spice-wrapper-custom' -Arguments @('--features', 'enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'spice-wrapper-custom'
+      $r.DockerRunArgs | Should -Not -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.ContainerArgs | Should -Contain 'survey'
+      $r.ContainerArgs | Should -Contain 'inventory'
+      $r.ContainerArgs | Should -Contain 'myapp'
     }
   }
 

@@ -1,47 +1,41 @@
-# Enterprise spice image = the latest released allspice image re-skinned as the
-# `spice` CLI.
+# Enterprise spice image = the spice-labs-cli OSS image + allspice's
+# proprietary assets (allspice fat JAR, report_cli, rogues gallery, syft)
+# layered on top.
 #
-# allspice's runtime image already ships: the allspice fat JAR (which, in the
-# allspice-enterprise build, bundles the `registry` plugin + sassafras), syft,
-# report_cli, and the rogues gallery. What it does NOT ship is the spice CLI
-# wrapper scripts and the spice entrypoint — i.e. the surface that makes the
-# image behave as `spice` rather than `allspice`.
-#
-# This Dockerfile is built by spice-labs-cli's release CI. It pulls the latest
-# released allspice image and layers the spice wrapper scripts + a spice-style
-# entrypoint on top. No rebuild of allspice, no proprietary references in this
-# repo — the proprietary bits live in the allspice image we FROM.
+# The result is the same `spice` CLI (survey, pass, etc.) with the allspice
+# files available at /opt/allspice/ for enterprise features (CBOM generation,
+# crypto analysis). The entrypoint stays as the spice CLI — allspice is a
+# library/resource, not the primary command.
 #
 # Build:
 #   docker build -f Dockerfile.enterprise \
+#     --build-arg SPICE_IMAGE=spicelabs/spice-labs-cli \
+#     --build-arg SPICE_TAG=latest \
 #     --build-arg ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice \
 #     --build-arg ALLSPICE_TAG=latest \
 #     -t ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:vX.Y.Z .
 #
-# The build context is the spice-labs-cli repo root (for the wrapper scripts).
+# In CI, SPICE_IMAGE is the just-built pr-<N> (or vX.Y.Z) OSS image and
+# ALLSPICE_IMAGE/ALLSPICE_TAG resolve to the latest allspice release.
+
+# Global build args (available to FROM instructions). Declared before the
+# first FROM so both stages can use them.
+ARG SPICE_IMAGE=spicelabs/spice-labs-cli
+ARG SPICE_TAG=latest
 ARG ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice
 ARG ALLSPICE_TAG=latest
-FROM ${ALLSPICE_IMAGE}:${ALLSPICE_TAG}
 
-# The allspice image places its fat JAR at /opt/allspice/allspice.jar and uses
-# an allspice-flavoured entrypoint. The spice CLI is the same JAR invoked
-# through the spice wrapper, so we layer the wrapper scripts alongside and
-# repoint the entrypoint to the spice-labs-cli.jar convention the wrapper
-# scripts expect. We do not move the JAR — we add a stable symlink so the
-# spice entrypoint path resolves.
-RUN ln -sf /opt/allspice/allspice.jar /opt/allspice/spice-labs-cli.jar
+# Stage 1: pull the allspice image to extract its proprietary assets.
+FROM ${ALLSPICE_IMAGE}:${ALLSPICE_TAG} AS allspice
 
-# Layer the spice wrapper scripts so operators can invoke the image the same
-# way they invoke the OSS spice image. These are the same files shipped on the
-# GitHub Release.
-COPY spice ./spice
-COPY spice.ps1 ./spice.ps1
+# Stage 2: start from the spice-labs-cli OSS image and add allspice's files.
+FROM ${SPICE_IMAGE}:${SPICE_TAG}
 
-# Repoint to a spice-style entrypoint. The wrapper scripts override the
-# entrypoint when they invoke docker, but a bare `docker run` should still
-# land in the spice CLI, not allspice's `--help`.
-WORKDIR /opt/allspice
-ENTRYPOINT ["sh", "-c", "\
-  JVM_ARGS=\"${SPICE_LABS_JVM_ARGS:-$JAVA_OPTS}\" && \
-  exec java $JVM_ARGS -jar /opt/allspice/spice-labs-cli.jar \"$@\"", "--"]
-CMD ["--help"]
+# Copy allspice's proprietary assets from the allspice image.
+#   /opt/allspice/allspice.jar    — allspice fat JAR (registry plugin, sassafras)
+#   /opt/allspice/report_cli      — Rust binary for CycloneDX CBOM generation
+#   /opt/allspice/rogues_gallery* — PQC rogues gallery data
+COPY --from=allspice /opt/allspice/ /opt/allspice/
+
+# The spice entrypoint and wrapper scripts are already in the OSS image.
+# No changes needed — the CLI is the same; allspice is available as a resource.

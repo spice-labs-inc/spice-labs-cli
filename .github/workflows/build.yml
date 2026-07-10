@@ -332,6 +332,8 @@ jobs:
           provenance: mode=max
           sbom: true
           build-args: |
+            SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
+            SPICE_TAG=pr-${{ github.event.number }}
             ALLSPICE_IMAGE=ghcr.io/${{ env.OWNER }}/allspice
             ALLSPICE_TAG=${{ steps.allspice.outputs.tag }}
           tags: |

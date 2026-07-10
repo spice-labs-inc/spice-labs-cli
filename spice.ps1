@@ -77,14 +77,47 @@ function Convert-ToDockerPath($path) {
   return $path
 }
 
-$subcommands = @('survey', 'inventory', 'static', 'runtime', 'pass', 'decode')
+$subcommands = @('survey', 'inventory', 'static', 'runtime', 'pass', 'decode', 'registry', 'discover', 'run', 'status', 'list', 'retry')
 
 $valueFlags = @('--output', '--threads', '--max-records', '--chunk-size',
-  '--log-level', '--log-file', '--tag-json', '--goat-rodeo-args', '--ginger-args')
+  '--log-level', '--log-file', '--tag-json', '--goat-rodeo-args', '--ginger-args',
+  '--features', '--config', '--discovery')
 
 $jar = if ($env:SPICE_LABS_CLI_JAR) { $env:SPICE_LABS_CLI_JAR } else { "/opt/spice-labs-cli/spice-labs-cli.jar" }
 $img = if ($env:SPICE_IMAGE) { $env:SPICE_IMAGE } else { "spicelabs/spice-labs-cli" }
 $tag = if ($env:SPICE_IMAGE_TAG) { $env:SPICE_IMAGE_TAG } else { "latest" }
+# If SPICE_IMAGE is set, use it verbatim (no tag appended). Otherwise build
+# the ref from the resolved image and tag.
+$imageRef = if ($env:SPICE_IMAGE) { $env:SPICE_IMAGE } else { "${img}:${tag}" }
+
+# ── Feature flag parsing (must happen before Docker checks / image pull) ──────
+#
+# --features enterprise switches to the enterprise image. Strip the flag so it
+# is not forwarded to the CLI container.
+
+$features = ""
+$parsedArgs = @()
+$prevArg = ""
+foreach ($arg in $args) {
+  if ($arg -match '^--features=(.*)$') {
+    $features = $matches[1]
+    continue
+  } elseif ($prevArg -eq '--features') {
+    $features = $arg
+    $prevArg = ""
+    continue
+  } elseif ($arg -eq '--features') {
+    $prevArg = $arg
+    continue
+  }
+  $parsedArgs += $arg
+}
+if ($features -eq "enterprise") {
+  if (-not $env:SPICE_IMAGE) {
+    $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+  }
+}
+$args = $parsedArgs
 
 # ── JVM mode (no Docker, no path rewriting) ──────────────────────────────────
 
@@ -121,9 +154,9 @@ if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
 } else {
   try {
     Write-Host "[*] Checking for updates to Spice Labs Surveyor CLI..."
-    if ($debugMode) { docker pull "${img}:${tag}" }
-    else { docker pull --quiet "${img}:${tag}" | Out-Null }
-  } catch { Write-Warning "[!] Failed to pull ${img}:${tag}, using local copy if available" }
+    if ($debugMode) { docker pull "$imageRef" }
+    else { docker pull --quiet "$imageRef" | Out-Null }
+  } catch { Write-Warning "[!] Failed to pull $imageRef, using local copy if available" }
 }
 
 foreach ($arg in $args) {
@@ -260,7 +293,7 @@ if ($isRuntimeSurvey) {
   $p1Args += @($userFlag)
   $p1Args += @($pullFlag)
   $p1Args += @('-v', "${rtWorkdirHost}:${rtWorkdirDocker}")
-  $p1Args += @("${img}:${tag}")
+  $p1Args += @("$imageRef")
   $p1Args += @('-c', "cp '${spiceCliDir}/ancho.jar' '${rtWorkdirDocker}/' 2>/dev/null; cp '${spiceCliDir}/spice-jfr.jfc' '${rtWorkdirDocker}/' 2>/dev/null")
   & docker @p1Args
 
@@ -285,7 +318,7 @@ if ($isRuntimeSurvey) {
     $dlArgs += @('--network', 'host')
     $dlArgs += @($pullFlag)
     $dlArgs += @('-e', "SPICE_PASS=$spicePass")
-    $dlArgs += @("${img}:${tag}")
+    $dlArgs += @("$imageRef")
     $dlArgs += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect', '--download-probes')
     & docker @dlArgs > $rtProbes 2>$null
 
@@ -347,7 +380,7 @@ if ($isRuntimeSurvey) {
   $p4Args += @('-v', "${rtWorkdirHost}:${rtWorkdirDocker}")
   $p4Args += $rtAnchorMount
   $p4Args += @('-e', "SPICE_PASS=$spicePass")
-  $p4Args += @("${img}:${tag}")
+  $p4Args += @("$imageRef")
   $p4Args += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect')
   $p4Args += @($rtCollectArgs)
   & docker @p4Args
@@ -367,6 +400,8 @@ if ($isRuntimeSurvey) {
 
 $inputPath = ""
 $outputPath = ""
+$configPath = ""
+$discoveryPath = ""
 $positionalIndex = 0
 $dockerArgs = @()
 $volumes = @()
@@ -382,6 +417,16 @@ foreach ($arg in $args) {
   if ($arg -match "^--output=(.*)$") { $outputPath = $matches[1]; $prev = ""; continue }
   elseif ($prev -eq "--output") { $outputPath = $arg; $prev = ""; continue }
   elseif ($arg -eq "--output") { $prev = $arg; continue }
+
+  # Capture --config value (registry subcommands)
+  if ($arg -match "^--config=(.*)$") { $configPath = $matches[1]; $prev = ""; continue }
+  elseif ($prev -eq "--config") { $configPath = $arg; $prev = ""; continue }
+  elseif ($arg -eq "--config") { $prev = $arg; continue }
+
+  # Capture --discovery value (registry run)
+  if ($arg -match "^--discovery=(.*)$") { $discoveryPath = $matches[1]; $prev = ""; continue }
+  elseif ($prev -eq "--discovery") { $discoveryPath = $arg; $prev = ""; continue }
+  elseif ($arg -eq "--discovery") { $prev = $arg; continue }
 
   # Handle other value-consuming flags
   if ($prev) {
@@ -434,12 +479,49 @@ if ($outputPath) {
   $hostDir = Convert-ToDockerPath (Get-AbsolutePath $outputPath)
   $volumes += "-v"; $volumes += "${hostDir}:/mnt/output"
   $dockerArgs += "--output"; $dockerArgs += "/mnt/output"
-} else {
-  # Mount default output directory so container output is preserved on the host
+} elseif (-not $configPath) {
+  # Mount default output directory so container output is preserved on the host.
+  # Skip for registry commands (which use --config) — they manage their own
+  # output dirs via the config TOML.
   $defaultOutput = Join-Path (Join-Path $HOME '.spicelabs') 'surveyor'
   if (-not (Test-Path $defaultOutput)) { New-Item -ItemType Directory -Path $defaultOutput -Force | Out-Null }
   $hostDir = Convert-ToDockerPath (Get-AbsolutePath $defaultOutput)
   $volumes += "-v"; $volumes += "${hostDir}:/root/.spicelabs/surveyor"
+}
+
+# ── Resolve config path (registry subcommands) ──────────────────────────────
+# Mount the config file's parent dir so allspice can read the config AND write
+# to the allspice-state/ git repo it creates beside it.
+
+if ($configPath) {
+  $absConfig = Get-AbsolutePath $configPath
+  $configDir = Split-Path -Parent $absConfig
+  $configFile = Split-Path -Leaf $absConfig
+  $hostDir = Convert-ToDockerPath $configDir
+  $volumes += "-v"; $volumes += "${hostDir}:/mnt/config"
+  $containerConfig = "/mnt/config/${configFile}"
+  for ($i = 0; $i -lt $dockerArgs.Count; $i++) {
+    if ($dockerArgs[$i] -eq $configPath) { $dockerArgs[$i] = $containerConfig }
+  }
+}
+
+# ── Resolve discovery path (registry run) ───────────────────────────────────
+
+if ($discoveryPath) {
+  $absDiscovery = Get-AbsolutePath $discoveryPath
+  $discoveryDir = Split-Path -Parent $absDiscovery
+  $discoveryFile = Split-Path -Leaf $absDiscovery
+  $containerDiscovery = "/mnt/discovery/${discoveryFile}"
+  # If discovery is in the same dir as config, it's already mounted
+  if ($configPath -and $discoveryDir -eq (Split-Path -Parent (Get-AbsolutePath $configPath))) {
+    $containerDiscovery = "/mnt/config/${discoveryFile}"
+  } else {
+    $hostDir = Convert-ToDockerPath $discoveryDir
+    $volumes += "-v"; $volumes += "${hostDir}:/mnt/discovery"
+  }
+  for ($i = 0; $i -lt $dockerArgs.Count; $i++) {
+    if ($dockerArgs[$i] -eq $discoveryPath) { $dockerArgs[$i] = $containerDiscovery }
+  }
 }
 
 # ── Run ──────────────────────────────────────────────────────────────────────
@@ -459,6 +541,6 @@ docker run --rm `
   @volumes `
   -e "SPICE_PASS=$spicePass" `
   @envArgs `
-  "${img}:${tag}" `
-  @dockerArgs
+   "$imageRef" `
+   @dockerArgs
 exit $LASTEXITCODE

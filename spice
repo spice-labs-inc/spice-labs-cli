@@ -68,7 +68,7 @@ abs_path() {
 # Known subcommand tokens (not paths)
 is_subcommand() {
   case "$1" in
-    survey|inventory|static|runtime|pass|decode) return 0 ;;
+    survey|inventory|static|runtime|pass|decode|registry|discover|run|status|list|retry) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -76,7 +76,7 @@ is_subcommand() {
 # Flags that consume the next arg as a value
 is_value_flag() {
   case "$1" in
-    --output|--threads|--max-records|--chunk-size|--log-level|--log-file|--tag-json|--goat-rodeo-args|--ginger-args) return 0 ;;
+    --output|--threads|--max-records|--chunk-size|--log-level|--log-file|--tag-json|--goat-rodeo-args|--ginger-args|--features|--config|--discovery) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -84,6 +84,47 @@ is_value_flag() {
 SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
 IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
 TAG="${SPICE_IMAGE_TAG:-latest}"
+# If SPICE_IMAGE is set, use it verbatim (no tag appended). Otherwise build
+# the ref from the resolved IMAGE and TAG.
+if [ -n "${SPICE_IMAGE:-}" ]; then
+  IMAGE_REF="${SPICE_IMAGE}"
+else
+  IMAGE_REF="${IMAGE}:${TAG}"
+fi
+
+# ── Feature flag parsing (must happen before Docker checks / image pull) ──────
+#
+# --features enterprise switches to the enterprise image. Strip the flag so it
+# is not forwarded to the CLI container.
+
+FEATURES=""
+PARSED_ARGS=()
+prev_arg=""
+for arg in "$@"; do
+  if [[ "$arg" == --features=* ]]; then
+    FEATURES="${arg#--features=}"
+    continue
+  elif [[ "$prev_arg" == --features ]]; then
+    FEATURES="$arg"
+    prev_arg=""
+    continue
+  elif [[ "$arg" == --features ]]; then
+    prev_arg="$arg"
+    continue
+  fi
+  PARSED_ARGS+=("$arg")
+done
+# Flush any orphaned --features value (malformed input)
+[ -n "$prev_arg" ] && FEATURES="$prev_arg" && prev_arg=""
+
+if [ "${FEATURES}" = "enterprise" ]; then
+  if [ -z "${SPICE_IMAGE:-}" ]; then
+    IMAGE_REF="ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+  fi
+fi
+
+# Replace "$@" with the stripped args for the rest of the script.
+set -- "${PARSED_ARGS[@]}"
 
 # ── JVM mode (no Docker, no path rewriting) ──────────────────────────────────
 
@@ -122,10 +163,10 @@ if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" = "1" ]; then
   PULL_FLAG="--pull=never"
 elif [ "$DEBUG_MODE" = "1" ]; then
   echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
-  docker pull "${IMAGE}:${TAG}" || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+  docker pull "$IMAGE_REF" || echo "⚠️  Failed to pull $IMAGE_REF, using local copy if available"
 else
   echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
-  docker pull --quiet "${IMAGE}:${TAG}" > /dev/null 2>&1 || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+  docker pull --quiet "$IMAGE_REF" > /dev/null 2>&1 || echo "⚠️  Failed to pull $IMAGE_REF, using local copy if available"
 fi
 
 for arg in "$@"; do
@@ -262,7 +303,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     --user "$(id -u):$(id -g)" \
     ${PULL_FLAG:+$PULL_FLAG} \
     -v "${RT_WORKDIR}:${RT_WORKDIR}" \
-    "${IMAGE}:${TAG}" \
+    "$IMAGE_REF" \
     -c "cp '${SPICE_CLI_DIR}/ancho.jar' '${RT_WORKDIR}/' 2>/dev/null; \
         cp '${SPICE_CLI_DIR}/spice-jfr.jfc' '${RT_WORKDIR}/' 2>/dev/null"
 
@@ -285,7 +326,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
       --network host \
       ${PULL_FLAG:+$PULL_FLAG} \
       -e SPICE_PASS \
-      "${IMAGE}:${TAG}" \
+      "$IMAGE_REF" \
       -cp "${SPICE_LABS_CLI_JAR}" \
       io.spicelabs.cli.RuntimeCollect \
       --download-probes > "$RT_PROBES" 2>/dev/null || true
@@ -350,7 +391,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     -v "${RT_WORKDIR}:${RT_WORKDIR}" \
     ${RT_ANCHOR_MOUNT[@]+"${RT_ANCHOR_MOUNT[@]}"} \
     -e SPICE_PASS \
-    "${IMAGE}:${TAG}" \
+    "$IMAGE_REF" \
     -cp /opt/spice-labs-cli/spice-labs-cli.jar \
     io.spicelabs.cli.RuntimeCollect \
     "${RT_COLLECT_ARGS[@]}"
@@ -375,6 +416,8 @@ fi
 
 INPUT_PATH=""
 OUTPUT_PATH=""
+CONFIG_PATH=""
+DISCOVERY_PATH=""
 POSITIONAL_INDEX=0
 DOCKER_ARGS=()
 VOLUMES=()
@@ -396,6 +439,34 @@ for arg in "$@"; do
     prev=""
     continue  # will re-add after resolving
   elif [[ "$arg" == "--output" ]]; then
+    prev="$arg"
+    continue
+  fi
+
+  # Capture --config value (registry subcommands)
+  if [[ "$arg" == --config=* ]]; then
+    CONFIG_PATH="${arg#--config=}"
+    prev=""
+    continue
+  elif [[ "$prev" == "--config" ]]; then
+    CONFIG_PATH="$arg"
+    prev=""
+    continue
+  elif [[ "$arg" == "--config" ]]; then
+    prev="$arg"
+    continue
+  fi
+
+  # Capture --discovery value (registry run)
+  if [[ "$arg" == --discovery=* ]]; then
+    DISCOVERY_PATH="${arg#--discovery=}"
+    prev=""
+    continue
+  elif [[ "$prev" == "--discovery" ]]; then
+    DISCOVERY_PATH="$arg"
+    prev=""
+    continue
+  elif [[ "$arg" == "--discovery" ]]; then
     prev="$arg"
     continue
   fi
@@ -455,11 +526,53 @@ if [ -n "$OUTPUT_PATH" ]; then
   HOST_OUTPUT="$(abs_path "$OUTPUT_PATH")"
   VOLUMES+=("-v" "${HOST_OUTPUT}:/mnt/output")
   DOCKER_ARGS+=("--output" "/mnt/output")
-else
-  # Mount default output directory so container output is preserved on the host
+elif [ -z "$CONFIG_PATH" ]; then
+  # Mount default output directory so container output is preserved on the host.
+  # Skip for registry commands (which use --config) — they manage their own
+  # output dirs via the config TOML.
   DEFAULT_OUTPUT="$HOME/.spicelabs/surveyor"
   mkdir -p "$DEFAULT_OUTPUT"
   VOLUMES+=("-v" "${DEFAULT_OUTPUT}:/root/.spicelabs/surveyor")
+fi
+
+# ── Resolve config path (registry subcommands) ──────────────────────────────
+# Mount the config file's parent dir so allspice can read the config AND write
+# to the allspice-state/ git repo it creates beside it.
+
+if [ -n "$CONFIG_PATH" ]; then
+  HOST_CONFIG="$(abs_path "$CONFIG_PATH")"
+  CONFIG_DIR="$(dirname "$HOST_CONFIG")"
+  CONFIG_FILE="$(basename "$HOST_CONFIG")"
+  VOLUMES+=("-v" "${CONFIG_DIR}:/mnt/config")
+  # Replace the config path in DOCKER_ARGS with the container path
+  for i in "${!DOCKER_ARGS[@]}"; do
+    if [[ "${DOCKER_ARGS[$i]}" == "$CONFIG_PATH" ]]; then
+      DOCKER_ARGS[$i]="/mnt/config/${CONFIG_FILE}"
+    fi
+  done
+fi
+
+# ── Resolve discovery path (registry run) ───────────────────────────────────
+
+if [ -n "$DISCOVERY_PATH" ]; then
+  HOST_DISCOVERY="$(abs_path "$DISCOVERY_PATH")"
+  DISCOVERY_DIR="$(dirname "$HOST_DISCOVERY")"
+  DISCOVERY_FILE="$(basename "$HOST_DISCOVERY")"
+  # If discovery is in the same dir as config, it's already mounted
+  if [ -n "$CONFIG_PATH" ] && [ "$DISCOVERY_DIR" = "$(dirname "$(abs_path "$CONFIG_PATH")")" ]; then
+    for i in "${!DOCKER_ARGS[@]}"; do
+      if [[ "${DOCKER_ARGS[$i]}" == "$DISCOVERY_PATH" ]]; then
+        DOCKER_ARGS[$i]="/mnt/config/${DISCOVERY_FILE}"
+      fi
+    done
+  else
+    VOLUMES+=("-v" "${DISCOVERY_DIR}:/mnt/discovery")
+    for i in "${!DOCKER_ARGS[@]}"; do
+      if [[ "${DOCKER_ARGS[$i]}" == "$DISCOVERY_PATH" ]]; then
+        DOCKER_ARGS[$i]="/mnt/discovery/${DISCOVERY_FILE}"
+      fi
+    done
+  fi
 fi
 
 # ── Run (non-runtime) ────────────────────────────────────────────────────────
@@ -472,5 +585,5 @@ exec docker run --rm \
   ${VOLUMES+"${VOLUMES[@]}"} \
   -e SPICE_PASS \
   ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-  "${IMAGE}:${TAG}" \
-  ${DOCKER_ARGS[@]+"${DOCKER_ARGS[@]}"}
+   "$IMAGE_REF" \
+   ${DOCKER_ARGS[@]+"${DOCKER_ARGS[@]}"}

@@ -67,9 +67,21 @@ public class SpiceLabsCLI implements Runnable {
   /**
    * Build a CommandLine with the CLI's standard parameter exception handler.
    * Used by main() and tests so both exercise identical error behavior.
+   *
+   * The `registry` and `survey static` subcommands are added dynamically only
+   * when the allspice fat JAR is present (enterprise image). In the OSS build
+   * they do not appear in `--help` and cannot be invoked.
    */
   static CommandLine newCommandLine() {
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    if (AllspiceLoader.isAvailable()) {
+      cmd.addSubcommand("registry", new RegistryCommand());
+      // Add `static` under the `survey` subcommand
+      CommandLine surveyCmd = cmd.getSubcommands().get("survey");
+      if (surveyCmd != null) {
+        surveyCmd.addSubcommand("static", new SurveyStaticCommand());
+      }
+    }
     cmd.setParameterExceptionHandler((ex, a) -> {
       CommandLine offending = ex.getCommandLine();
       log.error("❌ {}", ex.getMessage());
