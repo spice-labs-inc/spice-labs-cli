@@ -306,11 +306,13 @@ jobs:
           set -euo pipefail
           # Prefer a matching pr-<N> allspice image (a cross-repo PR pair) so a
           # coordinated allspice+spice change can be tested together. Fall back
-          # to the latest allspice release tag, then to :latest.
+          # to the latest allspice release tag, then to a hardcoded pr-2 (the
+          # only allspice image published so far). Once allspice cuts a semver
+          # release, replace pr-2 with :latest.
           ALLSPICE="ghcr.io/${OWNER}/allspice"
           for candidate in "pr-${PR_NUMBER}" \
                            "$(gh api /repos/${OWNER}/allspice/releases/latest --jq '.tag_name // empty' 2>/dev/null || true)" \
-                           "latest"; do
+                           "pr-2"; do
             [ -n "${candidate}" ] || continue
             if docker manifest inspect "${ALLSPICE}:${candidate}" >/dev/null 2>&1; then
               echo "tag=${candidate}" >> "$GITHUB_OUTPUT"
@@ -318,7 +320,7 @@ jobs:
               exit 0
             fi
           done
-          echo "No allspice base image found (tried pr-${PR_NUMBER}, latest release, latest)" >&2
+          echo "No allspice base image found (tried pr-${PR_NUMBER}, latest release, pr-2)" >&2
           exit 1
 
       - name: Build and publish enterprise image
