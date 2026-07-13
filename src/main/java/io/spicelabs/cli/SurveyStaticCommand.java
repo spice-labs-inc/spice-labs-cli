@@ -95,8 +95,17 @@ public class SurveyStaticCommand implements Callable<Integer> {
 
         Path outputPath = output;
         if (outputPath == null) {
-            outputPath = Path.of(subject + "-lintium.json");
+            // Default to /mnt/output (the wrapper's output volume mount) when
+            // available, otherwise the current directory.
+            Path outputDir = Path.of("/mnt/output");
+            if (!Files.isDirectory(outputDir)) {
+                outputDir = Path.of(System.getProperty("user.dir", "."));
+            }
+            outputPath = outputDir.resolve(subject + "-lintium.json");
         }
+        // Ensure the path is absolute so path.getParent() is non-null
+        // (JsonReporter.writeToFile calls Files.createDirectories(path.getParent()))
+        outputPath = outputPath.toAbsolutePath();
 
         log.info("🌶️  Static crypto analysis: {} ({})", subject, input);
 
