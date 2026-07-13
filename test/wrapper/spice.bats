@@ -33,6 +33,12 @@ teardown() {
   rm -rf "$TEST_TMPDIR"
 }
 
+# Remove stale enterprise/federal tags so they don't leak into local dev
+teardown_file() {
+  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest 2>/dev/null || true
+  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest 2>/dev/null || true
+}
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 # Extract ARG: lines from between the markers in $output (set by `run`)
@@ -156,6 +162,32 @@ refute_arg() {
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
+}
+
+@test "--features federal switches to federal image and strips flag" {
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest"
+
+  run "$WRAPPER" --features federal survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  refute_arg "--features"
+  refute_arg "federal"
+}
+
+@test "--features=federal switches to federal image and strips flag" {
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest"
+
+  run "$WRAPPER" --features=federal survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  refute_arg "--features"
+  refute_arg "federal"
 }
 
 # ── Output directory ─────────────────────────────────────────────────────────

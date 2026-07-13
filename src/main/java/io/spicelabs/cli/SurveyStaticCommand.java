@@ -71,6 +71,15 @@ public class SurveyStaticCommand implements Callable<Integer> {
     @Option(names = "--timeout", description = "Analysis timeout in seconds (default: 1800)")
     Integer timeoutSeconds;
 
+    @Option(names = "--cbom", description = "Generate a CycloneDX CBOM via report_cli (federal image only)")
+    boolean cbom;
+
+    @Option(names = "--adg-dir", description = "Directory containing goatrodeo ADG output (items_*.json) for CBOM generation")
+    Path adgDir;
+
+    @Option(names = "--cbom-output", description = "Output CBOM file path (default: ./<subject>-cbom.json)")
+    Path cbomOutput;
+
     @Override
     public Integer call() {
         AllspiceLoader loader = AllspiceLoader.getInstance();
@@ -118,14 +127,69 @@ public class SurveyStaticCommand implements Callable<Integer> {
             }
 
             int exitCode = sassafrasCmd.execute(args.toArray(new String[0]));
-            if (exitCode == 0) {
-                log.info("✅ Analysis complete. Report written to {}", outputPath);
-            } else {
+            if (exitCode != 0) {
                 log.error("❌ Sassafras analysis failed with exit code {}", exitCode);
+                return exitCode;
+            }
+            log.info("✅ Sassafras analysis complete. Report written to {}", outputPath);
+
+            // Generate CBOM if requested and report_cli is available (federal)
+            if (cbom) {
+                exitCode = generateCbom(loader, outputPath);
             }
             return exitCode;
         } catch (Exception e) {
             log.error("Failed to run sassafras: {}", e.getMessage(), e);
+            return 1;
+        }
+    }
+
+    /**
+     * Generate a CycloneDX CBOM via the report_cli binary (federal image only).
+     */
+    private int generateCbom(AllspiceLoader loader, Path lintiumPath) {
+        if (!AllspiceLoader.isReportCliAvailable()) {
+            log.error("❌ --cbom requires the federal image (report_cli not found at {})",
+                AllspiceLoader.resolveReportCliPath());
+            return 1;
+        }
+
+        Path cbomPath = cbomOutput != null ? cbomOutput : Path.of(subject + "-cbom.json");
+
+        // report_cli needs a cluster-json-dir (ADG output). If not provided,
+        // use the lintium file's parent dir — the CBOM will contain crypto
+        // findings only (no dependency graph).
+        Path clusterDir = adgDir;
+        if (clusterDir == null) {
+            clusterDir = lintiumPath.getParent() != null ? lintiumPath.getParent() : Path.of(".");
+        }
+
+        String reportCli = AllspiceLoader.resolveReportCliPath();
+        String rogues = "/opt/allspice/rogues_gallery.json";
+
+        log.info("📋 Generating CBOM via report_cli...");
+
+        ProcessBuilder pb = new ProcessBuilder(
+            reportCli,
+            "--format", "cbom",
+            "--cluster-json-dir", clusterDir.toString(),
+            "--rogues", rogues,
+            "--lintium", lintiumPath.toString(),
+            "--output", cbomPath.toString(),
+            "--log-level", "error"
+        );
+        pb.inheritIO();
+
+        try {
+            int exitCode = pb.start().waitFor();
+            if (exitCode == 0) {
+                log.info("✅ CBOM written to {}", cbomPath);
+            } else {
+                log.error("❌ report_cli failed with exit code {}", exitCode);
+            }
+            return exitCode;
+        } catch (Exception e) {
+            log.error("Failed to invoke report_cli: {}", e.getMessage(), e);
             return 1;
         }
     }

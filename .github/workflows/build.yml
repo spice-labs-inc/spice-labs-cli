@@ -36,6 +36,7 @@ jobs:
               - 'pom.xml'
               - 'Dockerfile'
               - 'Dockerfile.enterprise'
+              - 'Dockerfile.federal'
               - '.dockerignore'
               - 'spice'
               - 'spice.ps1'
@@ -49,6 +50,7 @@ jobs:
               - 'pom.xml'
               - 'Dockerfile'
               - 'Dockerfile.enterprise'
+              - 'Dockerfile.federal'
               - '.dockerignore'
               - 'spice'
               - 'spice.ps1'
@@ -339,12 +341,80 @@ jobs:
           tags: |
             ghcr.io/${{ env.OWNER }}/spice-labs-cli-enterprise:pr-${{ github.event.number }}
 
+  build-image-federal:
+    name: Build and publish federal image
+    needs: [detect-changes, build-image-spice]
+    # The federal image extends the enterprise image with report_cli and the
+    # rogues gallery for CBOM generation. Same allspice base as enterprise.
+    if: needs.detect-changes.outputs.spice == 'true'
+    concurrency:
+      group: build-image-${{ github.event.pull_request.number }}-federal
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+      artifact-metadata: write
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Resolve allspice base tag
+        id: allspice
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          ALLSPICE="ghcr.io/${OWNER}/allspice"
+          for candidate in "pr-${PR_NUMBER}" \
+                           "$(gh api /repos/${OWNER}/allspice/releases/latest --jq '.tag_name // empty' 2>/dev/null || true)" \
+                           "pr-2"; do
+            [ -n "${candidate}" ] || continue
+            if docker manifest inspect "${ALLSPICE}:${candidate}" >/dev/null 2>&1; then
+              echo "tag=${candidate}" >> "$GITHUB_OUTPUT"
+              echo "Using allspice base: ${ALLSPICE}:${candidate}"
+              exit 0
+            fi
+          done
+          echo "No allspice base image found (tried pr-${PR_NUMBER}, latest release, pr-2)" >&2
+          exit 1
+
+      - name: Build and publish federal image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.federal
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
+            SPICE_TAG=pr-${{ github.event.number }}
+            ALLSPICE_IMAGE=ghcr.io/${{ env.OWNER }}/allspice
+            ALLSPICE_TAG=${{ steps.allspice.outputs.tag }}
+          tags: |
+            ghcr.io/${{ env.OWNER }}/spice-labs-cli-federal:pr-${{ github.event.number }}
+
   deploy-on-annotation:
     name: Auto-deploy to ${{ needs.detect-changes.outputs.deploy_envs }}
     needs:
       - detect-changes
       - build-image-spice
       - build-image-enterprise
+      - build-image-federal
     # Fire once the images are built (or skipped) and none failed. Each
     # environment dispatches publish.yml, which retags/deploys the pr-<N>
     # images exactly as a manual dispatch does today.

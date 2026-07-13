@@ -114,6 +114,27 @@ class AllspiceLoaderTest {
         "survey static should be registered when allspice JAR exists");
   }
 
+  /**
+   * report_cli is not available when the binary is absent (enterprise image).
+   */
+  @Test
+  void reportCliAbsent_whenNotPresent(@TempDir Path tmp) {
+    AllspiceLoader.setTestJarPath(tmp.resolve("nonexistent.jar").toString());
+    AllspiceLoader.setTestReportCliPath(tmp.resolve("nonexistent-report_cli").toString());
+    assertFalse(AllspiceLoader.isReportCliAvailable());
+  }
+
+  /**
+   * report_cli is available when the binary exists (federal image).
+   */
+  @Test
+  void reportCliAvailable_whenPresent(@TempDir Path tmp) throws Exception {
+    Path reportCli = tmp.resolve("report_cli");
+    Files.write(reportCli, "dummy binary".getBytes());
+    AllspiceLoader.setTestReportCliPath(reportCli.toString());
+    assertTrue(AllspiceLoader.isReportCliAvailable());
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private static void createEmptyJar(Path jarPath) throws Exception {

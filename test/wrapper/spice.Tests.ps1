@@ -445,6 +445,25 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
     }
+
+    It '--features federal switches to federal image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'federal', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'federal'
+      $r.ContainerArgs | Should -Contain 'survey'
+      $r.ContainerArgs | Should -Contain 'inventory'
+      $r.ContainerArgs | Should -Contain 'myapp'
+    }
+
+    It '--features=federal switches to federal image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=federal', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'federal'
+    }
   }
 
   # ── Output directory ─────────────────────────────────────────────────────

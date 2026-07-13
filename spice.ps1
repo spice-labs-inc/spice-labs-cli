@@ -92,8 +92,9 @@ $imageRef = if ($env:SPICE_IMAGE) { $env:SPICE_IMAGE } else { "${img}:${tag}" }
 
 # ── Feature flag parsing (must happen before Docker checks / image pull) ──────
 #
-# --features enterprise switches to the enterprise image. Strip the flag so it
-# is not forwarded to the CLI container.
+# --features enterprise → enterprise image (allspice + sassafras)
+# --features federal     → federal image (enterprise + report_cli + rogues gallery)
+# Strip the flag so it is not forwarded to the CLI container.
 
 $features = ""
 $parsedArgs = @()
@@ -112,9 +113,10 @@ foreach ($arg in $args) {
   }
   $parsedArgs += $arg
 }
-if ($features -eq "enterprise") {
-  if (-not $env:SPICE_IMAGE) {
-    $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+if (-not $env:SPICE_IMAGE) {
+  switch ($features) {
+    "enterprise" { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest" }
+    "federal"    { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest" }
   }
 }
 $args = $parsedArgs
@@ -156,7 +158,18 @@ if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
     Write-Host "[*] Checking for updates to Spice Labs Surveyor CLI..."
     if ($debugMode) { docker pull "$imageRef" }
     else { docker pull --quiet "$imageRef" | Out-Null }
-  } catch { Write-Warning "[!] Failed to pull $imageRef, using local copy if available" }
+  } catch {
+    Write-Warning "[!] Failed to pull $imageRef"
+    $localExists = $false
+    try { docker image inspect "$imageRef" | Out-Null; $localExists = $true } catch {}
+    if (-not $localExists) {
+      Write-Error "[X] Image $imageRef not found locally either."
+      Write-Host "   The image may not exist yet, or you may not have access."
+      Write-Host "   For enterprise/federal features, ensure --features matches an available image."
+      exit 1
+    }
+    Write-Host "   Using local copy."
+  }
 }
 
 foreach ($arg in $args) {

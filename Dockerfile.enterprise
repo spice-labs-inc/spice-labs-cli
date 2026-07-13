@@ -1,11 +1,13 @@
 # Enterprise spice image = the spice-labs-cli OSS image + allspice's
-# proprietary assets (allspice fat JAR, report_cli, rogues gallery, syft)
-# layered on top.
+# proprietary allspice fat JAR (which bundles sassafras) layered on top.
 #
 # The result is the same `spice` CLI (survey, pass, etc.) with the allspice
-# files available at /opt/allspice/ for enterprise features (CBOM generation,
-# crypto analysis). The entrypoint stays as the spice CLI — allspice is a
-# library/resource, not the primary command.
+# JAR available at /opt/allspice/ for enterprise features (registry survey,
+# static crypto analysis). The entrypoint stays as the spice CLI — allspice is
+# a library/resource, not the primary command.
+#
+# The federal image (Dockerfile.federal) extends this image with report_cli
+# and the rogues gallery for CBOM generation.
 #
 # Build:
 #   docker build -f Dockerfile.enterprise \
@@ -28,14 +30,12 @@ ARG ALLSPICE_TAG=latest
 # Stage 1: pull the allspice image to extract its proprietary assets.
 FROM ${ALLSPICE_IMAGE}:${ALLSPICE_TAG} AS allspice
 
-# Stage 2: start from the spice-labs-cli OSS image and add allspice's files.
+# Stage 2: start from the spice-labs-cli OSS image and add allspice's JAR.
 FROM ${SPICE_IMAGE}:${SPICE_TAG}
 
-# Copy allspice's proprietary assets from the allspice image.
-#   /opt/allspice/allspice.jar    — allspice fat JAR (registry plugin, sassafras)
-#   /opt/allspice/report_cli      — Rust binary for CycloneDX CBOM generation
-#   /opt/allspice/rogues_gallery* — PQC rogues gallery data
-COPY --from=allspice /opt/allspice/ /opt/allspice/
+# Copy only the allspice fat JAR (contains allspice + sassafras + transitive deps).
+# report_cli and rogues_gallery are NOT included — those are federal-only.
+COPY --from=allspice /opt/allspice/allspice.jar /opt/allspice/allspice.jar
 
 # The spice entrypoint and wrapper scripts are already in the OSS image.
 # No changes needed — the CLI is the same; allspice is available as a resource.

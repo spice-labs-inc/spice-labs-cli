@@ -9,6 +9,7 @@ env:
   PLATFORMS: linux/amd64,linux/arm64
   PUBLIC_DOCKER_IMAGE: spicelabs/spice-labs-cli
   ENTERPRISE_IMAGE: ghcr.io/spice-labs-inc/spice-labs-cli-enterprise
+  FEDERAL_IMAGE: ghcr.io/spice-labs-inc/spice-labs-cli-federal
   ALLSPICE_IMAGE: ghcr.io/spice-labs-inc/allspice
 
 jobs:
@@ -351,9 +352,98 @@ jobs:
             ${{ env.ENTERPRISE_IMAGE }}:${{ github.event.release.tag_name }}
             ${{ env.ENTERPRISE_IMAGE }}:latest
 
+  build_federal:
+    name: Retag (or build) Federal Image
+    runs-on: ubuntu-24.04
+    needs: [publish_jars, docker_image]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Retag federal image sha-<sha> -> vX.Y.Z
+        id: retag
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ needs.publish_jars.outputs.version }}
+        run: |
+          set -euo pipefail
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          image="${FEDERAL_IMAGE}"
+          cur="sha-${RELEASE_SHA}"
+          if docker manifest inspect "${image}:${cur}" >/dev/null 2>&1; then
+            docker buildx build \
+              --file Dockerfile.retag \
+              --build-arg BASE_IMAGE="${image}:${cur}" \
+              --build-arg VERSION="${VERSION}" \
+              --build-arg REVISION="${RELEASE_SHA}" \
+              --build-arg BUILD_DATE="${BUILD_DATE}" \
+              --tag "${image}:${RELEASE_TAG}" \
+              --tag "${image}:latest" \
+              --push \
+              .
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "Built ${image}:${RELEASE_TAG} FROM ${image}:${cur} (version ${VERSION})"
+          else
+            echo "No ${image}:${cur} found; will build ${RELEASE_TAG} from source" >&2
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve latest allspice release tag
+        if: steps.retag.outputs.built == 'true'
+        id: allspice
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -euo pipefail
+          latest=$(gh api /repos/${OWNER}/allspice/releases/latest --jq '.tag_name // empty' 2>/dev/null || true)
+          if [ -z "${latest}" ]; then
+            latest=$(gh api /repos/${OWNER}/allspice/tags --jq '[.[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0]' 2>/dev/null || true)
+          fi
+          if [ -z "${latest}" ]; then
+            latest="pr-2"
+          fi
+          echo "allspice_tag=${latest}" >> "$GITHUB_OUTPUT"
+          echo "Using allspice image tag: ${latest}"
+
+      - name: Build and push federal image (fallback)
+        if: steps.retag.outputs.built == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.federal
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
+            SPICE_TAG=${{ github.event.release.tag_name }}
+            ALLSPICE_IMAGE=${{ env.ALLSPICE_IMAGE }}
+            ALLSPICE_TAG=${{ steps.allspice.outputs.allspice_tag }}
+          tags: |
+            ${{ env.FEDERAL_IMAGE }}:${{ github.event.release.tag_name }}
+            ${{ env.FEDERAL_IMAGE }}:latest
+
   notify:
     name: Notify deployment result
-    needs: [publish_jars, docker_image, build_enterprise]
+    needs: [publish_jars, docker_image, build_enterprise, build_federal]
     if: always()
     runs-on: ubuntu-24.04
     steps:

@@ -39,14 +39,19 @@ public final class AllspiceLoader {
   /** Default location of the allspice fat JAR in the enterprise image. */
   static final String DEFAULT_JAR_PATH = "/opt/allspice/allspice.jar";
 
+  /** Default location of the report_cli binary in the federal image. */
+  static final String DEFAULT_REPORT_CLI_PATH = "/opt/allspice/report_cli";
+
   /** Override via env var for non-standard layouts (e.g. local dev). */
   private static final String ENV_JAR_PATH = "ALLSPICE_JAR";
+  private static final String ENV_REPORT_CLI_PATH = "REPORT_CLI_PATH";
 
   private static final String BUILDER_CLASS = "io.spicelabs.allspice.cli.AllspiceBuilder";
   private static final String EXCEPTION_CLASS = "io.spicelabs.allspice.cli.AllspiceException";
 
   private static AllspiceLoader instance;
   private static String testJarPath;
+  private static String testReportCliPath;
 
   private final URLClassLoader classLoader;
   private final Object builder;
@@ -105,9 +110,27 @@ public final class AllspiceLoader {
   /** Test hook: override the JAR path (bypasses env var + default). */
   static void setTestJarPath(String path) { testJarPath = path; }
 
+  /**
+   * Probes whether the report_cli binary exists (federal image only).
+   */
+  public static boolean isReportCliAvailable() {
+    return new File(resolveReportCliPath()).isFile();
+  }
+
+  static String resolveReportCliPath() {
+    if (testReportCliPath != null) return testReportCliPath;
+    String env = System.getenv(ENV_REPORT_CLI_PATH);
+    if (env != null && !env.isBlank()) return env;
+    return DEFAULT_REPORT_CLI_PATH;
+  }
+
+  /** Test hook: override the report_cli path. */
+  static void setTestReportCliPath(String path) { testReportCliPath = path; }
+
   /** Test hook: clear the override and cached singleton. */
   static void reset() {
     testJarPath = null;
+    testReportCliPath = null;
     instance = null;
   }
 
