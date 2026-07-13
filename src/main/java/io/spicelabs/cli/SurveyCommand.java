@@ -17,6 +17,8 @@ package io.spicelabs.cli;
 
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Spec;
 
 /**
  * Parent command for all survey types.
@@ -42,9 +44,19 @@ import picocli.CommandLine.Command;
 )
 public class SurveyCommand implements Runnable {
 
+  @Spec
+  CommandSpec spec;
+
   @Override
   public void run() {
-    // No subtype given — print help
-    new CommandLine(this).usage(System.out);
+    // No subtype given — print help. Use the executing CommandLine (which
+    // has dynamically-added subcommands like `static`) rather than creating
+    // a new one that would lose them.
+    CommandLine cmd = spec != null ? spec.commandLine() : null;
+    if (cmd != null) {
+      cmd.usage(System.out);
+    } else {
+      new CommandLine(this).usage(System.out);
+    }
   }
 }
