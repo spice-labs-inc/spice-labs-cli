@@ -49,7 +49,7 @@
         <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
 
         <!-- The spice runtime classpath (picocli, goatrodeo_3, ginger-j, slf4j, logback,
-             java-jwt, commons-lang3, spice-plugin-api) is defined once in the spice-build
+             java-jwt, commons-lang3, spice-plugin-api) is defined once in the qahwa
              peer's `spice-runtime` aggregator POM, published in lock-step at this same
              version by this repo's CI (consumed below via ${project.version}). -->
         <ancho.version>0.0.5</ancho.version>
@@ -62,7 +62,7 @@
     </properties>
 
     <dependencies>
-        <!-- The whole spice runtime classpath, defined once in the spice-build peer.
+        <!-- The whole spice runtime classpath, defined once in the qahwa peer.
              type=pom pulls its dependencies (picocli, goatrodeo_3, ginger-j, slf4j,
              logback, java-jwt, commons-lang3, spice-plugin-api) transitively; the shade
              plugin bundles them. Plugins depend on this same artifact as `provided`. -->

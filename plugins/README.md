@@ -30,7 +30,7 @@ java -cp "spice-labs-cli.jar:plugins/*" io.spicelabs.cli.SpiceLabsCLI ...
 so each plugin jar keeps its own `META-INF/services/...SpiceCommandPlugin` and is
 discovered. Plugins should depend on `io.spicelabs:spice-plugin-api` and on any
 CLI-bundled libraries (goatrodeo, ginger-j, …) as **provided** scope, so those are not
-duplicated here — version convergence is governed by the `spice-build` peer.
+duplicated here — version convergence is governed by the `qahwa` peer.
 
 ## Public vs internal builds
 

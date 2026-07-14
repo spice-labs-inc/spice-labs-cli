@@ -53,7 +53,7 @@ into a top-level **`dist/`** directory:
   `ginger-j`, the Scala library, SLF4J/Logback, picocli and `spice-plugin-api` are available
   at compile time but excluded from `dist/` — a single copy of each then lives on the runtime
   classpath. Version convergence across the CLI and its plugins is governed by the
-  [`spice-build`](https://github.com/spice-labs-inc/spice-build) peer.
+  [`qahwa`](https://github.com/spice-labs-inc/qahwa) peer.
 
 See [`sample/hello-plugin/pom.xml`](../sample/hello-plugin/pom.xml) for the smallest possible
 build, and `allspice`'s `spicePlugin` module for one that bundles real dependencies.
