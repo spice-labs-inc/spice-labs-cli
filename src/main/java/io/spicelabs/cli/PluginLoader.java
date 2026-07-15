@@ -68,6 +68,22 @@ public final class PluginLoader {
 
         CommandLine sub = toCommandLine(command);
         String name = sub.getCommandName();
+        String parent = plugin.parent();
+        if (parent != null && !parent.isBlank()) {
+          // Mount under a named parent subcommand (e.g. `survey`).
+          CommandLine parentCmd = cmd.getSubcommands().get(parent);
+          if (parentCmd == null) {
+            log.warn("Skipping plugin '{}': parent command '{}' not found", id, parent);
+            continue;
+          }
+          if (parentCmd.getSubcommands().containsKey(name)) {
+            log.warn("Skipping plugin '{}': '{}' already exists under '{}'", id, name, parent);
+            continue;
+          }
+          parentCmd.addSubcommand(name, sub);
+          log.debug("Registered plugin '{}' as '{} {}'", id, parent, name);
+          continue;
+        }
         if (cmd.getSubcommands().containsKey(name)) {
           log.warn("Skipping plugin '{}': subcommand name '{}' is already registered", id, name);
           continue;
