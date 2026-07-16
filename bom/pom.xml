@@ -1,0 +1,600 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <name>Spice Labs BOM</name>
+    <description>Canonical dependency versions shared across the Spice Labs JVM projects
+        (spice-labs-cli, goatrodeo, sassafras and allspice). Import this BOM to inherit a
+        single, converged set of versions.</description>
+
+    <!-- Standalone BOM: intentionally NOT part of the spice-labs-cli reactor, and released
+         independently of the CLI (see .github/workflows/publish-bom.yml, tag bom-v*). -->
+    <groupId>io.spicelabs</groupId>
+    <artifactId>spice-bom</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <url>https://github.com/spice-labs-inc/spice-labs-cli</url>
+
+    <organization>
+        <name>Spice Labs, Inc.</name>
+        <url>https://github.com/spice-labs-inc</url>
+    </organization>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <url>https://github.com/spice-labs-inc/spice-labs-cli</url>
+        <connection>scm:git:git://github.com/spice-labs-inc/spice-labs-cli.git</connection>
+        <developerConnection>scm:git:ssh://github.com/spice-labs-inc/spice-labs-cli.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+
+    <developers>
+        <developer>
+            <name>Spice Labs, Inc.</name>
+            <organization>Spice Labs, Inc.</organization>
+            <organizationUrl>https://github.com/spice-labs-inc</organizationUrl>
+        </developer>
+    </developers>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Spice Labs libraries -->
+        <goatrodeo.version>0.16.1</goatrodeo.version>
+        <ginger-j.version>0.4.0</ginger-j.version>
+        <coordinates.version>1.1.0</coordinates.version>
+        <ancho.version>0.0.5</ancho.version>
+        <!-- The plugin SPI is published in lock-step with the spice CLI; keep this pinned
+             to the CLI release consumers target. -->
+        <spice-plugin-api.version>1.4.3</spice-plugin-api.version>
+        <cilantro.version>0.1.17</cilantro.version>
+        <baharat.version>0.0.4</baharat.version>
+        <annatto.version>0.1.0</annatto.version>
+        <saffron.version>0.2.3</saffron.version>
+
+        <!-- Scala modules (Scala 3 `_3` artifacts) -->
+        <scala-xml.version>2.3.0</scala-xml.version>
+        <scala-parallel-collections.version>1.2.0</scala-parallel-collections.version>
+        <scala-logging.version>3.9.4</scala-logging.version>
+        <scala-nameof.version>5.0.0</scala-nameof.version>
+        <scopt.version>4.1.0</scopt.version>
+        <json4s.version>4.0.7</json4s.version>
+        <borer.version>1.14.1</borer.version>
+
+        <!-- CLI / logging -->
+        <picocli.version>4.7.6</picocli.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <logback.version>1.5.18</logback.version>
+        <logstash.version>8.0</logstash.version>
+
+        <!-- Bytecode / static analysis -->
+        <sootup.version>2.0.0</sootup.version>
+        <asm.version>9.8</asm.version>
+        <bcel.version>6.11.0</bcel.version>
+        <tika.version>3.2.3</tika.version>
+        <isofilereader.version>0.6.1</isofilereader.version>
+
+        <!-- Security / BouncyCastle -->
+        <bouncycastle.version>1.80</bouncycastle.version>
+        <java-jwt.version>4.4.0</java-jwt.version>
+
+        <!-- JSON / YAML / commons -->
+        <jackson.version>2.17.2</jackson.version>
+        <snakeyaml.version>2.3</snakeyaml.version>
+        <commons-lang3.version>3.19.0</commons-lang3.version>
+        <commons-io.version>2.18.0</commons-io.version>
+        <commons-compress.version>1.28.0</commons-compress.version>
+        <packageurl.version>1.5.0</packageurl.version>
+        <json-schema-validator.version>1.3.3</json-schema-validator.version>
+
+        <!-- Cloud / secrets / misc -->
+        <aws-sdk.version>2.34.0</aws-sdk.version>
+        <vault-driver.version>6.2.0</vault-driver.version>
+        <gcp-secretmanager.version>2.64.0</gcp-secretmanager.version>
+        <maven-model.version>3.9.9</maven-model.version>
+        <jgit.version>6.8.0.202311291450-r</jgit.version>
+        <jsoup.version>1.18.1</jsoup.version>
+        <tomlj.version>1.1.1</tomlj.version>
+        <xz.version>1.12</xz.version>
+        <lanterna.version>3.1.1</lanterna.version>
+
+        <!-- Test -->
+        <junit.jupiter.version>5.13.1</junit.jupiter.version>
+        <assertj.version>3.26.3</assertj.version>
+        <jqwik.version>1.9.1</jqwik.version>
+        <mockito.version>5.14.2</mockito.version>
+        <mockwebserver.version>4.12.0</mockwebserver.version>
+        <munit.version>1.1.0</munit.version>
+        <scalacheck.version>1.18.1</scalacheck.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- ===================== Spice Labs libraries ===================== -->
+            <!-- goatrodeo is published with the Scala 3 `_3` suffix -->
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>goatrodeo_3</artifactId>
+                <version>${goatrodeo.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>ginger-j</artifactId>
+                <version>${ginger-j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>coordinates</artifactId>
+                <version>${coordinates.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>ancho</artifactId>
+                <version>${ancho.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>spice-plugin-api</artifactId>
+                <version>${spice-plugin-api.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>cilantro_3</artifactId>
+                <version>${cilantro.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>baharat</artifactId>
+                <version>${baharat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>annatto</artifactId>
+                <version>${annatto.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>saffron</artifactId>
+                <version>${saffron.version}</version>
+            </dependency>
+
+            <!-- ===================== Scala 3 modules ===================== -->
+            <dependency>
+                <groupId>org.scala-lang.modules</groupId>
+                <artifactId>scala-xml_3</artifactId>
+                <version>${scala-xml.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.scala-lang.modules</groupId>
+                <artifactId>scala-parallel-collections_3</artifactId>
+                <version>${scala-parallel-collections.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.typesafe.scala-logging</groupId>
+                <artifactId>scala-logging_3</artifactId>
+                <version>${scala-logging.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.dwickern</groupId>
+                <artifactId>scala-nameof_3</artifactId>
+                <version>${scala-nameof.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.scopt</groupId>
+                <artifactId>scopt_3</artifactId>
+                <version>${scopt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.json4s</groupId>
+                <artifactId>json4s-native_3</artifactId>
+                <version>${json4s.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.json4s</groupId>
+                <artifactId>json4s-ext_3</artifactId>
+                <version>${json4s.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.bullet</groupId>
+                <artifactId>borer-derivation_3</artifactId>
+                <version>${borer.version}</version>
+            </dependency>
+
+            <!-- ===================== CLI / logging ===================== -->
+            <dependency>
+                <groupId>info.picocli</groupId>
+                <artifactId>picocli</artifactId>
+                <version>${picocli.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>info.picocli</groupId>
+                <artifactId>picocli-codegen</artifactId>
+                <version>${picocli.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.logstash.logback</groupId>
+                <artifactId>logstash-logback-encoder</artifactId>
+                <version>${logstash.version}</version>
+            </dependency>
+
+            <!-- ===================== Bytecode / static analysis ===================== -->
+            <dependency>
+                <groupId>org.soot-oss</groupId>
+                <artifactId>sootup.java.bytecode.frontend</artifactId>
+                <version>${sootup.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.soot-oss</groupId>
+                <artifactId>sootup.java.core</artifactId>
+                <version>${sootup.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.soot-oss</groupId>
+                <artifactId>sootup.callgraph</artifactId>
+                <version>${sootup.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.soot-oss</groupId>
+                <artifactId>sootup.analysis.intraprocedural</artifactId>
+                <version>${sootup.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm</artifactId>
+                <version>${asm.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm-tree</artifactId>
+                <version>${asm.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.bcel</groupId>
+                <artifactId>bcel</artifactId>
+                <version>${bcel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-core</artifactId>
+                <version>${tika.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.palantir.isofilereader</groupId>
+                <artifactId>isofilereader</artifactId>
+                <version>${isofilereader.version}</version>
+            </dependency>
+
+            <!-- ===================== Security / BouncyCastle =====================
+                 Pin the jdk18on line and exclude the older jdk15on artifacts, matching
+                 the convention already used by goatrodeo and allspice. -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcprov-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcutil-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcpkix-jdk15on</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcutil-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcprov-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcutil-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcpkix-jdk15on</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcprov-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcutil-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcpkix-jdk15on</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpg-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcprov-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcutil-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.bouncycastle</groupId>
+                        <artifactId>bcpkix-jdk15on</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>com.auth0</groupId>
+                <artifactId>java-jwt</artifactId>
+                <version>${java-jwt.version}</version>
+            </dependency>
+
+            <!-- ===================== JSON / YAML / commons ===================== -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.datatype</groupId>
+                <artifactId>jackson-datatype-jsr310</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.datatype</groupId>
+                <artifactId>jackson-datatype-jdk8</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.yaml</groupId>
+                <artifactId>snakeyaml</artifactId>
+                <version>${snakeyaml.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>${commons-io.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons-compress.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.package-url</groupId>
+                <artifactId>packageurl-java</artifactId>
+                <version>${packageurl.version}</version>
+            </dependency>
+
+            <!-- ===================== Cloud / secrets / misc ===================== -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>secretsmanager</artifactId>
+                <version>${aws-sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.jopenlibs</groupId>
+                <artifactId>vault-java-driver</artifactId>
+                <version>${vault-driver.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.cloud</groupId>
+                <artifactId>google-cloud-secretmanager</artifactId>
+                <version>${gcp-secretmanager.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-model</artifactId>
+                <version>${maven-model.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.jgit</groupId>
+                <artifactId>org.eclipse.jgit</artifactId>
+                <version>${jgit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jsoup</groupId>
+                <artifactId>jsoup</artifactId>
+                <version>${jsoup.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.tomlj</groupId>
+                <artifactId>tomlj</artifactId>
+                <version>${tomlj.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.tukaani</groupId>
+                <artifactId>xz</artifactId>
+                <version>${xz.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.googlecode.lanterna</groupId>
+                <artifactId>lanterna</artifactId>
+                <version>${lanterna.version}</version>
+            </dependency>
+
+            <!-- ===================== Test ===================== -->
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.jupiter.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-api</artifactId>
+                <version>${junit.jupiter.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-engine</artifactId>
+                <version>${junit.jupiter.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-params</artifactId>
+                <version>${junit.jupiter.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.jqwik</groupId>
+                <artifactId>jqwik</artifactId>
+                <version>${jqwik.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>mockwebserver</artifactId>
+                <version>${mockwebserver.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.scalameta</groupId>
+                <artifactId>munit_3</artifactId>
+                <version>${munit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.scalameta</groupId>
+                <artifactId>munit-scalacheck_3</artifactId>
+                <version>${munit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.scalacheck</groupId>
+                <artifactId>scalacheck_3</artifactId>
+                <version>${scalacheck.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <profiles>
+        <profile>
+            <id>github</id>
+            <distributionManagement>
+                <repository>
+                    <id>github</id>
+                    <name>GitHub Packages</name>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli</url>
+                </repository>
+            </distributionManagement>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.7</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                            <passphrase>${env.GPG_PASSPHRASE}</passphrase>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>maven-central</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.8.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <checksums>all</checksums>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.7</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                            <passphrase>${env.GPG_PASSPHRASE}</passphrase>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
