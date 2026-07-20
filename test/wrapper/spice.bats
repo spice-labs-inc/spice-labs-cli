@@ -31,6 +31,14 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_TMPDIR"
+  # Remove marker file left by the default-output test
+  rm -f "$PWD/default-marker.txt"
+}
+
+# Remove stale enterprise/federal tags so they don't leak into local dev
+teardown_file() {
+  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest 2>/dev/null || true
+  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest 2>/dev/null || true
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -123,6 +131,67 @@ refute_arg() {
   assert_arg "--help"
 }
 
+@test "--features enterprise switches to enterprise image and strips flag" {
+  # Unset SPICE_IMAGE so --features can select the enterprise image.
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+
+  run "$WRAPPER" --features enterprise survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  refute_arg "--features"
+  refute_arg "enterprise"
+}
+
+@test "--features=enterprise switches to enterprise image and strips flag" {
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+
+  run "$WRAPPER" --features=enterprise survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  refute_arg "--features"
+  refute_arg "enterprise"
+}
+
+@test "SPICE_IMAGE env overrides --features enterprise" {
+  SPICE_IMAGE="spice-wrapper-test" run "$WRAPPER" --features enterprise survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+}
+
+@test "--features federal switches to federal image and strips flag" {
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest"
+
+  run "$WRAPPER" --features federal survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  refute_arg "--features"
+  refute_arg "federal"
+}
+
+@test "--features=federal switches to federal image and strips flag" {
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest"
+
+  run "$WRAPPER" --features=federal survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+  assert_arg "myapp"
+  refute_arg "--features"
+  refute_arg "federal"
+}
+
 # ── Output directory ─────────────────────────────────────────────────────────
 
 @test "--output (space) creates dir and mounts volume" {
@@ -159,21 +228,14 @@ refute_arg() {
 
 @test "default output dir mounted when --output omitted" {
   # Reproduces bug #530
-  local default_dir="$HOME/.spicelabs/surveyor"
-  # Clean up before test in case it exists from a prior run
-  rm -rf "$default_dir"
-
+  # When --output is omitted, the wrapper mounts the current directory at
+  # /mnt/output in the container. The container writes to its internal
+  # /mnt/output path; the wrapper itself does not concern itself with that path.
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
-  # The wrapper must create the directory on the host
-  [ -d "$default_dir" ]
-  # On standard Docker, the container writes a marker file.
-  # On snap/rootless Docker with --user, the marker write may fail
-  # due to uid mapping — check container output as fallback.
-  [ -f "$default_dir/default-marker.txt" ] || \
-    echo "$output" | grep -q "WROTE:.*default-marker.txt" || \
-    echo "$output" | grep -q "/root/.spicelabs/surveyor" || {
-    echo "default output dir not mounted into container"
+  # The marker file must appear in the current directory on the host.
+  [ -f "$PWD/default-marker.txt" ] || {
+    echo "default output not written to host current directory"
     return 1
   }
 }

@@ -38,9 +38,9 @@ for arg in "$@"; do
 done
 
 # Write to the default output location inside the container.
-# The real CLI image runs as root, so the default path is /root/.
-# The wrapper mounts the host dir to /root/.spicelabs/surveyor.
-default_out="/root/.spicelabs/surveyor"
+# The wrapper mounts the CLI's default host output directory at /mnt/output when
+# --output is omitted, so the default output path is /mnt/output.
+default_out="/mnt/output"
 mkdir -p "$default_out" 2>/dev/null
 echo "DEFAULT" > "$default_out/default-marker.txt" 2>/dev/null && echo "WROTE:${default_out}/default-marker.txt"
 

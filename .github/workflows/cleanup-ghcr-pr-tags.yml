@@ -1,0 +1,98 @@
+name: Cleanup GHCR PR Tags
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+  workflow_dispatch:
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  cleanup:
+    name: Prune stale PR tags
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Delete old PR tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          OWNER="spice-labs-inc"
+          REPO="spice-labs-cli"
+          PR_CUTOFF_DAYS=7
+          SHA_CUTOFF_DAYS=30
+          PR_CUTOFF=$(date -d "${PR_CUTOFF_DAYS} days ago" -u +%Y-%m-%dT%H:%M:%SZ)
+          SHA_CUTOFF=$(date -d "${SHA_CUTOFF_DAYS} days ago" -u +%Y-%m-%dT%H:%M:%SZ)
+
+          delete_old_versions() {
+            local package_name=$1
+            local scope_type=$2  # "repo" or "org"
+
+            echo "Checking package: ${package_name}"
+
+            local api_path
+            if [ "$scope_type" == "repo" ]; then
+              api_path="repos/${OWNER}/${REPO}/packages/container/${package_name}/versions"
+            else
+              api_path="orgs/${OWNER}/packages/container/${package_name}/versions"
+            fi
+
+            # Delete versions that have no permanent (vX.Y.Z) tag, once the
+            # longest-lived ephemeral tag on them has aged out:
+            #   pr-/deps-/cache-deps-  ->  PR_CUTOFF_DAYS (7 days)
+            #   sha-                   ->  SHA_CUTOFF_DAYS (30 days)
+            # Only vX.Y.Z is permanent. GHCR has no tag-level delete, so a
+            # version's tags live or die together — a version that shares a pr-
+            # tag with a sha- tag is dropped only once the 30-day sha- window
+            # also elapses (the longer lifetime wins). Handle no-tag versions
+            # via // [].
+            local versions
+            if ! versions=$(gh api "${api_path}?per_page=100" \
+              --jq '.[] | select((.metadata.container.tags // [] | length) > 0) | select((.metadata.container.tags // [] | any(.[]; test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) | not) | select(.updated_at < (if (.metadata.container.tags // [] | any(.[]; test("^sha-"))) then "'"${SHA_CUTOFF}"'" else "'"${PR_CUTOFF}"'" end)) | .id'); then
+              echo "  Skipping ${package_name}: unable to list versions (package missing or token lacks access)"
+              return
+            fi
+
+            if [ -z "$versions" ]; then
+              echo "  No old ephemeral tags to delete"
+              return
+            fi
+
+            for version_id in $versions; do
+              echo "  Deleting version ${version_id}..."
+              gh api --method DELETE "${api_path}/${version_id}"
+            done
+          }
+
+          # spice-labs-cli is published under the repo scope (ghcr.io/spice-labs-inc/spice-labs-cli)
+          # and its deps cache image under ghcr.io/spice-labs-inc/spice-labs-cli/cache.
+          # The enterprise and federal images (org scope) also carry
+          # ephemeral pr-/sha- tags from PR builds, so they need pruning too.
+          delete_old_versions "spice-labs-cli" "repo"
+          delete_old_versions "spice-labs-cli%2Fcache" "repo"
+          delete_old_versions "spice-labs-cli-enterprise" "org"
+          delete_old_versions "spice-labs-cli-federal" "org"
+
+          echo "Cleanup complete"
+
+  export-otel:
+    name: Export OpenTelemetry traces
+    needs:
+      - cleanup
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      checks: read
+    steps:
+      - name: Export workflow traces to Honeycomb
+        uses: dash0hq/otel-cicd-action@v4
+        with:
+          otlpEndpoint: "grpc://api.eu1.honeycomb.io:443/"
+          otlpHeaders: "x-honeycomb-team=${{ secrets.HONEYCOMB_API_KEY }},x-honeycomb-dataset=build"
+          githubToken: "${{ secrets.GITHUB_TOKEN }}"

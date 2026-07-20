@@ -1,0 +1,504 @@
+name: Build and Test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  OWNER: spice-labs-inc
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  detect-changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      force: ${{ steps.build-all.outputs.force }}
+      code: ${{ steps.build-all.outputs.force == 'true' || steps.changes.outputs.code == 'true' }}
+      spice: ${{ steps.build-all.outputs.force == 'true' || steps.changes.outputs.spice == 'true' }}
+      # Space-separated list of environments to auto-deploy to once images are
+      # built, parsed from a `+deploy:` line in the PR body. Empty when absent.
+      deploy_envs: ${{ steps.deploy.outputs.deploy_envs }}
+    steps:
+      - name: Detect changes
+        uses: dorny/paths-filter@v4
+        id: changes
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'pom.xml'
+              - 'Dockerfile'
+              - 'Dockerfile.enterprise'
+              - 'Dockerfile.federal'
+              - '.dockerignore'
+              - 'spice'
+              - 'spice.ps1'
+              - 'install.sh'
+              - 'install.ps1'
+              - 'completions/**'
+              - '.github/workflows/build.yml'
+              - '.github/actions/**'
+            spice:
+              - 'src/**'
+              - 'pom.xml'
+              - 'Dockerfile'
+              - 'Dockerfile.enterprise'
+              - 'Dockerfile.federal'
+              - '.dockerignore'
+              - 'spice'
+              - 'spice.ps1'
+              - '.github/workflows/build.yml'
+
+      - name: Detect +build-all trigger
+        id: build-all
+        shell: bash
+        env:
+          # The PR description is the trigger surface: ending the body with
+          # `+build-all` forces every image to build, ignoring path filters.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          body="${PR_BODY:-}"
+          # Trim trailing whitespace so a trailing newline doesn't defeat "ends with".
+          body="${body%"${body##*[![:space:]]}"}"
+          if [[ "${body}" == *"+build-all" ]]; then
+            echo "force=true" >> "$GITHUB_OUTPUT"
+            echo "Building all images (PR body ends with +build-all)"
+          else
+            echo "force=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect +deploy trigger
+        id: deploy
+        shell: bash
+        env:
+          # A `+deploy: <env>[, <env>...]` line in the PR body auto-deploys the
+          # freshly built pr-<N> images to those environments once the build
+          # finishes. prod is intentionally not accepted here.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          allowed="junkyard dev astewart staging"
+          envs=""
+          line=$(printf '%s\n' "${PR_BODY:-}" | grep -iE '^[[:space:]]*\+deploy:' | head -n1 || true)
+          if [ -n "${line}" ]; then
+            for raw in ${line#*:}; do
+              env=$(printf '%s' "${raw//,/}" | tr '[:upper:]' '[:lower:]')
+              [ -n "${env}" ] || continue
+              if printf '%s\n' ${allowed} | grep -qx "${env}"; then
+                case " ${envs} " in *" ${env} "*) ;; *) envs="${envs:+${envs} }${env}" ;; esac
+              else
+                echo "Ignoring unsupported deploy env: ${env}" >&2
+              fi
+            done
+          fi
+          echo "deploy_envs=${envs}" >> "$GITHUB_OUTPUT"
+          if [ -n "${envs}" ]; then
+            echo "Will auto-deploy to: ${envs}"
+          else
+            echo "No +deploy annotation found"
+          fi
+
+  build-deps:
+    name: Build and push dependency cache
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push deps cache
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          target: deps
+          push: true
+          tags: ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository }}/cache:cache-deps
+          cache-to: |
+            type=registry,ref=ghcr.io/${{ github.repository }}/cache:cache-deps,mode=max
+
+  format:
+    name: Format and lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v6
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Run ShellCheck on shell scripts
+        run: |
+          shellcheck install.sh
+          shellcheck test/wrapper/entrypoint.sh
+          shellcheck spice
+
+      - name: Run PSScriptAnalyzer on PowerShell scripts
+        shell: pwsh
+        run: |
+          Invoke-ScriptAnalyzer -Path ./spice.ps1 -Severity Error -EnableExit
+          Invoke-ScriptAnalyzer -Path ./install.ps1 -Severity Error -EnableExit
+
+  test:
+    name: Maven test
+    needs: [detect-changes, build-deps]
+    if: needs.detect-changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Run Tests
+        env:
+          GH_USERNAME_SG: SpicyGrzl
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+        run: |
+          # Build a throwaway intermediate image that COPYs the source in
+          # (instead of -v mounting the workspace) so Maven doesn't leave
+          # root-owned files on the runner. The deps cache image already has
+          # the Maven local repo warm; the settings.xml with GitHub Packages
+          # auth is written from env at run time so the private Spice deps
+          # (goatrodeo_3, ginger-j, ancho) resolve.
+          cat <<'EOF' | docker buildx build --load -t spice-test -f - .
+          FROM ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
+          WORKDIR /workspace
+          COPY . .
+          RUN mvn -B -ntp -DskipTests install -f shared/plugin-api/pom.xml \
+           && mvn -B -ntp install -f bom/pom.xml
+          ENTRYPOINT ["sh", "-c"]
+          EOF
+          docker run --rm \
+            -e GH_USERNAME_SG \
+            -e GH_TOKEN \
+            -e MAVEN_CENTRAL_USERNAME \
+            -e MAVEN_CENTRAL_PASSWORD \
+            spice-test '
+              mkdir -p ~/.m2
+              cat > ~/.m2/settings.xml <<SXML
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server><id>github-spice-labs-goatrodeo</id><username>'"$GH_USERNAME_SG"'</username><password>'"$GH_TOKEN"'</password></server>
+              <server><id>github-spice-labs-ginger</id><username>'"$GH_USERNAME_SG"'</username><password>'"$GH_TOKEN"'</password></server>
+              <server><id>github</id><username>'"$GH_USERNAME_SG"'</username><password>'"$GH_TOKEN"'</password></server>
+              <server><id>central</id><username>'"$MAVEN_CENTRAL_USERNAME"'</username><password>'"$MAVEN_CENTRAL_PASSWORD"'</password></server>
+            </servers>
+            <profiles>
+              <profile>
+                <id>default-repos</id>
+                <repositories>
+                  <repository><id>github-spice-labs-goatrodeo</id><url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url></repository>
+                  <repository><id>github-spice-labs-ginger</id><url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url></repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles><activeProfile>default-repos</activeProfile></activeProfiles>
+          </settings>
+          SXML
+              mvn -B -ntp verify
+            '
+
+  build-image-spice:
+    name: Build and publish spice image
+    needs: [detect-changes, build-deps]
+    if: needs.detect-changes.outputs.spice == 'true'
+    concurrency:
+      group: build-image-${{ github.event.pull_request.number }}-spice
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+      artifact-metadata: write
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v6
+
+      - name: Publish spice image
+        uses: spice-labs-inc/action-publish-image@v2.2
+        with:
+          image: ghcr.io/${{ github.repository }}
+          target: spice
+          build-contexts: |
+            deps=docker-image://ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
+          tags: |
+            ghcr.io/${{ github.repository }}:pr-${{ github.event.number }}
+          push: true
+          git-sha: ${{ github.sha }}
+          registry-password: ${{ github.token }}
+
+  build-image-enterprise:
+    name: Build and publish enterprise image
+    needs: [detect-changes, build-image-spice]
+    # The enterprise image layers the spice wrapper onto the latest released
+    # allspice image, so it only needs the spice source (Dockerfile.enterprise
+    # + wrapper scripts), not the deps cache. Gate on the same `spice` flag so
+    # it builds alongside the OSS image on any code change.
+    if: needs.detect-changes.outputs.spice == 'true'
+    concurrency:
+      group: build-image-${{ github.event.pull_request.number }}-enterprise
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+      artifact-metadata: write
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          # The GITHUB_TOKEN has packages:write for this repo and can read
+          # org-scoped internal packages (allspice). The PAT was previously
+          # used but lacks write:packages for pushing the enterprise image.
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Resolve allspice base tag
+        id: allspice
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          # Prefer a matching pr-<N> allspice image (a cross-repo PR pair) so a
+          # coordinated allspice+spice change can be tested together. Then look
+          # at the actual image tags published to GHCR for the latest semver
+          # release. Fall back to the last known published image.
+          ALLSPICE="ghcr.io/${OWNER}/allspice"
+
+          try_candidate() {
+            local tag="$1"
+            [ -n "${tag}" ] || return 1
+            if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
+              echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+              echo "Using allspice base: ${ALLSPICE}:${tag}"
+              exit 0
+            fi
+            return 1
+          }
+
+          try_candidate "pr-${PR_NUMBER}"
+
+          latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
+            --jq '.[] | .tags[]' 2>/dev/null \
+            | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1 || true)
+          try_candidate "${latest_semver}"
+
+          try_candidate "pr-2"
+
+          echo "No allspice base image found (tried pr-${PR_NUMBER}, latest semver image, pr-2)" >&2
+          exit 1
+
+      - name: Build and publish enterprise image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.enterprise
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
+            SPICE_TAG=pr-${{ github.event.number }}
+            ALLSPICE_IMAGE=ghcr.io/${{ env.OWNER }}/allspice
+            ALLSPICE_TAG=${{ steps.allspice.outputs.tag }}
+          tags: |
+            ghcr.io/${{ env.OWNER }}/spice-labs-cli-enterprise:pr-${{ github.event.number }}
+
+  build-image-federal:
+    name: Build and publish federal image
+    needs: [detect-changes, build-image-spice]
+    # The federal image extends the enterprise image with report_cli and the
+    # rogues gallery for CBOM generation. Same allspice base as enterprise.
+    if: needs.detect-changes.outputs.spice == 'true'
+    concurrency:
+      group: build-image-${{ github.event.pull_request.number }}-federal
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+      artifact-metadata: write
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Resolve allspice base tag
+        id: allspice
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          # Prefer a matching pr-<N> allspice image (a cross-repo PR pair) so a
+          # coordinated allspice+spice change can be tested together. Then look
+          # at the actual image tags published to GHCR for the latest semver
+          # release. Fall back to the last known published image.
+          ALLSPICE="ghcr.io/${OWNER}/allspice"
+
+          try_candidate() {
+            local tag="$1"
+            [ -n "${tag}" ] || return 1
+            if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
+              echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+              echo "Using allspice base: ${ALLSPICE}:${tag}"
+              exit 0
+            fi
+            return 1
+          }
+
+          try_candidate "pr-${PR_NUMBER}"
+
+          latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
+            --jq '.[] | .tags[]' 2>/dev/null \
+            | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1 || true)
+          try_candidate "${latest_semver}"
+
+          try_candidate "pr-9"
+
+          echo "No allspice base image found (tried pr-${PR_NUMBER}, latest semver image, pr-9)" >&2
+          exit 1
+
+      - name: Build and publish federal image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.federal
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
+            SPICE_TAG=pr-${{ github.event.number }}
+            ALLSPICE_IMAGE=ghcr.io/${{ env.OWNER }}/allspice
+            ALLSPICE_TAG=${{ steps.allspice.outputs.tag }}
+          tags: |
+            ghcr.io/${{ env.OWNER }}/spice-labs-cli-federal:pr-${{ github.event.number }}
+
+  deploy-on-annotation:
+    name: Auto-deploy to ${{ needs.detect-changes.outputs.deploy_envs }}
+    needs:
+      - detect-changes
+      - build-image-spice
+      - build-image-enterprise
+      - build-image-federal
+    # Fire once the images are built (or skipped) and none failed. Each
+    # environment dispatches publish.yml, which retags/deploys the pr-<N>
+    # images exactly as a manual dispatch does today.
+    if: |
+      !cancelled() &&
+      needs.detect-changes.outputs.deploy_envs != '' &&
+      needs.build-image-spice.result != 'failure' &&
+      needs.build-image-enterprise.result != 'failure'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Dispatch publish.yml per environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HEAD_REF: ${{ github.head_ref }}
+          DEPLOY_ENVS: ${{ needs.detect-changes.outputs.deploy_envs }}
+        run: |
+          set -euo pipefail
+          for env in ${DEPLOY_ENVS}; do
+            echo "Dispatching publish.yml for ${env} on ${HEAD_REF}"
+            gh workflow run publish.yml \
+              --repo "${GITHUB_REPOSITORY}" \
+              --ref "${HEAD_REF}" \
+              -f environment="${env}"
+          done
+
+  export-otel:
+    name: Export OpenTelemetry traces
+    needs:
+      - detect-changes
+      - build-deps
+      - format
+      - test
+      - build-image-spice
+      - build-image-enterprise
+      - deploy-on-annotation
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      checks: read
+    steps:
+      - name: Export workflow traces to Honeycomb
+        uses: dash0hq/otel-cicd-action@v4
+        with:
+          otlpEndpoint: "grpc://api.eu1.honeycomb.io:443/"
+          otlpHeaders: "x-honeycomb-team=${{ secrets.HONEYCOMB_API_KEY }},x-honeycomb-dataset=build"
+          githubToken: "${{ secrets.GITHUB_TOKEN }}"
+
+# Requirements for builder machine
+# docker jq curl gh shellcheck powershell
