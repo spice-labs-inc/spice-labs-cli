@@ -12,7 +12,7 @@
          independently of the CLI (see .github/workflows/publish-bom.yml, tag bom-v*). -->
     <groupId>io.spicelabs</groupId>
     <artifactId>spice-bom</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <url>https://github.com/spice-labs-inc/spice-labs-cli</url>
 
@@ -52,9 +52,9 @@
         <ginger-j.version>0.4.0</ginger-j.version>
         <coordinates.version>1.1.0</coordinates.version>
         <ancho.version>0.0.5</ancho.version>
-        <!-- The plugin SPI is published in lock-step with the spice CLI; keep this pinned
-             to the CLI release consumers target. -->
-        <spice-plugin-api.version>1.4.3</spice-plugin-api.version>
+        <!-- The plugin SPI (shared/plugin-api in this repo) is versioned independently of the
+             CLI and released alongside this BOM via publish-bom.yml. -->
+        <spice-plugin-api.version>1.0.0-SNAPSHOT</spice-plugin-api.version>
         <cilantro.version>0.1.17</cilantro.version>
         <baharat.version>0.0.4</baharat.version>
         <annatto.version>0.1.0</annatto.version>

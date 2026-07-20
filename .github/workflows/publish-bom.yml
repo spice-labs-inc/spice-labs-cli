@@ -1,8 +1,10 @@
 name: Publish the Spice Labs BOM
 
-# The BOM (bom/pom.xml, io.spicelabs:spice-bom) is a standalone artifact that versions
-# and releases independently of the CLI. It ships on its own tag, `bom-v<x.y.z>`, so a
-# BOM release never has to be entangled with a `v<x.y.z>` CLI release.
+# The BOM (bom/pom.xml, io.spicelabs:spice-bom) is a standalone artifact that versions and
+# releases independently of the CLI *and* of spice-plugin-api. It ships on its own tag,
+# `bom-v<x.y.z>` (see RELEASING.md for the version-bump rules). The BOM references a
+# released spice-plugin-api (published separately by publish-plugin-api.yml), so that
+# plugin-api release must precede the BOM release.
 on:
   push:
     tags:
@@ -73,8 +75,20 @@ jobs:
         run: |
           echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
 
-      - name: Set BOM version from tag
-        run: mvn --batch-mode -f bom/pom.xml versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
+      - name: Resolve and verify the released plugin-api version
+        # The released BOM must reference a released spice-plugin-api, not a SNAPSHOT. Take
+        # the BOM's managed version, strip -SNAPSHOT, and confirm it is already published
+        # (release plugin-api first: tag plugin-api-v<x.y.z>).
+        run: |
+          PLUGIN_API_SNAP="$(mvn --batch-mode -f bom/pom.xml help:evaluate -Dexpression=spice-plugin-api.version -q -DforceStdout)"
+          PLUGIN_API_VERSION="${PLUGIN_API_SNAP%-SNAPSHOT}"
+          echo "PLUGIN_API_VERSION=${PLUGIN_API_VERSION}" >> "$GITHUB_ENV"
+          mvn --batch-mode dependency:get "-Dartifact=io.spicelabs:spice-plugin-api:${PLUGIN_API_VERSION}:pom"
+
+      - name: Set BOM version from tag and pin plugin-api to its release
+        run: |
+          mvn --batch-mode -f bom/pom.xml versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
+          mvn --batch-mode -f bom/pom.xml versions:set-property -Dproperty=spice-plugin-api.version "-DnewVersion=${PLUGIN_API_VERSION}" -DgenerateBackupPoms=false
 
       - name: Publish BOM to GitHub Packages
         run: mvn --batch-mode -f bom/pom.xml clean deploy -P github

@@ -15,7 +15,7 @@ if [ -z "$LOG_FILE" ]; then
   done
 fi
 if [ -n "$LOG_FILE" ]; then
-  exec > >(tee >(sed -u 's/\x1b\[[0-9;]*[a-zA-Z]//g' >> "$LOG_FILE"))
+  exec > >(tee >(sed -u 's/\x1b\[[0-9;]*[a-zA-Z]//g' >>"$LOG_FILE"))
   exec 2>&1
 fi
 
@@ -30,8 +30,8 @@ fi
 
 if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
   REMOTE_HASH=$(
-    curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null \
-      | awk '
+    curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null |
+      awk '
         BEGIN { found_spice = 0 }
         /"name":[[:space:]]*"spice"/ { found_spice = 1 }
         found_spice && /"digest":[[:space:]]*"sha256:/ {
@@ -69,6 +69,7 @@ abs_path() {
 is_subcommand() {
   case "$1" in
     survey|inventory|static|runtime|pass|decode) return 0 ;;
+    registry|discover|run|status|list|retry) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -76,36 +77,99 @@ is_subcommand() {
 # Flags that consume the next arg as a value
 is_value_flag() {
   case "$1" in
-    --output|--threads|--max-records|--chunk-size|--log-level|--log-file|--tag-json|--goat-rodeo-args|--ginger-args) return 0 ;;
-    *) return 1 ;;
+  --output | --threads | --max-records | --chunk-size | --log-level | --log-file | --tag-json | --goat-rodeo-args | --ginger-args | --features | --config | --discovery) return 0 ;;
+  *) return 1 ;;
   esac
 }
 
 SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
 IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
 TAG="${SPICE_IMAGE_TAG:-latest}"
+# If SPICE_IMAGE is set, use it verbatim (no tag appended). Otherwise build
+# the ref from the resolved IMAGE and TAG.
+if [ -n "${SPICE_IMAGE:-}" ]; then
+  IMAGE_REF="${SPICE_IMAGE}"
+else
+  IMAGE_REF="${IMAGE}:${TAG}"
+fi
+
+# ── Feature flag parsing (must happen before Docker checks / image pull) ──────
+#
+# --features enterprise  → enterprise image (allspice + sassafras)
+# --features federal      → federal image (enterprise + report_cli + rogues gallery)
+# Strip the flag so it is not forwarded to the CLI container.
+
+FEATURES=""
+PARSED_ARGS=()
+prev_arg=""
+for arg in "$@"; do
+  if [[ "$arg" == --features=* ]]; then
+    FEATURES="${arg#--features=}"
+    continue
+  elif [[ "$prev_arg" == --features ]]; then
+    FEATURES="$arg"
+    prev_arg=""
+    continue
+  elif [[ "$arg" == --features ]]; then
+    prev_arg="$arg"
+    continue
+  fi
+  PARSED_ARGS+=("$arg")
+done
+# Flush any orphaned --features value (malformed input)
+[ -n "$prev_arg" ] && FEATURES="$prev_arg" && prev_arg=""
+
+if [ -z "${SPICE_IMAGE:-}" ]; then
+  case "${FEATURES}" in
+  enterprise)
+    IMAGE_REF="ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+    ;;
+  federal)
+    IMAGE_REF="ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest"
+    ;;
+  esac
+fi
+
+# Replace "$@" with the stripped args for the rest of the script.
+set -- "${PARSED_ARGS[@]}"
 
 # ── JVM mode (no Docker, no path rewriting) ──────────────────────────────────
 
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
-  [ -f "$SPICE_LABS_CLI_JAR" ] || { echo "Missing: $SPICE_LABS_CLI_JAR"; exit 1; }
+  [ -f "$SPICE_LABS_CLI_JAR" ] || {
+    echo "Missing: $SPICE_LABS_CLI_JAR"
+    exit 1
+  }
   JVM_ARGS="${SPICE_LABS_JVM_ARGS:--XX:MaxRAMPercentage=75}"
   # Strip --log-file (handled at shell level)
   FILTERED=()
   prev=""
   for arg in "$@"; do
-    if [[ "$arg" == --log-file=* ]]; then continue
-    elif [[ "$prev" == "--log-file" ]]; then prev=""; continue
-    elif [[ "$arg" == "--log-file" ]]; then prev="$arg"; continue
-    else FILTERED+=("$arg"); prev=""; fi
+    if [[ "$arg" == --log-file=* ]]; then
+      continue
+    elif [[ "$prev" == "--log-file" ]]; then
+      prev=""
+      continue
+    elif [[ "$arg" == "--log-file" ]]; then
+      prev="$arg"
+      continue
+    else
+      FILTERED+=("$arg")
+      prev=""
+    fi
   done
+  # Plugins (e.g. the `registry` command) ride beside the jar in plugins/; add them to
+  # the classpath. -cp (not -jar) requires naming the main class explicitly.
+  PLUGINS_DIR="$(dirname "$SPICE_LABS_CLI_JAR")/plugins"
+  CP="$SPICE_LABS_CLI_JAR"
+  [ -d "$PLUGINS_DIR" ] && CP="${SPICE_LABS_CLI_JAR}:${PLUGINS_DIR}/*"
   # shellcheck disable=SC2086
-  exec java $JVM_ARGS -jar "$SPICE_LABS_CLI_JAR" ${FILTERED[@]+"${FILTERED[@]}"}
+  exec java $JVM_ARGS -cp "$CP" io.spicelabs.cli.SpiceLabsCLI ${FILTERED[@]+"${FILTERED[@]}"}
 fi
 
 # ── Docker checks ────────────────────────────────────────────────────────────
 
-if ! command -v docker &> /dev/null; then
+if ! command -v docker &>/dev/null; then
   echo "❌ Docker is not installed or not in PATH"
   echo "   Please install Docker: https://docs.docker.com/get-docker/"
   exit 1
@@ -122,10 +186,28 @@ if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" = "1" ]; then
   PULL_FLAG="--pull=never"
 elif [ "$DEBUG_MODE" = "1" ]; then
   echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
-  docker pull "${IMAGE}:${TAG}" || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+  docker pull "$IMAGE_REF" || {
+    echo "⚠️  Failed to pull $IMAGE_REF"
+    docker image inspect "$IMAGE_REF" >/dev/null 2>&1 || {
+      echo "❌ Image $IMAGE_REF not found locally either."
+      echo "   The image may not exist yet, or you may not have access."
+      echo "   For enterprise/federal features, ensure --features matches an available image."
+      exit 1
+    }
+    echo "   Using local copy."
+  }
 else
   echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
-  docker pull --quiet "${IMAGE}:${TAG}" > /dev/null 2>&1 || echo "⚠️  Failed to pull ${IMAGE}:${TAG}, using local copy if available"
+  docker pull --quiet "$IMAGE_REF" >/dev/null 2>&1 || {
+    echo "⚠️  Failed to pull $IMAGE_REF"
+    docker image inspect "$IMAGE_REF" >/dev/null 2>&1 || {
+      echo "❌ Image $IMAGE_REF not found locally either."
+      echo "   The image may not exist yet, or you may not have access."
+      echo "   For enterprise/federal features, ensure --features matches an available image."
+      exit 1
+    }
+    echo "   Using local copy."
+  }
 fi
 
 for arg in "$@"; do
@@ -164,9 +246,15 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
 
   for arg in "$@"; do
     # Strip --log-file (handled at shell level)
-    if [[ "$arg" == --log-file=* ]]; then continue
-    elif [[ "$rt_prev" == "--log-file" ]]; then rt_prev=""; continue
-    elif [[ "$arg" == "--log-file" ]]; then rt_prev="$arg"; continue; fi
+    if [[ "$arg" == --log-file=* ]]; then
+      continue
+    elif [[ "$rt_prev" == "--log-file" ]]; then
+      rt_prev=""
+      continue
+    elif [[ "$arg" == "--log-file" ]]; then
+      rt_prev="$arg"
+      continue
+    fi
 
     if [[ "$arg" == "--" ]] && [ "$rt_past_sep" = "0" ]; then
       rt_past_sep=1
@@ -262,7 +350,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     --user "$(id -u):$(id -g)" \
     ${PULL_FLAG:+$PULL_FLAG} \
     -v "${RT_WORKDIR}:${RT_WORKDIR}" \
-    "${IMAGE}:${TAG}" \
+    "$IMAGE_REF" \
     -c "cp '${SPICE_CLI_DIR}/ancho.jar' '${RT_WORKDIR}/' 2>/dev/null; \
         cp '${SPICE_CLI_DIR}/spice-jfr.jfc' '${RT_WORKDIR}/' 2>/dev/null"
 
@@ -285,10 +373,10 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
       --network host \
       ${PULL_FLAG:+$PULL_FLAG} \
       -e SPICE_PASS \
-      "${IMAGE}:${TAG}" \
+      "$IMAGE_REF" \
       -cp "${SPICE_LABS_CLI_JAR}" \
       io.spicelabs.cli.RuntimeCollect \
-      --download-probes > "$RT_PROBES" 2>/dev/null || true
+      --download-probes >"$RT_PROBES" 2>/dev/null || true
 
     if [ -s "$RT_PROBES" ]; then
       SPICE_JTO="-javaagent:${RT_WORKDIR}/ancho.jar=${RT_PROBES} ${SPICE_JTO}"
@@ -350,7 +438,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     -v "${RT_WORKDIR}:${RT_WORKDIR}" \
     ${RT_ANCHOR_MOUNT[@]+"${RT_ANCHOR_MOUNT[@]}"} \
     -e SPICE_PASS \
-    "${IMAGE}:${TAG}" \
+    "$IMAGE_REF" \
     -cp /opt/spice-labs-cli/spice-labs-cli.jar \
     io.spicelabs.cli.RuntimeCollect \
     "${RT_COLLECT_ARGS[@]}"
@@ -363,7 +451,283 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     echo "Recordings kept in: $RT_WORKDIR"
   fi
 
-  exit $(( RT_TARGET_RC != 0 ? RT_TARGET_RC : RT_COLLECT_RC ))
+  exit $((RT_TARGET_RC != 0 ? RT_TARGET_RC : RT_COLLECT_RC))
+fi
+
+# ── Registry (allspice) detection ─────────────────────────────────────────────
+# `registry` has its own grammar: --config/--discovery/--output are file paths and there
+# are no subject/input positionals. Mount each path flag's directory at the SAME path in
+# the container (so args need no remapping beyond becoming absolute), which also lets the
+# git-backed state dir — created next to the config — persist on the host.
+
+IS_REGISTRY=0
+for arg in "$@"; do
+  [[ "$arg" == -* ]] && continue # skip leading global flags
+  [ "$arg" = "registry" ] && IS_REGISTRY=1
+  break # first positional decides
+done
+
+if [ "$IS_REGISTRY" = "1" ]; then
+  REG_ARGS=()
+  REG_VOLUMES=()
+  REG_SEEN_DIRS=""
+  reg_prev=""
+
+  reg_dir_of() { # echo the directory to mount for a path (file may not yet exist)
+    local p="$1"
+    if [ -d "$p" ]; then
+      (cd "$p" && pwd)
+    else
+      (cd "$(dirname "$p")" 2>/dev/null && pwd) || {
+        echo "ERROR ❌ Directory does not exist for path: $p" >&2
+        exit 2
+      }
+    fi
+  }
+  reg_abs_of() { # echo the absolute path (file may not yet exist)
+    local p="$1"
+    if [ -d "$p" ]; then
+      (cd "$p" && pwd)
+    else echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"; fi
+  }
+  reg_mount() { # add a same-path volume for the given path's dir (deduped)
+    local dir
+    dir="$(reg_dir_of "$1")"
+    case ":$REG_SEEN_DIRS:" in *":$dir:"*) ;; *)
+      REG_SEEN_DIRS="$REG_SEEN_DIRS:$dir"
+      REG_VOLUMES+=("-v" "${dir}:${dir}")
+      ;;
+    esac
+  }
+
+  for arg in "$@"; do
+    # Strip --log-file (handled at shell level)
+    if [[ "$arg" == --log-file=* ]]; then
+      continue
+    elif [[ "$reg_prev" == "--log-file" ]]; then
+      reg_prev=""
+      continue
+    elif [[ "$arg" == "--log-file" ]]; then
+      reg_prev="$arg"
+      continue
+    fi
+
+    # Path flags (=joined form)
+    case "$arg" in
+    --config=* | --discovery=* | --output=*)
+      flag="${arg%%=*}"
+      val="${arg#*=}"
+      reg_mount "$val"
+      REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
+      continue
+      ;;
+    --config | --discovery | --output)
+      reg_prev="$arg"
+      continue
+      ;;
+    esac
+
+    # Path flags (space-separated value)
+    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" ]]; then
+      reg_mount "$arg"
+      REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
+      reg_prev=""
+      continue
+    fi
+
+    REG_ARGS+=("$arg")
+  done
+  [ -n "$reg_prev" ] && REG_ARGS+=("$reg_prev")
+
+  exec docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    --network host \
+    ${PULL_FLAG:+$PULL_FLAG} \
+    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
+    ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
+    -e SPICE_PASS \
+    -e SPICE_PATH_MAP \
+    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
+    "${IMAGE}:${TAG}" \
+    ${REG_ARGS[@]+"${REG_ARGS[@]}"}
+fi
+
+# ── Registry (allspice) detection ─────────────────────────────────────────────
+# `registry` has its own grammar: --config/--discovery/--output are file paths and there
+# are no subject/input positionals. Mount each path flag's directory at the SAME path in
+# the container (so args need no remapping beyond becoming absolute), which also lets the
+# git-backed state dir — created next to the config — persist on the host.
+
+IS_REGISTRY=0
+for arg in "$@"; do
+  [[ "$arg" == -* ]] && continue # skip leading global flags
+  [ "$arg" = "registry" ] && IS_REGISTRY=1
+  break # first positional decides
+done
+
+if [ "$IS_REGISTRY" = "1" ]; then
+  REG_ARGS=()
+  REG_VOLUMES=()
+  REG_SEEN_DIRS=""
+  reg_prev=""
+
+  reg_dir_of() { # echo the directory to mount for a path (file may not yet exist)
+    local p="$1"
+    if [ -d "$p" ]; then
+      (cd "$p" && pwd)
+    else
+      (cd "$(dirname "$p")" 2>/dev/null && pwd) || {
+        echo "ERROR ❌ Directory does not exist for path: $p" >&2
+        exit 2
+      }
+    fi
+  }
+  reg_abs_of() { # echo the absolute path (file may not yet exist)
+    local p="$1"
+    if [ -d "$p" ]; then
+      (cd "$p" && pwd)
+    else echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"; fi
+  }
+  reg_mount() { # add a same-path volume for the given path's dir (deduped)
+    local dir
+    dir="$(reg_dir_of "$1")"
+    case ":$REG_SEEN_DIRS:" in *":$dir:"*) ;; *)
+      REG_SEEN_DIRS="$REG_SEEN_DIRS:$dir"
+      REG_VOLUMES+=("-v" "${dir}:${dir}")
+      ;;
+    esac
+  }
+
+  for arg in "$@"; do
+    # Strip --log-file (handled at shell level)
+    if [[ "$arg" == --log-file=* ]]; then
+      continue
+    elif [[ "$reg_prev" == "--log-file" ]]; then
+      reg_prev=""
+      continue
+    elif [[ "$arg" == "--log-file" ]]; then
+      reg_prev="$arg"
+      continue
+    fi
+
+    # Path flags (=joined form)
+    case "$arg" in
+    --config=* | --discovery=* | --output=*)
+      flag="${arg%%=*}"
+      val="${arg#*=}"
+      reg_mount "$val"
+      REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
+      continue
+      ;;
+    --config | --discovery | --output)
+      reg_prev="$arg"
+      continue
+      ;;
+    esac
+
+    # Path flags (space-separated value)
+    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" ]]; then
+      reg_mount "$arg"
+      REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
+      reg_prev=""
+      continue
+    fi
+
+    REG_ARGS+=("$arg")
+  done
+  [ -n "$reg_prev" ] && REG_ARGS+=("$reg_prev")
+
+  exec docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    --network host \
+    ${PULL_FLAG:+$PULL_FLAG} \
+    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
+    ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
+    -e SPICE_PASS \
+    -e SPICE_PATH_MAP \
+    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
+    "${IMAGE}:${TAG}" \
+    ${REG_ARGS[@]+"${REG_ARGS[@]}"}
+fi
+
+# ── Registry (allspice) detection ─────────────────────────────────────────────
+# `registry` has its own grammar: --config/--discovery/--output are file paths and there
+# are no subject/input positionals. Mount each path flag's directory at the SAME path in
+# the container (so args need no remapping beyond becoming absolute), which also lets the
+# git-backed state dir — created next to the config — persist on the host.
+
+IS_REGISTRY=0
+for arg in "$@"; do
+  [[ "$arg" == -* ]] && continue          # skip leading global flags
+  [ "$arg" = "registry" ] && IS_REGISTRY=1
+  break                                    # first positional decides
+done
+
+if [ "$IS_REGISTRY" = "1" ]; then
+  REG_ARGS=()
+  REG_VOLUMES=()
+  REG_SEEN_DIRS=""
+  reg_prev=""
+
+  reg_dir_of() {                           # echo the directory to mount for a path (file may not yet exist)
+    local p="$1"
+    if [ -d "$p" ]; then (cd "$p" && pwd)
+    else (cd "$(dirname "$p")" 2>/dev/null && pwd) || {
+      echo "ERROR ❌ Directory does not exist for path: $p" >&2; exit 2; }
+    fi
+  }
+  reg_abs_of() {                           # echo the absolute path (file may not yet exist)
+    local p="$1"
+    if [ -d "$p" ]; then (cd "$p" && pwd)
+    else echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"; fi
+  }
+  reg_mount() {                            # add a same-path volume for the given path's dir (deduped)
+    local dir; dir="$(reg_dir_of "$1")"
+    case ":$REG_SEEN_DIRS:" in *":$dir:"*) ;; *)
+      REG_SEEN_DIRS="$REG_SEEN_DIRS:$dir"
+      REG_VOLUMES+=("-v" "${dir}:${dir}") ;;
+    esac
+  }
+
+  for arg in "$@"; do
+    # Strip --log-file (handled at shell level)
+    if [[ "$arg" == --log-file=* ]]; then continue
+    elif [[ "$reg_prev" == "--log-file" ]]; then reg_prev=""; continue
+    elif [[ "$arg" == "--log-file" ]]; then reg_prev="$arg"; continue; fi
+
+    # Path flags (=joined form)
+    case "$arg" in
+      --config=*|--discovery=*|--output=*)
+        flag="${arg%%=*}"; val="${arg#*=}"
+        reg_mount "$val"
+        REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
+        continue ;;
+      --config|--discovery|--output)
+        reg_prev="$arg"; continue ;;
+    esac
+
+    # Path flags (space-separated value)
+    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" ]]; then
+      reg_mount "$arg"
+      REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
+      reg_prev=""
+      continue
+    fi
+
+    REG_ARGS+=("$arg")
+  done
+  [ -n "$reg_prev" ] && REG_ARGS+=("$reg_prev")
+
+  exec docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    --network host \
+    ${PULL_FLAG:+$PULL_FLAG} \
+    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
+    ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
+    -e SPICE_PASS \
+    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
+    "${IMAGE}:${TAG}" \
+    ${REG_ARGS[@]+"${REG_ARGS[@]}"}
 fi
 
 # ── Find paths in args and build docker command ──────────────────────────────
@@ -375,27 +739,66 @@ fi
 
 INPUT_PATH=""
 OUTPUT_PATH=""
+CONFIG_PATH=""
+DISCOVERY_PATH=""
 POSITIONAL_INDEX=0
 DOCKER_ARGS=()
 VOLUMES=()
+# Build a path map (container→host) so the CLI can translate container paths
+# back to host paths in error messages. Passed via SPICE_PATH_MAP env var.
+PATH_MAP=()
 
 prev=""
 for arg in "$@"; do
   # Strip --log-file (handled at shell level)
-  if [[ "$arg" == --log-file=* ]]; then continue
-  elif [[ "$prev" == "--log-file" ]]; then prev=""; continue
-  elif [[ "$arg" == "--log-file" ]]; then prev="$arg"; continue; fi
+  if [[ "$arg" == --log-file=* ]]; then
+    continue
+  elif [[ "$prev" == "--log-file" ]]; then
+    prev=""
+    continue
+  elif [[ "$arg" == "--log-file" ]]; then
+    prev="$arg"
+    continue
+  fi
 
   # Capture --output value
   if [[ "$arg" == --output=* ]]; then
     OUTPUT_PATH="${arg#--output=}"
     prev=""
-    continue  # will re-add after resolving
+    continue # will re-add after resolving
   elif [[ "$prev" == "--output" ]]; then
     OUTPUT_PATH="$arg"
     prev=""
-    continue  # will re-add after resolving
+    continue # will re-add after resolving
   elif [[ "$arg" == "--output" ]]; then
+    prev="$arg"
+    continue
+  fi
+
+  # Capture --config value (registry subcommands)
+  if [[ "$arg" == --config=* ]]; then
+    CONFIG_PATH="${arg#--config=}"
+    prev=""
+    continue
+  elif [[ "$prev" == "--config" ]]; then
+    CONFIG_PATH="$arg"
+    prev=""
+    continue
+  elif [[ "$arg" == "--config" ]]; then
+    prev="$arg"
+    continue
+  fi
+
+  # Capture --discovery value (registry run)
+  if [[ "$arg" == --discovery=* ]]; then
+    DISCOVERY_PATH="${arg#--discovery=}"
+    prev=""
+    continue
+  elif [[ "$prev" == "--discovery" ]]; then
+    DISCOVERY_PATH="$arg"
+    prev=""
+    continue
+  elif [[ "$arg" == "--discovery" ]]; then
     prev="$arg"
     continue
   fi
@@ -442,9 +845,11 @@ if [ -n "$INPUT_PATH" ]; then
   if [ -f "$HOST_INPUT" ]; then
     VOLUMES+=("-v" "$(dirname "$HOST_INPUT"):/mnt/input")
     DOCKER_ARGS+=("/mnt/input/$(basename "$HOST_INPUT")")
+    PATH_MAP+=("/mnt/input/$(basename "$HOST_INPUT"):$INPUT_PATH")
   else
     VOLUMES+=("-v" "${HOST_INPUT}:/mnt/input")
     DOCKER_ARGS+=("/mnt/input")
+    PATH_MAP+=("/mnt/input:$INPUT_PATH")
   fi
 fi
 
@@ -455,14 +860,66 @@ if [ -n "$OUTPUT_PATH" ]; then
   HOST_OUTPUT="$(abs_path "$OUTPUT_PATH")"
   VOLUMES+=("-v" "${HOST_OUTPUT}:/mnt/output")
   DOCKER_ARGS+=("--output" "/mnt/output")
-else
-  # Mount default output directory so container output is preserved on the host
-  DEFAULT_OUTPUT="$HOME/.spicelabs/surveyor"
-  mkdir -p "$DEFAULT_OUTPUT"
-  VOLUMES+=("-v" "${DEFAULT_OUTPUT}:/root/.spicelabs/surveyor")
+  PATH_MAP+=("/mnt/output:$OUTPUT_PATH")
+elif [ -z "$CONFIG_PATH" ]; then
+  # Always mount an output directory at /mnt/output so container output
+  # persists on the host. Default to the current directory.
+  # Skip for registry commands (which use --config) — they manage their own
+  # output dirs via the config TOML.
+  DEFAULT_OUTPUT="$PWD"
+  VOLUMES+=("-v" "${DEFAULT_OUTPUT}:/mnt/output")
+  PATH_MAP+=("/mnt/output:$DEFAULT_OUTPUT")
+fi
+
+# ── Resolve config path (registry subcommands) ──────────────────────────────
+# Mount the config file's parent dir so allspice can read the config AND write
+# to the allspice-state/ git repo it creates beside it.
+
+if [ -n "$CONFIG_PATH" ]; then
+  HOST_CONFIG="$(abs_path "$CONFIG_PATH")"
+  CONFIG_DIR="$(dirname "$HOST_CONFIG")"
+  CONFIG_FILE="$(basename "$HOST_CONFIG")"
+  VOLUMES+=("-v" "${CONFIG_DIR}:/mnt/config")
+  # Replace the config path in DOCKER_ARGS with the container path
+  for i in "${!DOCKER_ARGS[@]}"; do
+    if [[ "${DOCKER_ARGS[$i]}" == "$CONFIG_PATH" ]]; then
+      DOCKER_ARGS[i]="/mnt/config/${CONFIG_FILE}"
+    fi
+  done
+  PATH_MAP+=("/mnt/config/${CONFIG_FILE}:$CONFIG_PATH")
+  PATH_MAP+=("/mnt/config:$(dirname "$CONFIG_PATH")")
+fi
+
+# ── Resolve discovery path (registry run) ───────────────────────────────────
+
+if [ -n "$DISCOVERY_PATH" ]; then
+  HOST_DISCOVERY="$(abs_path "$DISCOVERY_PATH")"
+  DISCOVERY_DIR="$(dirname "$HOST_DISCOVERY")"
+  DISCOVERY_FILE="$(basename "$HOST_DISCOVERY")"
+  # If discovery is in the same dir as config, it's already mounted
+  if [ -n "$CONFIG_PATH" ] && [ "$DISCOVERY_DIR" = "$(dirname "$(abs_path "$CONFIG_PATH")")" ]; then
+    for i in "${!DOCKER_ARGS[@]}"; do
+      if [[ "${DOCKER_ARGS[$i]}" == "$DISCOVERY_PATH" ]]; then
+        DOCKER_ARGS[i]="/mnt/config/${DISCOVERY_FILE}"
+      fi
+    done
+  else
+    VOLUMES+=("-v" "${DISCOVERY_DIR}:/mnt/discovery")
+    for i in "${!DOCKER_ARGS[@]}"; do
+      if [[ "${DOCKER_ARGS[$i]}" == "$DISCOVERY_PATH" ]]; then
+        DOCKER_ARGS[i]="/mnt/discovery/${DISCOVERY_FILE}"
+      fi
+    done
+    PATH_MAP+=("/mnt/discovery/${DISCOVERY_FILE}:$DISCOVERY_PATH")
+    PATH_MAP+=("/mnt/discovery:$(dirname "$DISCOVERY_PATH")")
+  fi
 fi
 
 # ── Run (non-runtime) ────────────────────────────────────────────────────────
+
+# Serialize PATH_MAP into a newline-separated string for the container
+SPICE_PATH_MAP=$(printf '%s\n' "${PATH_MAP[@]}")
+export SPICE_PATH_MAP
 
 exec docker run --rm \
   --user "$(id -u):$(id -g)" \
@@ -471,6 +928,7 @@ exec docker run --rm \
   ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
   ${VOLUMES+"${VOLUMES[@]}"} \
   -e SPICE_PASS \
+  -e SPICE_PATH_MAP \
   ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-  "${IMAGE}:${TAG}" \
+  "$IMAGE_REF" \
   ${DOCKER_ARGS[@]+"${DOCKER_ARGS[@]}"}

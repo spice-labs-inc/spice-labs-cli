@@ -13,7 +13,6 @@ if (-not $env:USERPROFILE) {
 $TargetDir = "$env:USERPROFILE\.spice\bin"
 $CompletionDir = "$env:USERPROFILE\.spice\completions"
 $ScriptUrl = "https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice.ps1"
-$CompletionUrl = "https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice-completion.ps1"
 $ScriptPath = "$TargetDir\spice.ps1"
 $CompletionPath = "$CompletionDir\spice-completion.ps1"
 
@@ -22,10 +21,36 @@ Write-Host "📦 Installing spice.ps1 to $TargetDir"
 New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
 New-Item -ItemType Directory -Force -Path $CompletionDir | Out-Null
 Invoke-WebRequest -Uri $ScriptUrl -OutFile $ScriptPath
-try {
-    Invoke-WebRequest -Uri $CompletionUrl -OutFile $CompletionPath
-} catch {
-    Write-Warning "Could not download tab completion script (non-fatal)"
+
+# Generate plugin-aware tab completion from the configured image (no static fallback):
+# the script reflects whatever plugins (e.g. `registry`) that image ships. Needs Docker
+# and the image; skipped gracefully otherwise. SKIP_PULL keeps stdout clean for capture.
+$Image = if ($env:SPICE_IMAGE) { $env:SPICE_IMAGE } else { "spicelabs/spice-labs-cli" }
+$Tag = if ($env:SPICE_IMAGE_TAG) { $env:SPICE_IMAGE_TAG } else { "latest" }
+$completionGenerated = $false
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    try {
+        docker pull -q "${Image}:${Tag}" 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $genPath = "$CompletionPath.tmp"
+            $env:SPICE_LABS_CLI_SKIP_PULL = "1"
+            & $ScriptPath generate-powershell-completion > $genPath 2>$null
+            Remove-Item Env:SPICE_LABS_CLI_SKIP_PULL -ErrorAction SilentlyContinue
+            if ((Test-Path $genPath) -and (Get-Item $genPath).Length -gt 0) {
+                Move-Item -Force $genPath $CompletionPath
+                Write-Host "✅ Generated tab completion from ${Image}:${Tag}"
+                $completionGenerated = $true
+            } else {
+                Remove-Item $genPath -ErrorAction SilentlyContinue
+            }
+        }
+    } catch {
+        # non-fatal: completion is skipped below
+    }
+}
+if (-not $completionGenerated) {
+    Write-Host "💡 Skipped tab completion (needs Docker + the spice image). Generate it later with:"
+    Write-Host "   spice generate-powershell-completion > `"$CompletionPath`""
 }
 
 # Optionally create a shim

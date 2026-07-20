@@ -1,0 +1,122 @@
+name: Write Maven settings.xml
+
+description: |
+  Writes ~/.m2/settings.xml with credentials for the Spice Labs GitHub Packages
+  repos (goatrodeo, ginger-j, ancho) and Maven Central. Used by every job that
+  runs Maven so the 70-line settings block is defined once.
+
+  Pass the secrets explicitly via the inputs below — composite-action steps
+  cannot read the caller's step-level `env:`, only job-level env and the
+  action's own `inputs`.
+
+inputs:
+  github-username:
+    description: "GitHub Packages username (secrets.GH_USERNAME_SG)"
+    required: true
+  github-token:
+    description: "GitHub Packages token (secrets.GH_TOKEN)"
+    required: true
+  central-username:
+    description: "Maven Central username (secrets.MAVEN_CENTRAL_USERNAME)"
+    required: false
+    default: ""
+  central-password:
+    description: "Maven Central password (secrets.MAVEN_CENTRAL_PASSWORD)"
+    required: false
+    default: ""
+  active-profile:
+    description: "Active profile id (github | maven-central | default-repos)"
+    required: false
+    default: "default-repos"
+
+runs:
+  using: composite
+  steps:
+    - name: Write settings.xml
+      shell: bash
+      env:
+        GH_USERNAME: ${{ inputs.github-username }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        MAVEN_CENTRAL_USERNAME: ${{ inputs.central-username }}
+        MAVEN_CENTRAL_PASSWORD: ${{ inputs.central-password }}
+        ACTIVE_PROFILE: ${{ inputs.active-profile }}
+      run: |
+        mkdir -p ~/.m2
+        cat <<EOF > ~/.m2/settings.xml
+        <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+          <servers>
+            <server>
+              <id>github-spice-labs-goatrodeo</id>
+              <username>\${GH_USERNAME}</username>
+              <password>\${GH_TOKEN}</password>
+            </server>
+            <server>
+              <id>github-spice-labs-ginger</id>
+              <username>\${GH_USERNAME}</username>
+              <password>\${GH_TOKEN}</password>
+            </server>
+            <server>
+              <id>github</id>
+              <username>\${GH_USERNAME}</username>
+              <password>\${GH_TOKEN}</password>
+            </server>
+            <server>
+              <id>central</id>
+              <username>\${MAVEN_CENTRAL_USERNAME}</username>
+              <password>\${MAVEN_CENTRAL_PASSWORD}</password>
+            </server>
+          </servers>
+
+          <profiles>
+            <profile>
+              <id>github</id>
+              <repositories>
+                <repository>
+                  <id>github-spice-labs-goatrodeo</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-ginger</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                </repository>
+              </repositories>
+            </profile>
+
+            <profile>
+              <id>maven-central</id>
+              <repositories>
+                <repository>
+                  <id>github-spice-labs-goatrodeo</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-ginger</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                </repository>
+              </repositories>
+            </profile>
+
+            <profile>
+              <id>default-repos</id>
+              <repositories>
+                <repository>
+                  <id>github-spice-labs-goatrodeo</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-ginger</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                </repository>
+              </repositories>
+            </profile>
+          </profiles>
+
+          <activeProfiles>
+            <activeProfile>\${ACTIVE_PROFILE}</activeProfile>
+          </activeProfiles>
+
+        </settings>
+        EOF

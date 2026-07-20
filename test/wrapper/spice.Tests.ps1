@@ -26,24 +26,36 @@ BeforeAll {
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 class MockDocker {
+  static string HostPath(string vol) {
+    int sep = vol.IndexOf(':', vol.Length > 2 && vol[1] == ':' ? 2 : 0);
+    return sep > 0 ? vol.Substring(0, sep) : vol;
+  }
+  static string ContainerPath(string vol) {
+    int sep = vol.IndexOf(':', vol.Length > 2 && vol[1] == ':' ? 2 : 0);
+    return sep > 0 ? vol.Substring(sep + 1) : vol;
+  }
   static int Main(string[] args) {
     if (args.Length > 0 && args[0] == "pull") return 0;
     // Detect runtime survey calls by --entrypoint
-    string entrypoint = null, volHost = null;
+    string entrypoint = null;
+    var volumes = new Dictionary<string,string>();
     for (int j = 0; j < args.Length - 1; j++) {
       if (args[j] == "--entrypoint") entrypoint = args[j+1];
       if (args[j] == "-v" && args[j+1].Contains(":")) {
-        // Handle Windows drive letters (e.g. C:\path:C:\path)
         var vol = args[j+1];
-        int sep = vol.IndexOf(':', vol.Length > 2 && vol[1] == ':' ? 2 : 0);
-        volHost = sep > 0 ? vol.Substring(0, sep) : vol;
+        volumes[ContainerPath(vol)] = HostPath(vol);
       }
     }
     // Phase 1: extraction
-    if (entrypoint == "sh" && volHost != null && Directory.Exists(volHost)) {
-      File.WriteAllText(Path.Combine(volHost, "ancho.jar"), "mock");
-      File.WriteAllText(Path.Combine(volHost, "spice-jfr.jfc"), "mock");
+    if (entrypoint == "sh" && volumes.Count > 0) {
+      foreach (var kv in volumes) {
+        if (Directory.Exists(kv.Value)) {
+          File.WriteAllText(Path.Combine(kv.Value, "ancho.jar"), "mock");
+          File.WriteAllText(Path.Combine(kv.Value, "spice-jfr.jfc"), "mock");
+        }
+      }
       Console.WriteLine("done");
       return 0;
     }
@@ -69,7 +81,24 @@ class MockDocker {
         if (a == "-e") { prev = a; continue; }
         prev = "";
         if (a.StartsWith("spice-")) { found = true; continue; }
+        // Detect image refs like ghcr.io/...:tag or spicelabs/spice-labs-cli:latest
+        if (a.Length > 0 && char.IsLower(a[0]) && !a.StartsWith("--") && a != "run" && a != "host" && a != "never"
+            && (a.Contains(":") || a.Contains("/"))) { found = true; continue; }
       }
+    }
+    // If no --output was given, write a marker to the default container output
+    // path (/mnt/output) so tests can verify the volume mount.
+    bool hasOutput = false;
+    foreach (var a in cli) {
+      if (a == "--output" || a.StartsWith("--output=")) { hasOutput = true; break; }
+    }
+    if (!hasOutput && volumes.ContainsKey("/mnt/output")) {
+      var outDir = volumes["/mnt/output"];
+      try {
+        Directory.CreateDirectory(outDir);
+        File.WriteAllText(Path.Combine(outDir, "default-marker.txt"), "DEFAULT");
+        Console.WriteLine("WROTE:/mnt/output/default-marker.txt");
+      } catch {}
     }
     Console.WriteLine("===SPICE_TEST_BEGIN===");
     foreach (var c in cli) Console.WriteLine("ARG:" + c);
@@ -258,14 +287,20 @@ pwsh -NoProfile -File "$mockDockerPs1" "`\`$@"
       [Parameter(Mandatory)]
       [string[]]$Arguments,
       [string]$SpicePass = 'test-pass-value',
-      [string]$DockerFlags
+      [string]$DockerFlags,
+      [AllowNull()]
+      [string]$SpiceImage = 'spice-wrapper-test'
     )
 
     # Put mock docker first on PATH
     $env:PATH = "$($script:MockBinDir)$([System.IO.Path]::PathSeparator)$($env:PATH)"
 
     $env:SPICE_LABS_CLI_SKIP_PULL = '1'
-    $env:SPICE_IMAGE = 'spice-wrapper-test'
+    if ($null -eq $SpiceImage) {
+      Remove-Item env:SPICE_IMAGE -ErrorAction SilentlyContinue
+    } else {
+      $env:SPICE_IMAGE = $SpiceImage
+    }
     $env:SPICE_IMAGE_TAG = 'latest'
     $env:SPICE_PASS = $SpicePass
     $env:DOCKER_ARGS_FILE = $script:DockerArgsFile
@@ -407,6 +442,54 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain '--help'
     }
+
+    It '--features enterprise switches to enterprise image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'enterprise'
+      $r.ContainerArgs | Should -Contain 'survey'
+      $r.ContainerArgs | Should -Contain 'inventory'
+      $r.ContainerArgs | Should -Contain 'myapp'
+    }
+
+    It '--features=enterprise switches to enterprise image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'enterprise'
+    }
+
+    It 'SPICE_IMAGE env overrides --features enterprise' {
+      $r = Invoke-SpiceWrapper -SpiceImage 'spice-wrapper-custom' -Arguments @('--features', 'enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'spice-wrapper-custom'
+      $r.DockerRunArgs | Should -Not -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.ContainerArgs | Should -Contain 'survey'
+      $r.ContainerArgs | Should -Contain 'inventory'
+      $r.ContainerArgs | Should -Contain 'myapp'
+    }
+
+    It '--features federal switches to federal image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'federal', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'federal'
+      $r.ContainerArgs | Should -Contain 'survey'
+      $r.ContainerArgs | Should -Contain 'inventory'
+      $r.ContainerArgs | Should -Contain 'myapp'
+    }
+
+    It '--features=federal switches to federal image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=federal', 'survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'federal'
+    }
   }
 
   # ── Output directory ─────────────────────────────────────────────────────
@@ -431,15 +514,20 @@ Describe 'spice.ps1 wrapper' {
     }
 
     It 'default output dir created when --output omitted (bug #530)' {
-      $defaultDir = Join-Path (Join-Path $HOME '.spicelabs') 'surveyor'
-      if (Test-Path $defaultDir) { Remove-Item $defaultDir -Recurse -Force }
+      # When --output is omitted, the wrapper mounts the current directory at
+      # /mnt/output in the container. The container writes to its internal
+      # /mnt/output path; the wrapper does not concern itself with that path.
+      $defaultDir = Get-Location
 
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $defaultDir | Should -Exist
-      # Verify the volume mount is in the docker run args
-      $volArg = $r.DockerRunArgs | Where-Object { $_ -match '\.spicelabs' -and $_ -match 'surveyor' }
+      # Verify the marker file appears in the current directory on the host
+      $marker = Join-Path $defaultDir 'default-marker.txt'
+      $marker | Should -Exist
+      # Verify a volume mount to /mnt/output is in the docker run args
+      $volArg = $r.DockerRunArgs | Where-Object { $_ -match '/mnt/output' }
       $volArg | Should -Not -BeNullOrEmpty
+      Remove-Item $marker -ErrorAction SilentlyContinue
     }
   }
 
@@ -659,8 +747,11 @@ Describe 'spice.ps1 wrapper' {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', '/some/path', '--threads', '4')
         $javaArgs = @(Get-Content $script:JavaArgsFile -ErrorAction SilentlyContinue)
         $javaArgs | Should -Not -BeNullOrEmpty
-        ($javaArgs -join ' ') | Should -Match '-jar'
+        # JVM mode now launches via -cp (so classpath plugins load) + explicit main class,
+        # not -jar.
+        ($javaArgs -join ' ') | Should -Match '-cp'
         ($javaArgs -join ' ') | Should -Match 'fake\.jar'
+        ($javaArgs -join ' ') | Should -Match 'io\.spicelabs\.cli\.SpiceLabsCLI'
         ($javaArgs -join ' ') | Should -Match 'survey'
         ($javaArgs -join ' ') | Should -Match '--threads'
       } finally {

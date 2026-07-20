@@ -45,6 +45,16 @@ Follow the coding style used in the project:
 
 ---
 
+## Writing a Plugin
+
+`spice` supports plugins that contribute additional commands without modifying the CLI. If
+you're adding a command this way (rather than changing the core CLI), see
+[`docs/PLUGINS.md`](docs/PLUGINS.md) for the SPI, the `dist/` output convention, and how
+plugins are included in a build. [`sample/hello-plugin`](sample/hello-plugin) is a minimal
+template.
+
+---
+
 ## Tests and CI
 
 - Run the tests and linters against your changes

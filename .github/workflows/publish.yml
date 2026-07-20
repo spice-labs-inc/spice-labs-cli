@@ -122,7 +122,7 @@ jobs:
                   </repository>
                 </repositories>
               </profile>
-              
+
               <profile>
                 <id>default-repos</id>
                 <repositories>
@@ -137,7 +137,7 @@ jobs:
                 </repositories>
               </profile>
             </profiles>
-            
+
             <activeProfiles>
               <activeProfile>default-repos</activeProfile>
             </activeProfiles>
@@ -148,6 +148,19 @@ jobs:
       - name: Import GPG key
         run: |
           echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      # The shared modules (bom/ + shared/plugin-api) are versioned and released
+      # independently of the CLI by publish-bom.yml / publish-plugin-api.yml. A released CLI
+      # must import a RELEASED spice-bom (Maven Central rejects a released POM that imports a
+      # SNAPSHOT). Take the in-repo spice-bom.version, strip -SNAPSHOT, verify that BOM is
+      # published, and pin the CLI to it before deploying.
+      - name: Resolve, verify and pin the released spice-bom version
+        run: |
+          BOM_SNAP="$(mvn --batch-mode help:evaluate -Dexpression=spice-bom.version -q -DforceStdout)"
+          BOM_VERSION="${BOM_SNAP%-SNAPSHOT}"
+          echo "Releasing CLI against spice-bom ${BOM_VERSION}"
+          mvn --batch-mode dependency:get "-Dartifact=io.spicelabs:spice-bom:${BOM_VERSION}:pom"
+          mvn --batch-mode versions:set-property -Dproperty=spice-bom.version "-DnewVersion=${BOM_VERSION}" -DgenerateBackupPoms=false
 
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
@@ -174,8 +187,6 @@ jobs:
             spice.ps1
             install.sh
             install.ps1
-            completions/spice.bash
-            completions/spice-completion.ps1
 
   docker_image:
     name: Build and Push Docker Image
@@ -237,7 +248,7 @@ jobs:
 
       - name: Download fat jar and ancho agent
         run: |
-          mkdir -p target
+          mkdir -p target target/plugins && touch target/plugins/.keep
           curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
             -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/octet-stream" \
@@ -309,7 +320,7 @@ jobs:
             echo "message=✅ All components deployed successfully!" >> $GITHUB_OUTPUT
           else
             echo "overall_status=failure" >> $GITHUB_OUTPUT
-            
+
             # Build detailed failure message
             MESSAGE="❌ Deployment failed:"
             if [ "$JAR_STATUS" != "success" ]; then
@@ -317,13 +328,13 @@ jobs:
             else
               MESSAGE="$MESSAGE ✅ JAR publishing succeeded."
             fi
-            
+
             if [ "$DOCKER_STATUS" != "success" ]; then
               MESSAGE="$MESSAGE ❌ Docker build/push failed."
             else
               MESSAGE="$MESSAGE ✅ Docker build/push succeeded."
             fi
-            
+
             echo "message=$MESSAGE" >> $GITHUB_OUTPUT
           fi
 
