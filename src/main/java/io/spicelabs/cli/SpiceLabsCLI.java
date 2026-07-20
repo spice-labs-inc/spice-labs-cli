@@ -73,12 +73,40 @@ public class SpiceLabsCLI implements Runnable {
   /**
    * Build a CommandLine with the CLI's standard parameter exception handler.
    * Used by main() and tests so both exercise identical error behavior.
+   *
+   * Plugin subcommands (e.g. `registry` from allspice) are discovered via
+   * ServiceLoader and mounted dynamically — see PluginLoader.
    */
   static CommandLine newCommandLine() {
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
     cmd.setParameterExceptionHandler((ex, a) -> {
       CommandLine offending = ex.getCommandLine();
-      log.error("❌ {}", ex.getMessage());
+      // When a survey type (e.g. `static`) is not registered, picocli reports it
+      // as "Unmatched arguments". Give a clearer message instead.
+      if (ex instanceof CommandLine.UnmatchedArgumentException) {
+        String[] unmatched = ((CommandLine.UnmatchedArgumentException) ex)
+            .getUnmatched().toArray(new String[0]);
+        if (unmatched.length > 0) {
+          String first = unmatched[0];
+          // Case 1: `spice static ...` (without `survey`) — the user forgot the
+          // `survey` parent or used a type that requires enterprise/federal.
+          if (isTopLevel(cmd, offending) && isKnownSurveyType(first)) {
+            System.err.println("❌ Unknown command: " + first);
+            System.err.println("   Run 'spice survey --help' for available types.");
+            return offending.getCommandSpec().exitCodeOnInvalidInput();
+          }
+          // Case 2: `spice survey static ...` — the survey type is not registered
+          // in this image.
+          if ("survey".equals(offending.getCommandName()) && isKnownSurveyType(first)) {
+            System.err.println("❌ Unknown survey type: " + first);
+            System.err.println("   Available types: "
+                + String.join(", ", offending.getSubcommands().keySet()));
+            System.err.println("   Run 'spice survey --help' for details.");
+            return offending.getCommandSpec().exitCodeOnInvalidInput();
+          }
+        }
+      }
+      log.error("❌ {}", PathTranslator.translate(ex.getMessage()));
       if (ex instanceof CommandLine.MissingParameterException) {
         offending.usage(offending.getErr(), offending.getColorScheme());
       } else {
@@ -96,6 +124,19 @@ public class SpiceLabsCLI implements Runnable {
       genCompletion.getCommandSpec().usageMessage().hidden(true);
     }
     return cmd;
+  }
+
+  /** True if {@code offending} is the top-level command (not a subcommand). */
+  private static boolean isTopLevel(CommandLine root, CommandLine offending) {
+    return root == offending;
+  }
+
+  /** Known survey type names, including those only available in enterprise/federal. */
+  private static final java.util.Set<String> KNOWN_SURVEY_TYPES =
+      java.util.Set.of("inventory", "runtime", "static");
+
+  private static boolean isKnownSurveyType(String arg) {
+    return KNOWN_SURVEY_TYPES.contains(arg);
   }
 
   @Override

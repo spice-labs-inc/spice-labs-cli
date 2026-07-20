@@ -4,3 +4,6 @@ dependency-reduced-pom.xml
 .idea
 spice-labs-cli.iml
 /.vscode
+.classpath
+.project
+.settings/

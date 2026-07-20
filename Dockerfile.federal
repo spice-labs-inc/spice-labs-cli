@@ -1,0 +1,42 @@
+# Federal spice image = the enterprise image + report_cli + rogues gallery.
+#
+# The enterprise image has allspice.jar (registry pipeline + sassafras). The
+# federal image adds the report_cli Rust binary and the PQC rogues gallery,
+# enabling CycloneDX CBOM generation (spice survey static --cbom).
+#
+# Build:
+#   docker build -f Dockerfile.federal \
+#     --build-arg SPICE_IMAGE=spicelabs/spice-labs-cli \
+#     --build-arg SPICE_TAG=latest \
+#     --build-arg ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice \
+#     --build-arg ALLSPICE_TAG=latest \
+#     -t ghcr.io/spice-labs-inc/spice-labs-cli-federal:vX.Y.Z .
+
+# Global build args (available to FROM instructions). Declared before the
+# first FROM so both stages can use them.
+ARG SPICE_IMAGE=spicelabs/spice-labs-cli
+ARG SPICE_TAG=latest
+ARG ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice
+ARG ALLSPICE_TAG=latest
+
+# Stage 1: pull the allspice image to extract all proprietary assets.
+FROM ${ALLSPICE_IMAGE}:${ALLSPICE_TAG} AS allspice
+
+# Stage 2: start from the spice-labs-cli OSS image and add all allspice assets.
+FROM ${SPICE_IMAGE}:${SPICE_TAG}
+
+# Copy all allspice assets:
+#   allspice.jar      — fat JAR with allspice + sassafras + SpiceCommandPlugin
+#                       implementations; placed in plugins/ for ServiceLoader
+#                       discovery on the classpath
+#   report_cli        — Rust binary for CycloneDX CBOM generation
+#   rogues_gallery*   — PQC rogues gallery data
+COPY --from=allspice /opt/allspice/allspice.jar /opt/spice-labs-cli/plugins/allspice.jar
+COPY --from=allspice /opt/allspice/report_cli /opt/allspice/report_cli
+COPY --from=allspice /opt/allspice/rogues_gallery* /opt/allspice/
+
+# Ensure report_cli is executable (it's a Rust binary, not a JAR)
+RUN chmod +x /opt/allspice/report_cli
+
+# The spice entrypoint and wrapper scripts are already in the OSS image.
+# No changes needed — the CLI is the same; allspice + report_cli are resources.

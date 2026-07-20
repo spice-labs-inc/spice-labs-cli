@@ -1,0 +1,43 @@
+# Enterprise spice image = the spice-labs-cli OSS image + allspice's
+# proprietary allspice fat JAR (which bundles sassafras) layered on top.
+#
+# The result is the same `spice` CLI (survey, pass, etc.) with the allspice
+# JAR available at /opt/allspice/ for enterprise features (registry survey,
+# static crypto analysis). The entrypoint stays as the spice CLI — allspice is
+# a library/resource, not the primary command.
+#
+# The federal image (Dockerfile.federal) extends this image with report_cli
+# and the rogues gallery for CBOM generation.
+#
+# Build:
+#   docker build -f Dockerfile.enterprise \
+#     --build-arg SPICE_IMAGE=spicelabs/spice-labs-cli \
+#     --build-arg SPICE_TAG=latest \
+#     --build-arg ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice \
+#     --build-arg ALLSPICE_TAG=latest \
+#     -t ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:vX.Y.Z .
+#
+# In CI, SPICE_IMAGE is the just-built pr-<N> (or vX.Y.Z) OSS image and
+# ALLSPICE_IMAGE/ALLSPICE_TAG resolve to the latest allspice release.
+
+# Global build args (available to FROM instructions). Declared before the
+# first FROM so both stages can use them.
+ARG SPICE_IMAGE=spicelabs/spice-labs-cli
+ARG SPICE_TAG=latest
+ARG ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice
+ARG ALLSPICE_TAG=latest
+
+# Stage 1: pull the allspice image to extract its proprietary assets.
+FROM ${ALLSPICE_IMAGE}:${ALLSPICE_TAG} AS allspice
+
+# Stage 2: start from the spice-labs-cli OSS image and add allspice's JAR.
+FROM ${SPICE_IMAGE}:${SPICE_TAG}
+
+# Copy only the allspice fat JAR (contains allspice + sassafras + transitive deps).
+# report_cli and rogues_gallery are NOT included — those are federal-only.
+# Drop the fat JAR into plugins/ so ServiceLoader discovers the spice-plugin
+# SPI (registry, survey static) on the classpath.
+COPY --from=allspice /opt/allspice/allspice.jar /opt/spice-labs-cli/plugins/allspice.jar
+
+# The spice entrypoint and wrapper scripts are already in the OSS image.
+# No changes needed — the CLI is the same; allspice is available as a resource.
