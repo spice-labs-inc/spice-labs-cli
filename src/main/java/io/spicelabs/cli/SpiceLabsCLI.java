@@ -15,6 +15,8 @@ limitations under the License. */
 
 package io.spicelabs.cli;
 
+import java.util.Locale;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +56,9 @@ public class SpiceLabsCLI implements Runnable {
   private static final Logger log = LoggerFactory.getLogger(SpiceLabsCLI.class);
 
   public static void main(String[] args) {
+    // Force US locale so the CLI's output (number/size formatting, etc.) is
+    // deterministic regardless of the host's default locale.
+    Locale.setDefault(Locale.US);
     int exitCode;
     try {
       exitCode = newCommandLine().execute(args);
