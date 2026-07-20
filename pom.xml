@@ -48,69 +48,81 @@
         <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
         <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
 
-        <slf4j.version>2.0.17</slf4j.version>
-        <logback.version>1.5.18</logback.version>
-        <picocli.version>4.7.6</picocli.version>
-        <goatrodeo.version>0.16.1</goatrodeo.version>
-        <ginger.version>0.4.0</ginger.version>
+        <!-- The BOM (io.spicelabs:spice-bom) is the single fixed dependency
+             specification; it is imported below and supplies the versions for the
+             runtime classpath + coordinates. It lives in bom/ in this repo and
+             is published independently. ancho is versioned here (NOT in the BOM): it
+             is injected via -javaagent, never on the CLI's own classpath. -->
+        <spice-bom.version>1.0.0-SNAPSHOT</spice-bom.version>
         <ancho.version>0.0.5</ancho.version>
-        <coordinates.version>1.1.0</coordinates.version>
-        <!--        Use these versions for local dev-->
-        <!--        <goatrodeo.version>0.0.1-SNAPSHOT</goatrodeo.version>-->
-        <!--        <ginger.version>0.0.1-SNAPSHOT</ginger.version> -->
+        <!--        Use this version for local dev-->
         <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <mockito.version>5.3.1</mockito.version>
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- Single fixed dependency specification. Supplies versions for
+                 everything below. -->
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>spice-bom</artifactId>
+                <version>${spice-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
+        <!-- The spice runtime classpath, declared directly with versions from the
+             imported BOM. The shade plugin bundles these compile deps into the fat jar. -->
+        <dependency>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>spice-plugin-api</artifactId>
+        </dependency>
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
-            <version>${picocli.version}</version>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>goatrodeo_3</artifactId>
-            <version>${goatrodeo.version}</version>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>ginger-j</artifactId>
-            <version>${ginger.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>coordinates</artifactId>
-            <version>${coordinates.version}</version>
         </dependency>
-        <!-- JFR agent for runtime surveys — extracted to temp at runtime, not shaded -->
+        <!-- JFR agent for runtime surveys — extracted to temp at runtime, not shaded.
+             Kept separate (not on the CLI runtime classpath): it is injected into the
+             target JVM via -javaagent, never on the CLI's own classpath. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>ancho</artifactId>
             <version>${ancho.version}</version>
             <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>${slf4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.auth0</groupId>
-            <artifactId>java-jwt</artifactId>
-            <version>4.4.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-lang3</artifactId>
-            <version>3.18.0</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -198,6 +210,38 @@
                                     <outputDirectory>${project.build.directory}</outputDirectory>
                                 </artifactItem>
                             </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Collect plugin jars into target/plugins/, flattened, to ride alongside the
+                 CLI fat jar on the runtime classpath (-cp "...:plugins/*") so each plugin's
+                 META-INF/services provider is discovered. Convention: symlink a plugin's
+                 repo root to plugins/<name> and the build picks up plugins/<name>/dist/*.jar
+                 (the standard spice-plugin output dir). Tolerates an empty/absent dir (a
+                 public build ships no plugins). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>collect-plugins</id>
+                        <phase>prepare-package</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <delete dir="${project.build.directory}/plugins"/>
+                                <mkdir dir="${project.build.directory}/plugins"/>
+                                <!-- keeps the dir non-empty so the Dockerfile COPY always succeeds -->
+                                <touch file="${project.build.directory}/plugins/.keep"/>
+                                <copy todir="${project.build.directory}/plugins" flatten="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/plugins" followsymlinks="true" erroronmissingdir="false">
+                                        <include name="*/dist/**/*.jar"/>
+                                    </fileset>
+                                </copy>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>

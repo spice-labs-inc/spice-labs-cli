@@ -101,6 +101,14 @@ jobs:
           EOF
 
 
+      # spice-labs-cli imports the BOM (bom/) and depends on spice-plugin-api
+      # (shared/plugin-api). Install both to the local repo first so the CLI build
+      # resolves them (they aren't necessarily published at this commit).
+      - name: Install shared modules (spice-plugin-api + spice-bom)
+        run: |
+          mvn --batch-mode -f shared/plugin-api/pom.xml -DskipTests install
+          mvn --batch-mode -f bom/pom.xml install
+
       - name: Install Dependencies and Build
         run: mvn --batch-mode --update-snapshots -DskipTests -Pdefault-repos install
 

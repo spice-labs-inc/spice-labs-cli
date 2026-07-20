@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <name>Spice Hello-World Sample Plugin</name>
+    <description>A minimal, self-contained example of a spice subcommand plugin.</description>
+
+    <groupId>io.spicelabs.sample</groupId>
+    <artifactId>hello-plugin</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- The shared BOM supplies the versions for spice-plugin-api, picocli and the rest
+             of the CLI runtime classpath, so plugins never hard-code them. -->
+        <spice-bom.version>1.0.0-SNAPSHOT</spice-bom.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.spicelabs</groupId>
+                <artifactId>spice-bom</artifactId>
+                <version>${spice-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Both are provided by the spice CLI at runtime, so they are compile-only here
+             (versions from the imported spice-bom) and are NOT bundled into dist/. -->
+        <dependency>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>spice-plugin-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>hello-plugin</finalName>
+        <plugins>
+            <!-- Emit the plugin jar into dist/ (the conventional spice-plugin output dir
+                 that spice's build collects from plugins/<name>/dist/). This plugin has no
+                 runtime deps beyond what the CLI provides, so dist/ holds just this jar. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <outputDirectory>${project.basedir}/dist</outputDirectory>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,18 +1,17 @@
-name: Publish the Spice Labs BOM
+name: Publish the Spice Labs plugin API
 
-# The BOM (bom/pom.xml, io.spicelabs:spice-bom) is a standalone artifact that versions and
-# releases independently of the CLI *and* of spice-plugin-api. It ships on its own tag,
-# `bom-v<x.y.z>` (see RELEASING.md for the version-bump rules). The BOM references a
-# released spice-plugin-api (published separately by publish-plugin-api.yml), so that
-# plugin-api release must precede the BOM release.
+# The plugin SPI (shared/plugin-api, io.spicelabs:spice-plugin-api) is a standalone artifact
+# that versions and releases independently of the CLI and of the BOM, following its own Java
+# API SemVer. It ships on its own tag, `plugin-api-v<x.y.z>`. Release the plugin-api before a
+# BOM release that bumps its managed spice-plugin-api version (see RELEASING.md).
 on:
   push:
     tags:
-      - "bom-v*"
+      - "plugin-api-v*"
 
 jobs:
-  publish_bom:
-    name: Publish spice-bom to GitHub Packages and Maven Central
+  publish_plugin_api:
+    name: Publish spice-plugin-api to GitHub Packages and Maven Central
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -26,11 +25,11 @@ jobs:
       - name: Validate and extract version from tag
         id: validate
         run: |
-          if [[ "${GITHUB_REF}" =~ ^refs/tags/bom-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/plugin-api-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             VERSION="${BASH_REMATCH[1]}"
             echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           else
-            echo "Tag does not match BOM version pattern bom-v*.*.*" >&2
+            echo "Tag does not match plugin-api version pattern plugin-api-v*.*.*" >&2
             exit 1
           fi
 
@@ -75,29 +74,17 @@ jobs:
         run: |
           echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
 
-      - name: Resolve and verify the released plugin-api version
-        # The released BOM must reference a released spice-plugin-api, not a SNAPSHOT. Take
-        # the BOM's managed version, strip -SNAPSHOT, and confirm it is already published
-        # (release plugin-api first: tag plugin-api-v<x.y.z>).
-        run: |
-          PLUGIN_API_SNAP="$(mvn --batch-mode -f bom/pom.xml help:evaluate -Dexpression=spice-plugin-api.version -q -DforceStdout)"
-          PLUGIN_API_VERSION="${PLUGIN_API_SNAP%-SNAPSHOT}"
-          echo "PLUGIN_API_VERSION=${PLUGIN_API_VERSION}" >> "$GITHUB_ENV"
-          mvn --batch-mode dependency:get "-Dartifact=io.spicelabs:spice-plugin-api:${PLUGIN_API_VERSION}:pom"
+      - name: Set plugin-api version from tag
+        run: mvn --batch-mode -f shared/plugin-api/pom.xml versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
 
-      - name: Set BOM version from tag and pin plugin-api to its release
-        run: |
-          mvn --batch-mode -f bom/pom.xml versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
-          mvn --batch-mode -f bom/pom.xml versions:set-property -Dproperty=spice-plugin-api.version "-DnewVersion=${PLUGIN_API_VERSION}" -DgenerateBackupPoms=false
-
-      - name: Publish BOM to GitHub Packages
-        run: mvn --batch-mode -f bom/pom.xml clean deploy -P github
+      - name: Publish plugin-api to GitHub Packages
+        run: mvn --batch-mode -f shared/plugin-api/pom.xml clean deploy -P github
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
-      - name: Publish BOM to Maven Central
-        run: mvn --batch-mode -f bom/pom.xml clean deploy -P maven-central
+      - name: Publish plugin-api to Maven Central
+        run: mvn --batch-mode -f shared/plugin-api/pom.xml clean deploy -P maven-central
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
