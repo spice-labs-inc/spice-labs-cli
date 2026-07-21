@@ -478,7 +478,10 @@ if [ "$IS_REGISTRY" = "1" ]; then
     if [ -d "$p" ]; then
       (cd "$p" && pwd)
     else
-      (cd "$(dirname "$p")" 2>/dev/null && pwd) || {
+      local parent
+      parent="$(dirname "$p" 2>/dev/null)"
+      [ -n "$parent" ] || parent="."
+      (cd "$parent" 2>/dev/null && pwd) || {
         echo "ERROR ❌ Directory does not exist for path: $p" >&2
         exit 2
       }
@@ -576,7 +579,10 @@ if [ "$IS_REGISTRY" = "1" ]; then
     if [ -d "$p" ]; then
       (cd "$p" && pwd)
     else
-      (cd "$(dirname "$p")" 2>/dev/null && pwd) || {
+      local parent
+      parent="$(dirname "$p" 2>/dev/null)"
+      [ -n "$parent" ] || parent="."
+      (cd "$parent" 2>/dev/null && pwd) || {
         echo "ERROR ❌ Directory does not exist for path: $p" >&2
         exit 2
       }

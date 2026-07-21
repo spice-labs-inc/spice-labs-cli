@@ -192,6 +192,64 @@ refute_arg() {
   refute_arg "federal"
 }
 
+# ── Registry command (same-path mounts) ──────────────────────────────────────
+
+@test "registry init --dir rewrites relative path to absolute same-path" {
+  local initdir="$TEST_TMPDIR/registry-init"
+  mkdir -p "$initdir"
+  pushd "$TEST_TMPDIR" > /dev/null
+  run "$WRAPPER" registry init --dir "./registry-init"
+  popd > /dev/null
+  [ "$status" -eq 0 ]
+  assert_arg "registry"
+  assert_arg "init"
+  assert_arg "--dir"
+  assert_arg "$initdir"
+}
+
+@test "registry init --config-only --file rewrites relative path to absolute same-path" {
+  local outfile="$TEST_TMPDIR/init-config/allspice.toml"
+  mkdir -p "$TEST_TMPDIR/init-config"
+  pushd "$TEST_TMPDIR" > /dev/null
+  run "$WRAPPER" registry init --config-only --file "./init-config/allspice.toml"
+  popd > /dev/null
+  [ "$status" -eq 0 ]
+  assert_arg "registry"
+  assert_arg "init"
+  assert_arg "--config-only"
+  assert_arg "--file"
+  assert_arg "$outfile"
+}
+
+@test "registry discover --config rewrites relative path to absolute same-path" {
+  local config="$TEST_TMPDIR/config/allspice.toml"
+  mkdir -p "$TEST_TMPDIR/config"
+  pushd "$TEST_TMPDIR" > /dev/null
+  run "$WRAPPER" registry discover --config "./config/allspice.toml"
+  popd > /dev/null
+  [ "$status" -eq 0 ]
+  assert_arg "registry"
+  assert_arg "discover"
+  assert_arg "--config"
+  assert_arg "$config"
+}
+
+@test "registry run --config --discovery rewrites relative paths to absolute same-path" {
+  local config="$TEST_TMPDIR/config/allspice.toml"
+  local discovery="$TEST_TMPDIR/discovery/packages.json"
+  mkdir -p "$TEST_TMPDIR/config" "$TEST_TMPDIR/discovery"
+  pushd "$TEST_TMPDIR" > /dev/null
+  run "$WRAPPER" registry run --config "./config/allspice.toml" --discovery "./discovery/packages.json"
+  popd > /dev/null
+  [ "$status" -eq 0 ]
+  assert_arg "registry"
+  assert_arg "run"
+  assert_arg "--config"
+  assert_arg "$config"
+  assert_arg "--discovery"
+  assert_arg "$discovery"
+}
+
 # ── Output directory ─────────────────────────────────────────────────────────
 
 @test "--output (space) creates dir and mounts volume" {
