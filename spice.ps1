@@ -451,15 +451,15 @@ if ($isRegistry) {
     elseif ($regPrev -eq '--log-file') { $regPrev = ""; continue }
     elseif ($arg -eq '--log-file') { $regPrev = $arg; continue }
 
-    if ($arg -match '^(--config|--discovery|--output)=(.*)$') {
+    if ($arg -match '^(--config|--discovery|--output|--dir|--file)=(.*)$') {
       $flag = $matches[1]; $val = $matches[2]
       $hostDir = Resolve-RegDir $val; $dockerDir = Convert-ToDockerPath $hostDir
       if (-not $regSeen.ContainsKey($dockerDir)) { $regSeen[$dockerDir] = $true; $regVolumes += '-v'; $regVolumes += "${hostDir}:${dockerDir}" }
       $regArgs += "$flag=$(Convert-ToDockerPath (Resolve-RegAbs $val))"
       continue
     }
-    if ($arg -in @('--config', '--discovery', '--output')) { $regPrev = $arg; continue }
-    if ($regPrev -in @('--config', '--discovery', '--output')) {
+    if ($arg -in @('--config', '--discovery', '--output', '--dir', '--file')) { $regPrev = $arg; continue }
+    if ($regPrev -in @('--config', '--discovery', '--output', '--dir', '--file')) {
       $hostDir = Resolve-RegDir $arg; $dockerDir = Convert-ToDockerPath $hostDir
       if (-not $regSeen.ContainsKey($dockerDir)) { $regSeen[$dockerDir] = $true; $regVolumes += '-v'; $regVolumes += "${hostDir}:${dockerDir}" }
       $regArgs += $regPrev; $regArgs += (Convert-ToDockerPath (Resolve-RegAbs $arg))
@@ -482,8 +482,9 @@ if ($isRegistry) {
     --network host `
     @regVolumes `
     -e "SPICE_PASS=$spicePass" `
+    -e "SPICE_PATH_MAP=$env:SPICE_PATH_MAP" `
     @envArgs `
-    "${img}:${tag}" `
+    "$imageRef" `
     @regArgs
   exit $LASTEXITCODE
 }

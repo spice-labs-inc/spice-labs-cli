@@ -514,21 +514,21 @@ if [ "$IS_REGISTRY" = "1" ]; then
 
     # Path flags (=joined form)
     case "$arg" in
-    --config=* | --discovery=* | --output=*)
+    --config=* | --discovery=* | --output=* | --dir=* | --file=*)
       flag="${arg%%=*}"
       val="${arg#*=}"
       reg_mount "$val"
       REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
       continue
       ;;
-    --config | --discovery | --output)
+    --config | --discovery | --output | --dir | --file)
       reg_prev="$arg"
       continue
       ;;
     esac
 
     # Path flags (space-separated value)
-    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" ]]; then
+    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" || "$reg_prev" == "--dir" || "$reg_prev" == "--file" ]]; then
       reg_mount "$arg"
       REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
       reg_prev=""
@@ -548,7 +548,7 @@ if [ "$IS_REGISTRY" = "1" ]; then
     -e SPICE_PASS \
     -e SPICE_PATH_MAP \
     ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "${IMAGE}:${TAG}" \
+    "$IMAGE_REF" \
     ${REG_ARGS[@]+"${REG_ARGS[@]}"}
 fi
 
@@ -612,21 +612,21 @@ if [ "$IS_REGISTRY" = "1" ]; then
 
     # Path flags (=joined form)
     case "$arg" in
-    --config=* | --discovery=* | --output=*)
+    --config=* | --discovery=* | --output=* | --dir=* | --file=*)
       flag="${arg%%=*}"
       val="${arg#*=}"
       reg_mount "$val"
       REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
       continue
       ;;
-    --config | --discovery | --output)
+    --config | --discovery | --output | --dir | --file)
       reg_prev="$arg"
       continue
       ;;
     esac
 
     # Path flags (space-separated value)
-    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" ]]; then
+    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" || "$reg_prev" == "--dir" || "$reg_prev" == "--file" ]]; then
       reg_mount "$arg"
       REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
       reg_prev=""
@@ -646,7 +646,7 @@ if [ "$IS_REGISTRY" = "1" ]; then
     -e SPICE_PASS \
     -e SPICE_PATH_MAP \
     ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "${IMAGE}:${TAG}" \
+    "$IMAGE_REF" \
     ${REG_ARGS[@]+"${REG_ARGS[@]}"}
 fi
 
@@ -707,7 +707,7 @@ if [ "$IS_REGISTRY" = "1" ]; then
     esac
 
     # Path flags (space-separated value)
-    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" ]]; then
+    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" || "$reg_prev" == "--dir" || "$reg_prev" == "--file" ]]; then
       reg_mount "$arg"
       REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
       reg_prev=""
@@ -726,7 +726,7 @@ if [ "$IS_REGISTRY" = "1" ]; then
     ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
     -e SPICE_PASS \
     ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "${IMAGE}:${TAG}" \
+    "$IMAGE_REF" \
     ${REG_ARGS[@]+"${REG_ARGS[@]}"}
 fi
 
@@ -787,7 +787,7 @@ if [ "$IS_REGISTRY" = "1" ]; then
     esac
 
     # Path flags (space-separated value)
-    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" ]]; then
+    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" || "$reg_prev" == "--dir" || "$reg_prev" == "--file" ]]; then
       reg_mount "$arg"
       REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
       reg_prev=""
@@ -805,8 +805,9 @@ if [ "$IS_REGISTRY" = "1" ]; then
     ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
     ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
     -e SPICE_PASS \
+    -e SPICE_PATH_MAP \
     ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "${IMAGE}:${TAG}" \
+    "$IMAGE_REF" \
     ${REG_ARGS[@]+"${REG_ARGS[@]}"}
 fi
 
