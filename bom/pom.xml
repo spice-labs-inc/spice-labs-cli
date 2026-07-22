@@ -100,7 +100,7 @@
         <vault-driver.version>6.2.0</vault-driver.version>
         <gcp-secretmanager.version>2.64.0</gcp-secretmanager.version>
         <maven-model.version>3.9.9</maven-model.version>
-        <jgit.version>6.8.0.202311291450-r</jgit.version>
+        <jgit.version>6.10.1.202505221210-r</jgit.version>
         <jsoup.version>1.18.1</jsoup.version>
         <tomlj.version>1.1.1</tomlj.version>
         <xz.version>1.12</xz.version>
