@@ -54,7 +54,7 @@
              is published independently. ancho is versioned here (NOT in the BOM): it
              is injected via -javaagent, never on the CLI's own classpath. -->
         <spice-bom.version>1.0.0-SNAPSHOT</spice-bom.version>
-        <ancho.version>0.0.5</ancho.version>
+        <ancho.version>0.0.7</ancho.version>
         <!--        Use this version for local dev-->
         <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
