@@ -83,7 +83,7 @@
         <isofilereader.version>0.6.1</isofilereader.version>
 
         <!-- Security / BouncyCastle -->
-        <bouncycastle.version>1.80</bouncycastle.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
         <java-jwt.version>4.4.0</java-jwt.version>
 
         <!-- JSON / YAML / commons -->
