@@ -1,8 +1,8 @@
 name: Test Wrapper Scripts
 
 on:
-  push:
-    branches: ["**"]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 jobs:
   # ── Full Docker tests on Linux (bash reference implementation) ─────────────
