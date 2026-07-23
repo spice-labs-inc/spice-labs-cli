@@ -22,9 +22,6 @@ jobs:
       force: ${{ steps.build-all.outputs.force }}
       code: ${{ steps.build-all.outputs.force == 'true' || steps.changes.outputs.code == 'true' }}
       spice: ${{ steps.build-all.outputs.force == 'true' || steps.changes.outputs.spice == 'true' }}
-      # Space-separated list of environments to auto-deploy to once images are
-      # built, parsed from a `+deploy:` line in the PR body. Empty when absent.
-      deploy_envs: ${{ steps.deploy.outputs.deploy_envs }}
     steps:
       - name: Detect changes
         uses: dorny/paths-filter@v4
@@ -73,37 +70,6 @@ jobs:
             echo "Building all images (PR body ends with +build-all)"
           else
             echo "force=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Detect +deploy trigger
-        id: deploy
-        shell: bash
-        env:
-          # A `+deploy: <env>[, <env>...]` line in the PR body auto-deploys the
-          # freshly built pr-<N> images to those environments once the build
-          # finishes. prod is intentionally not accepted here.
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          set -euo pipefail
-          allowed="junkyard dev astewart staging"
-          envs=""
-          line=$(printf '%s\n' "${PR_BODY:-}" | grep -iE '^[[:space:]]*\+deploy:' | head -n1 || true)
-          if [ -n "${line}" ]; then
-            for raw in ${line#*:}; do
-              env=$(printf '%s' "${raw//,/}" | tr '[:upper:]' '[:lower:]')
-              [ -n "${env}" ] || continue
-              if printf '%s\n' ${allowed} | grep -qx "${env}"; then
-                case " ${envs} " in *" ${env} "*) ;; *) envs="${envs:+${envs} }${env}" ;; esac
-              else
-                echo "Ignoring unsupported deploy env: ${env}" >&2
-              fi
-            done
-          fi
-          echo "deploy_envs=${envs}" >> "$GITHUB_OUTPUT"
-          if [ -n "${envs}" ]; then
-            echo "Will auto-deploy to: ${envs}"
-          else
-            echo "No +deploy annotation found"
           fi
 
   build-deps:
@@ -308,10 +274,11 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
         run: |
           set -euo pipefail
-          # Prefer a matching pr-<N> allspice image (a cross-repo PR pair) so a
-          # coordinated allspice+spice change can be tested together. Then look
-          # at the actual image tags published to GHCR for the latest semver
-          # release. Fall back to the last known published image.
+          set -v
+          # If a manual override is provided via a repository variable, use it
+          # verbatim. Otherwise fall back to the latest semver image tag published
+          # to GHCR. PR-number cross-repo pairing is intentionally not supported
+          # because PR numbers are not deterministic across repositories.
           ALLSPICE="ghcr.io/${OWNER}/allspice"
 
           try_candidate() {
@@ -322,21 +289,16 @@ jobs:
               echo "Using allspice base: ${ALLSPICE}:${tag}"
               exit 0
             fi
+            echo "Candidate not found: ${ALLSPICE}:${tag}"
             return 1
           }
 
-          try_candidate "pr-${PR_NUMBER}"
-
           latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
-            --jq '.[] | .tags[]' 2>/dev/null \
-            | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V \
-            | tail -1 || true)
-          try_candidate "${latest_semver}"
+            --jq '[.[] | .metadata.container.tags[] | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort | last' 2>/dev/null)
+          echo "latest_semver=${latest_semver}"
+          try_candidate "${latest_semver}" || true
 
-          try_candidate "pr-2"
-
-          echo "No allspice base image found (tried pr-${PR_NUMBER}, latest semver image, pr-2)" >&2
+          echo "No allspice base image found (tried override, latest semver image)" >&2
           exit 1
 
       - name: Build and publish enterprise image
@@ -392,35 +354,32 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
         run: |
           set -euo pipefail
-          # Prefer a matching pr-<N> allspice image (a cross-repo PR pair) so a
-          # coordinated allspice+spice change can be tested together. Then look
-          # at the actual image tags published to GHCR for the latest semver
-          # release. Fall back to the last known published image.
+          set -v
+          # If a manual override is provided via a repository variable, use it
+          # verbatim. Otherwise fall back to the latest semver image tag published
+          # to GHCR. PR-number cross-repo pairing is intentionally not supported
+          # because PR numbers are not deterministic across repositories.
           ALLSPICE="ghcr.io/${OWNER}/allspice"
 
           try_candidate() {
             local tag="$1"
             [ -n "${tag}" ] || return 1
+            echo "Trying allspice base candidate: ${ALLSPICE}:${tag}"
             if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
               echo "tag=${tag}" >> "$GITHUB_OUTPUT"
               echo "Using allspice base: ${ALLSPICE}:${tag}"
               exit 0
             fi
+            echo "Candidate not found: ${ALLSPICE}:${tag}"
             return 1
           }
 
-          try_candidate "pr-${PR_NUMBER}"
-
           latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
-            --jq '.[] | .tags[]' 2>/dev/null \
-            | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V \
-            | tail -1 || true)
-          try_candidate "${latest_semver}"
+            --jq '[.[] | .metadata.container.tags[] | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort | last' 2>/dev/null)
+          echo "latest_semver=${latest_semver}"
+          try_candidate "${latest_semver}" || true
 
-          try_candidate "pr-9"
-
-          echo "No allspice base image found (tried pr-${PR_NUMBER}, latest semver image, pr-9)" >&2
+          echo "No allspice base image found" >&2
           exit 1
 
       - name: Build and publish federal image
@@ -439,42 +398,6 @@ jobs:
           tags: |
             ghcr.io/${{ env.OWNER }}/spice-labs-cli-federal:pr-${{ github.event.number }}
 
-  deploy-on-annotation:
-    name: Auto-deploy to ${{ needs.detect-changes.outputs.deploy_envs }}
-    needs:
-      - detect-changes
-      - build-image-spice
-      - build-image-enterprise
-      - build-image-federal
-    # Fire once the images are built (or skipped) and none failed. Each
-    # environment dispatches publish.yml, which retags/deploys the pr-<N>
-    # images exactly as a manual dispatch does today.
-    if: |
-      !cancelled() &&
-      needs.detect-changes.outputs.deploy_envs != '' &&
-      needs.build-image-spice.result != 'failure' &&
-      needs.build-image-enterprise.result != 'failure'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - name: Dispatch publish.yml per environment
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          HEAD_REF: ${{ github.head_ref }}
-          DEPLOY_ENVS: ${{ needs.detect-changes.outputs.deploy_envs }}
-        run: |
-          set -euo pipefail
-          for env in ${DEPLOY_ENVS}; do
-            echo "Dispatching publish.yml for ${env} on ${HEAD_REF}"
-            gh workflow run publish.yml \
-              --repo "${GITHUB_REPOSITORY}" \
-              --ref "${HEAD_REF}" \
-              -f environment="${env}"
-          done
-
   export-otel:
     name: Export OpenTelemetry traces
     needs:
@@ -484,7 +407,6 @@ jobs:
       - test
       - build-image-spice
       - build-image-enterprise
-      - deploy-on-annotation
     if: always()
     runs-on: ubuntu-24.04
     permissions:

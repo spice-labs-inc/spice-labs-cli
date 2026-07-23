@@ -86,6 +86,16 @@ jobs:
       # strip -SNAPSHOT, verify that BOM is published, and pin the CLI to it. The
       # BOM + spice-plugin-api are released independently first (publish-bom.yml /
       # publish-plugin-api.yml); this workflow does not publish them.
+      #
+      # The local CLI POM references the SNAPSHOT BOM, so Maven cannot parse the
+      # project until that BOM is resolvable. We install the in-repo BOM (and the
+      # plugin-api it references) first so the subsequent Maven steps can build the
+      # effective model, then we pin the released BOM version before deploy.
+      - name: Install local SNAPSHOT BOM and plugin-api
+        run: |
+          mvn --batch-mode -f shared/plugin-api/pom.xml install -DskipTests
+          mvn --batch-mode -f bom/pom.xml install -DskipTests
+
       - name: Resolve, verify and pin the released spice-bom version
         run: |
           BOM_SNAP="$(mvn --batch-mode help:evaluate -Dexpression=spice-bom.version -q -DforceStdout)"
@@ -347,15 +357,11 @@ jobs:
           }
 
           latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
-            --jq '.[] | .tags[]' 2>/dev/null \
-            | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V \
-            | tail -1 || true)
+            --jq '[.[] | .metadata.container.tags[] | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort | last' 2>/dev/null)
+          echo "latest_semver=${latest_semver}"
           try_candidate "${latest_semver}"
 
-          try_candidate "pr-2"
-
-          echo "No allspice base image found (tried latest semver image, pr-2)" >&2
+          echo "No allspice base image found (tried latest semver image)" >&2
           exit 1
 
       - name: Build and push enterprise image (fallback)
@@ -454,15 +460,11 @@ jobs:
           }
 
           latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
-            --jq '.[] | .tags[]' 2>/dev/null \
-            | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V \
-            | tail -1 || true)
+            --jq '[.[] | .metadata.container.tags[] | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort | last' 2>/dev/null)
+          echo "latest_semver=${latest_semver}"
           try_candidate "${latest_semver}"
 
-          try_candidate "pr-2"
-
-          echo "No allspice base image found (tried latest semver image, pr-2)" >&2
+          echo "No allspice base image found (tried latest semver image)" >&2
           exit 1
 
       - name: Build and push federal image (fallback)

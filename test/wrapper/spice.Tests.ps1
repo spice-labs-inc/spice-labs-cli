@@ -71,20 +71,21 @@ class MockDocker {
     string prev = "";
     int exitCode = 0;
     foreach (var a in args) {
-      if (found) { cli.Add(a); }
-      else {
-        if (prev == "-e") {
-          int eq = a.IndexOf('=');
-          if (eq > 0) env[a.Substring(0,eq)] = a.Substring(eq+1);
-          prev = ""; continue;
-        }
-        if (a == "-e") { prev = a; continue; }
-        prev = "";
-        if (a.StartsWith("spice-")) { found = true; continue; }
-        // Detect image refs like ghcr.io/...:tag or spicelabs/spice-labs-cli:latest
-        if (a.Length > 0 && char.IsLower(a[0]) && !a.StartsWith("--") && a != "run" && a != "host" && a != "never"
-            && (a.Contains(":") || a.Contains("/"))) { found = true; continue; }
+      if (found) { cli.Add(a); continue; }
+      if (prev == "-e") {
+        int eq = a.IndexOf('=');
+        if (eq > 0) env[a.Substring(0,eq)] = a.Substring(eq+1);
+        prev = ""; continue;
       }
+      if (a == "-e") { prev = a; continue; }
+      prev = "";
+      // The actual wrapper always places the image ref immediately before the CLI args,
+      // so once we see a known command name the following args belong to the CLI.
+      if (a == "survey" || a == "pass" || a == "registry") { found = true; cli.Add(a); continue; }
+      if (a.StartsWith("spice-")) { found = true; continue; }
+      // Detect image refs like ghcr.io/...:tag or spicelabs/spice-labs-cli:latest
+      if (a.Length > 0 && char.IsLower(a[0]) && !a.StartsWith("--") && a != "run" && a != "host" && a != "never"
+          && (a.Contains(":") || a.Contains("/"))) { found = true; continue; }
     }
     // If no --output was given, write a marker to the default container output
     // path (/mnt/output) so tests can verify the volume mount.
@@ -233,6 +234,9 @@ foreach ($a in $allArgs) {
   if ($prevFlag -eq '-e') { if ($a -match '^([^=]+)=(.*)$') { $envVars[$Matches[1]] = $Matches[2] }; $prevFlag = ''; continue }
   if ($a -eq '-e') { $prevFlag = '-e'; continue }
   $prevFlag = ''
+  # The actual wrapper always places the image ref immediately before the CLI args,
+  # so once we see a known command name the following args belong to the CLI.
+  if ($a -eq 'survey' -or $a -eq 'pass' -or $a -eq 'registry') { $foundImage = $true; $cliArgs += $a; continue }
   if ($a -match '^[a-z]' -and $a -notmatch '^--' -and $a -notmatch '^host$' -and $a -match '(:|/)') { $foundImage = $true; continue }
   if ($a -match '^spice-') { $foundImage = $true; continue }
 }
@@ -275,7 +279,7 @@ if [ "`\`$_entrypoint" = "java" ]; then
   exit 0
 fi
 
-pwsh -NoProfile -File "$mockDockerPs1" "`\`$@"
+pwsh -NoProfile -File "$mockDockerPs1" "$@"
 "@
     chmod +x $mockDockerSh 2>`$null
   }
@@ -710,6 +714,88 @@ Describe 'spice.ps1 wrapper' {
     It 'non-zero exit code propagated' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir) -DockerFlags '-e TEST_EXIT_CODE=42'
       $r.ExitCode | Should -Be 42
+    }
+  }
+
+  # ── Registry command (same-path mounts) ────────────────────────────────────
+
+  function global:Convert-TestPathToDockerPath($p) {
+    if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+      if ($p -match '^([A-Za-z]):') { $p = $p -replace '^[A-Za-z]:', "/$($matches[1].ToLower())" }
+      $p = $p -replace '\\', '/'
+    }
+    return $p
+  }
+
+  Context 'Registry command (same-path mounts)' {
+    It 'registry init --dir rewrites relative path to absolute same-path' {
+      $initDir = Join-Path $script:TestDir 'registry-init'
+      New-Item -ItemType Directory -Path $initDir -Force | Out-Null
+      Push-Location $script:TestDir
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('registry', 'init', '--dir', './registry-init')
+        $r.ExitCode | Should -Be 0
+        $r.ContainerArgs | Should -Contain 'registry'
+        $r.ContainerArgs | Should -Contain 'init'
+        $r.ContainerArgs | Should -Contain '--dir'
+        $dockerInitDir = Convert-TestPathToDockerPath $initDir
+        $r.ContainerArgs | Should -Contain $dockerInitDir
+      } finally { Pop-Location }
+    }
+
+    It 'registry init --config-only --file rewrites relative path to absolute same-path' {
+      $outDir = Join-Path $script:TestDir 'init-config'
+      New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+      Push-Location $script:TestDir
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('registry', 'init', '--config-only', '--file', './init-config/allspice.toml')
+        $r.ExitCode | Should -Be 0
+        $r.ContainerArgs | Should -Contain 'registry'
+        $r.ContainerArgs | Should -Contain 'init'
+        $r.ContainerArgs | Should -Contain '--config-only'
+        $r.ContainerArgs | Should -Contain '--file'
+        $outFile = Join-Path $outDir 'allspice.toml'
+        $dockerOutFile = Convert-TestPathToDockerPath $outFile
+        $r.ContainerArgs | Should -Contain $dockerOutFile
+      } finally { Pop-Location }
+    }
+
+    It 'registry discover --config rewrites relative path to absolute same-path' {
+      $configDir = Join-Path $script:TestDir 'config'
+      New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+      Push-Location $script:TestDir
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('registry', 'discover', '--config', './config/allspice.toml')
+        $r.ExitCode | Should -Be 0
+        $r.ContainerArgs | Should -Contain 'registry'
+        $r.ContainerArgs | Should -Contain 'discover'
+        $r.ContainerArgs | Should -Contain '--config'
+        $configFile = Join-Path $configDir 'allspice.toml'
+        $dockerConfig = Convert-TestPathToDockerPath $configFile
+        $r.ContainerArgs | Should -Contain $dockerConfig
+      } finally { Pop-Location }
+    }
+
+    It 'registry run --config --discovery rewrites relative paths to absolute same-path' {
+      $configDir = Join-Path $script:TestDir 'config'
+      $discoveryDir = Join-Path $script:TestDir 'discovery'
+      New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+      New-Item -ItemType Directory -Path $discoveryDir -Force | Out-Null
+      Push-Location $script:TestDir
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('registry', 'run', '--config', './config/allspice.toml', '--discovery', './discovery/packages.json')
+        $r.ExitCode | Should -Be 0
+        $r.ContainerArgs | Should -Contain 'registry'
+        $r.ContainerArgs | Should -Contain 'run'
+        $r.ContainerArgs | Should -Contain '--config'
+        $configFile = Join-Path $configDir 'allspice.toml'
+        $dockerConfig = Convert-TestPathToDockerPath $configFile
+        $r.ContainerArgs | Should -Contain $dockerConfig
+        $r.ContainerArgs | Should -Contain '--discovery'
+        $discoveryFile = Join-Path $discoveryDir 'packages.json'
+        $dockerDiscovery = Convert-TestPathToDockerPath $discoveryFile
+        $r.ContainerArgs | Should -Contain $dockerDiscovery
+      } finally { Pop-Location }
     }
   }
 

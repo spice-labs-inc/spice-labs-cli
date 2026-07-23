@@ -26,11 +26,11 @@ jobs:
       - name: Validate and extract version from tag
         id: validate
         run: |
-          if [[ "${GITHUB_REF}" =~ ^refs/tags/bom-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/bom-v(.+)$ ]]; then
             VERSION="${BASH_REMATCH[1]}"
             echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           else
-            echo "Tag does not match BOM version pattern bom-v*.*.*" >&2
+            echo "Tag does not match BOM version pattern bom-v*" >&2
             exit 1
           fi
 
@@ -72,6 +72,7 @@ jobs:
           EOF
 
       - name: Import GPG key
+        if: ${{ !endsWith(steps.validate.outputs.VERSION, '-SNAPSHOT') }}
         run: |
           echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
 
@@ -97,6 +98,7 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
       - name: Publish BOM to Maven Central
+        if: ${{ !endsWith(steps.validate.outputs.VERSION, '-SNAPSHOT') }}
         run: mvn --batch-mode -f bom/pom.xml clean deploy -P maven-central
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
