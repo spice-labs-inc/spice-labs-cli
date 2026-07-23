@@ -18,7 +18,9 @@ the plugin mechanism.
 From the `spice` repo root:
 
 ```bash
-# 1. Build the plugin (needs spice-plugin-api in ~/.m2 — `mvn -f shared/plugin-api install` it).
+# 1. Build the plugin (needs spice-plugin-api resolved from GitHub Packages,
+#    or in ~/.m2). The sample pom imports spice-bom, which depends on
+#    spice-plugin-api transitively.
 mvn -f sample/hello-plugin package          # → sample/hello-plugin/dist/hello-plugin.jar
 
 # 2. Symlink it into plugins/ (any name; the build looks in <name>/dist/).

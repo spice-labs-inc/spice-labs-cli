@@ -10,9 +10,8 @@
 #   ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:dev
 #   ghcr.io/spice-labs-inc/spice-labs-cli-federal:dev
 #
-# The Dockerfile's builder stage installs the in-repo shared modules
-# (shared/plugin-api + bom) into the local Maven repo, so no peer checkout is
-# needed for them.
+# The Dockerfile's builder stage resolves spice-bom + spice-plugin-api from
+# GitHub Packages (spice-labs-inc/spice-bom, spice-labs-inc/spice-plugin-api).
 #
 # The enterprise/federal images layer the allspice image on top of the OSS
 # image. The allspice repo MUST be checked out beside this repo (../allspice)

@@ -17,7 +17,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- The shared BOM supplies the versions for spice-plugin-api, picocli and the rest
              of the CLI runtime classpath, so plugins never hard-code them. -->
-        <spice-bom.version>1.0.0-SNAPSHOT</spice-bom.version>
+        <spice-bom.version>1.0.3</spice-bom.version>
     </properties>
 
     <dependencyManagement>

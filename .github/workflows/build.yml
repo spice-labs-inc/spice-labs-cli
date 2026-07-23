@@ -102,6 +102,8 @@ jobs:
           target: deps
           push: true
           tags: ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
+          build-args: |
+            GH_TOKEN=${{ secrets.GH_TOKEN }}
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository }}/cache:cache-deps
           cache-to: |
@@ -165,8 +167,7 @@ jobs:
           FROM ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
           WORKDIR /workspace
           COPY . .
-          RUN mvn -B -ntp -DskipTests install -f shared/plugin-api/pom.xml \
-           && mvn -B -ntp install -f bom/pom.xml
+          RUN mvn -B -ntp dependency:resolve || true
           ENTRYPOINT ["sh", "-c"]
           EOF
           docker run --rm \
@@ -183,19 +184,23 @@ jobs:
             <servers>
               <server><id>github-spice-labs-goatrodeo</id><username>'"$GH_USERNAME_SG"'</username><password>'"$GH_TOKEN"'</password></server>
               <server><id>github-spice-labs-ginger</id><username>'"$GH_USERNAME_SG"'</username><password>'"$GH_TOKEN"'</password></server>
+              <server><id>github-spice-labs-bom</id><username>'"$GH_USERNAME_SG"'</username><password>'"$GH_TOKEN"'</password></server>
+              <server><id>github-spice-labs-plugin-api</id><username>'"$GH_USERNAME_SG"'</username><password>'"$GH_TOKEN"'</password></server>
               <server><id>github</id><username>'"$GH_USERNAME_SG"'</username><password>'"$GH_TOKEN"'</password></server>
               <server><id>central</id><username>'"$MAVEN_CENTRAL_USERNAME"'</username><password>'"$MAVEN_CENTRAL_PASSWORD"'</password></server>
             </servers>
             <profiles>
               <profile>
-                <id>default-repos</id>
+                <id>ci</id>
                 <repositories>
                   <repository><id>github-spice-labs-goatrodeo</id><url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url></repository>
                   <repository><id>github-spice-labs-ginger</id><url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url></repository>
+                  <repository><id>github-spice-labs-bom</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url><snapshots><enabled>true</enabled></snapshots></repository>
+                  <repository><id>github-spice-labs-plugin-api</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url><snapshots><enabled>true</enabled></snapshots></repository>
                 </repositories>
               </profile>
             </profiles>
-            <activeProfiles><activeProfile>default-repos</activeProfile></activeProfiles>
+            <activeProfiles><activeProfile>ci</activeProfile></activeProfiles>
           </settings>
           SXML
               mvn -B -ntp verify
@@ -220,12 +225,14 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Publish spice image
-        uses: spice-labs-inc/action-publish-image@v2.2
+        uses: spice-labs-inc/action-publish-image@v2.3
         with:
           image: ghcr.io/${{ github.repository }}
           target: spice
           build-contexts: |
             deps=docker-image://ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
+          build-args: |
+            GH_TOKEN=${{ secrets.GH_TOKEN }}
           tags: |
             ghcr.io/${{ github.repository }}:pr-${{ github.event.number }}
           push: true
