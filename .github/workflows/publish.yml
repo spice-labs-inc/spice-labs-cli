@@ -215,12 +215,15 @@ jobs:
           push: true
           provenance: mode=max
           sbom: true
+          build-args: |
+            GH_TOKEN=${{ secrets.GH_TOKEN }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Resolve GHCR image tags and digests
         id: resolve-ghcr
         env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           RELEASE_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           VERSION: ${{ needs.publish_jars.outputs.version }}
@@ -250,6 +253,7 @@ jobs:
             echo "No ${image}:${cur} found; building ${RELEASE_TAG} from source"
             docker buildx build \
               --platform "${PLATFORMS}" \
+              --build-arg GH_TOKEN="${GH_TOKEN}" \
               --tag "${image}:${RELEASE_TAG}" \
               --tag "${image}:latest" \
               --push \
