@@ -179,6 +179,7 @@ jobs:
         with:
           platforms: ${{ env.PLATFORMS }}
           context: .
+          target: spice
           push: true
           provenance: mode=max
           sbom: true
