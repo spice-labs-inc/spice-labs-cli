@@ -101,6 +101,8 @@ jobs:
         env:
           GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
       - name: Upload wrapper scripts and completions to GitHub Release
