@@ -50,33 +50,33 @@ runs:
           <servers>
             <server>
               <id>github-spice-labs-goatrodeo</id>
-              <username>\${GH_USERNAME}</username>
-              <password>\${GH_TOKEN}</password>
+              <username>\${env.GH_USERNAME}</username>
+              <password>\${env.GH_TOKEN}</password>
             </server>
             <server>
               <id>github-spice-labs-ginger</id>
-              <username>\${GH_USERNAME}</username>
-              <password>\${GH_TOKEN}</password>
+              <username>\${env.GH_USERNAME}</username>
+              <password>\${env.GH_TOKEN}</password>
             </server>
             <server>
               <id>github-spice-labs-bom</id>
-              <username>\${GH_USERNAME}</username>
-              <password>\${GH_TOKEN}</password>
+              <username>\${env.GH_USERNAME}</username>
+              <password>\${env.GH_TOKEN}</password>
             </server>
             <server>
               <id>github-spice-labs-plugin-api</id>
-              <username>\${GH_USERNAME}</username>
-              <password>\${GH_TOKEN}</password>
+              <username>\${env.GH_USERNAME}</username>
+              <password>\${env.GH_TOKEN}</password>
             </server>
             <server>
               <id>github</id>
-              <username>\${GH_USERNAME}</username>
-              <password>\${GH_TOKEN}</password>
+              <username>\${env.GH_USERNAME}</username>
+              <password>\${env.GH_TOKEN}</password>
             </server>
             <server>
               <id>central</id>
-              <username>\${MAVEN_CENTRAL_USERNAME}</username>
-              <password>\${MAVEN_CENTRAL_PASSWORD}</password>
+              <username>\${env.MAVEN_CENTRAL_USERNAME}</username>
+              <password>\${env.MAVEN_CENTRAL_PASSWORD}</password>
             </server>
           </servers>
 
