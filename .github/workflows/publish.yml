@@ -153,7 +153,10 @@ jobs:
           central-password: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           active-profile: github
 
-      - name: Download fat jar and ancho agent
+      - name: Download released fat jar and ancho agent
+        # The release image must ship the released fat JAR (version-stamped by
+        # publish_jars), not the SNAPSHOT inside the PR image. Download both
+        # into target/ so Dockerfile.retag can COPY them over the base.
         run: |
           mkdir -p target
           curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
@@ -170,7 +173,6 @@ jobs:
         env:
           GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -194,98 +196,80 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Extract metadata (tags, labels) for Docker Hub
+      - name: Resolve PR-head image tag
+        # The release tag points at a merge commit (GitHub merge strategy).
+        # build.yml tags images sha-<PR-head-sha>, so walk the merge commit's
+        # parents to find the PR head (2nd parent), falling back to the
+        # release SHA itself for squash/rebase merges (single-parent).
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          parents=$(gh api "repos/${OWNER}/spice-labs-cli/commits/${RELEASE_SHA}" --jq '.parents[].sha')
+          count=$(echo "$parents" | wc -w)
+          if [ "$count" -ge 2 ]; then
+            PR_HEAD=$(echo "$parents" | sed -n '2p')
+          else
+            PR_HEAD="${RELEASE_SHA}"
+          fi
+          echo "pr-head=${PR_HEAD}" >> "$GITHUB_OUTPUT"
+          echo "Release SHA: ${RELEASE_SHA} (PR head: ${PR_HEAD})"
+
+      - name: Extract metadata (tags, labels) for Docker Hub + GHCR
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.PUBLIC_DOCKER_IMAGE }}
+          images: |
+            ${{ env.PUBLIC_DOCKER_IMAGE }}
+            ghcr.io/${{ env.OWNER }}/spice-labs-cli
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-          flavor: |
-            latest=${{ steps.prerelease.outputs.is_prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ steps.prerelease.outputs.is_prerelease == 'false' }}
 
-      - name: Build and Push Docker Hub image
+      - name: Retag PR image with released JARs (Docker Hub + GHCR)
+        # Layer the released fat JAR + ancho onto the PR image (FROM sha-<PR-head>)
+        # via Dockerfile.retag, stamping version labels. Pushes to both
+        # registries in a single multi-arch build. Falls back to a full source
+        # build if the sha-<PR-head> image doesn't exist.
         id: push
-        uses: docker/build-push-action@v6
-        with:
-          platforms: ${{ env.PLATFORMS }}
-          context: .
-          push: true
-          provenance: mode=max
-          sbom: true
-          build-args: |
-            GH_TOKEN=${{ secrets.GH_TOKEN }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Resolve GHCR image tags and digests
-        id: resolve-ghcr
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          RELEASE_SHA: ${{ github.sha }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
           VERSION: ${{ needs.publish_jars.outputs.version }}
+          RELEASE_SHA: ${{ github.sha }}
           BUILD_DATE: ${{ steps.prerelease.outputs.build-date }}
+          PR_HEAD: ${{ steps.resolve.outputs.pr-head }}
         run: |
           set -euo pipefail
-          image="ghcr.io/${OWNER}/spice-labs-cli"
-
-          # The release tag points at a merge commit (GitHub merge strategy).
-          # build.yml tags images sha-<PR-head-sha>, not sha-<merge-sha>, so
-          # walk the merge commit's parents to find the PR head (the 2nd
-          # parent of a merge commit) and look for that image. Fall back to the
-          # release SHA itself for squash/rebase merges (single-parent).
-          resolve_pr_head() {
-            local commit="$1"
-            local parents
-            parents=$(gh api "repos/${OWNER}/spice-labs-cli/commits/${commit}" --jq '.parents[].sha')
-            local count
-            count=$(echo "$parents" | wc -w)
-            if [ "$count" -ge 2 ]; then
-              # Merge commit: 2nd parent is the PR head.
-              echo "$parents" | sed -n '2p'
-            else
-              # Squash or rebase merge: the commit itself is the PR head.
-              echo "$commit"
-            fi
-          }
-          PR_HEAD=$(resolve_pr_head "${RELEASE_SHA}")
-          echo "Release SHA: ${RELEASE_SHA} (PR head: ${PR_HEAD})"
-          cur="sha-${PR_HEAD}"
-
-          # Build the release image FROM the sha-<sha> image (produced by the
-          # merged PR), stamping the version as OCI labels + SPICE_VERSION env
-          # via Dockerfile.retag. This is not a pure manifest retag — the
-          # release image is a distinct, inspectable layer carrying version
-          # metadata. Fall back to a source build only if no sha-<sha> exists.
-          if docker manifest inspect "${image}:${cur}" >/dev/null 2>&1; then
+          # Build the --tag args from the newline-separated metadata output.
+          tag_args=()
+          while IFS= read -r t; do
+            [ -n "$t" ] && tag_args+=(--tag "$t")
+          done <<< "${{ steps.meta.outputs.tags }}"
+          base="ghcr.io/${OWNER}/spice-labs-cli:sha-${PR_HEAD}"
+          if docker manifest inspect "${base}" >/dev/null 2>&1; then
+            echo "Retagging ${base} with released JARs"
             docker buildx build \
               --file Dockerfile.retag \
-              --build-arg BASE_IMAGE="${image}:${cur}" \
+              --build-arg BASE_IMAGE="${base}" \
               --build-arg VERSION="${VERSION}" \
               --build-arg REVISION="${RELEASE_SHA}" \
               --build-arg BUILD_DATE="${BUILD_DATE}" \
-              --tag "${image}:${RELEASE_TAG}" \
-              --tag "${image}:latest" \
+              "${tag_args[@]}" \
               --push \
               .
-            tag="${RELEASE_TAG}"
           else
-            echo "No ${image}:${cur} found; building ${RELEASE_TAG} from source"
+            echo "No ${base} found; building from source"
             docker buildx build \
               --platform "${PLATFORMS}" \
               --build-arg GH_TOKEN="${GH_TOKEN}" \
-              --tag "${image}:${RELEASE_TAG}" \
-              --tag "${image}:latest" \
+              "${tag_args[@]}" \
               --push \
               .
-            tag="${RELEASE_TAG}"
           fi
-          digest=$(docker buildx imagetools inspect "${image}:${tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')
-          echo "ref=${image}:${tag}@${digest}" >> "$GITHUB_OUTPUT"
-          echo "Pushed ${image}:${tag}@${digest}"
 
   build_enterprise:
     name: Retag (or build) Enterprise Image
