@@ -160,10 +160,11 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Publish spice image
-        uses: spice-labs-inc/action-publish-image@v2.3
+        uses: spice-labs-inc/action-publish-image@v2.4
         with:
           image: ghcr.io/${{ github.repository }}
           target: spice
+          platforms: ${{ env.PLATFORMS }}
           build-contexts: |
             deps=docker-image://ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
           build-args: |
