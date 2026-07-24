@@ -6,6 +6,7 @@ on:
 
 env:
   OWNER: spice-labs-inc
+  PLATFORMS: linux/amd64,linux/arm64
 
 permissions:
   contents: read

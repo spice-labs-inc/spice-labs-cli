@@ -1,18 +1,23 @@
-# Version-stamping layer.
+# Release layer: swap the released fat JAR + ancho into a PR-built image and
+# stamp version metadata.
 #
-# Used by release.yml to turn a sha-<sha> (or pr-<N>) image into a release
-# image with version metadata baked in as OCI labels + an env var, instead of
-# a pure manifest retag (imagetools create). The base image is unchanged —
-# the fat JAR inside already carries the correct version (set via
-# `mvn versions:set` during publish_jars) — this layer only stamps image-level
-# version metadata so `docker inspect` / `docker image ls --format` surfaces the
+# The PR image (built by build.yml on push) contains a SNAPSHOT fat JAR. A
+# release must ship the released fat JAR (version-stamped by publish_jars via
+# `mvn versions:set` and uploaded to GitHub Packages). This layer takes the
+# PR image as a base, overwrites the two JARs with the released versions, and
+# stamps OCI labels + SPICE_VERSION env so `docker inspect` surfaces the
 # release version.
+#
+# Build context must contain:
+#   target/spice-labs-cli-<version>-fat.jar  (downloaded from GHP)
+#   target/ancho.jar                          (resolved via maven-dependency-plugin)
 #
 # Build:
 #   docker build -f Dockerfile.retag \
 #     --build-arg BASE_IMAGE=ghcr.io/spice-labs-inc/spice-labs-cli:sha-<sha> \
 #     --build-arg VERSION=1.2.3 \
 #     --build-arg REVISION=<git-sha> \
+#     --build-arg BUILD_DATE=<iso8601> \
 #     -t ghcr.io/spice-labs-inc/spice-labs-cli:v1.2.3 .
 
 # A default is required so `docker buildx --check` passes; it is always
@@ -23,6 +28,14 @@ FROM ${BASE_IMAGE}
 ARG VERSION=unknown
 ARG REVISION=unknown
 ARG BUILD_DATE
+
+WORKDIR /opt/spice-labs-cli
+
+# Overwrite the PR-built JARs with the released versions. The fat JAR filename
+# carries the release version (e.g. spice-labs-cli-1.5.1-fat.jar); COPY it to
+# the stable runtime name. ancho.jar is already stripped of its version.
+COPY target/*-fat.jar ./spice-labs-cli.jar
+COPY target/ancho.jar ./ancho.jar
 
 # OCI image labels — the canonical, inspectable version surface.
 LABEL org.opencontainers.image.version="${VERSION}"
