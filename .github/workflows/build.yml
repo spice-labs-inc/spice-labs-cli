@@ -235,6 +235,7 @@ jobs:
             GH_TOKEN=${{ secrets.GH_TOKEN }}
           tags: |
             ghcr.io/${{ github.repository }}:pr-${{ github.event.number }}
+            ghcr.io/${{ github.repository }}:sha-${{ github.event.pull_request.head.sha }}
           push: true
           git-sha: ${{ github.sha }}
           registry-password: ${{ github.token }}
@@ -323,6 +324,7 @@ jobs:
             ALLSPICE_TAG=${{ steps.allspice.outputs.tag }}
           tags: |
             ghcr.io/${{ env.OWNER }}/spice-labs-cli-enterprise:pr-${{ github.event.number }}
+            ghcr.io/${{ env.OWNER }}/spice-labs-cli-enterprise:sha-${{ github.event.pull_request.head.sha }}
 
   build-image-federal:
     name: Build and publish federal image
@@ -404,6 +406,7 @@ jobs:
             ALLSPICE_TAG=${{ steps.allspice.outputs.tag }}
           tags: |
             ghcr.io/${{ env.OWNER }}/spice-labs-cli-federal:pr-${{ github.event.number }}
+            ghcr.io/${{ env.OWNER }}/spice-labs-cli-federal:sha-${{ github.event.pull_request.head.sha }}
 
   export-otel:
     name: Export OpenTelemetry traces
