@@ -121,6 +121,19 @@ ARG VERSION=""
 RUN if [ -n "${VERSION}" ]; then mvn -B -ntp versions:set -DnewVersion="${VERSION}" -DgenerateBackupPoms=false; fi && \
     mvn -B -ntp -DskipTests package
 
+# ---- test ------------------------------------------------------------------
+# The test target reuses the deps cache and runs `mvn verify`. Used by CI
+# (build.yml `test` job) so tests run against the exact dependency image that
+# produced the runtime JAR. settings.xml is supplied by CI via env/secret.
+# Declared BEFORE the runtime stage so the runtime `spice` stage is the
+# default target (the last FROM in the file).
+FROM deps AS test
+WORKDIR /workspace
+COPY . .
+# spice-bom + spice-plugin-api are resolved remotely (see builder settings.xml).
+ENTRYPOINT ["mvn", "-B", "-ntp"]
+CMD ["verify"]
+
 # ---- runtime ----------------------------------------------------------------
 # Slim runtime: JRE only, no JDK, no Maven. The fat JAR is the only artifact;
 # syft is layered in for SBOM generation; the JFR config and wrapper scripts
@@ -149,14 +162,3 @@ ENTRYPOINT ["sh", "-c", "\
   JVM_ARGS=\"${SPICE_LABS_JVM_ARGS:--XX:MaxRAMPercentage=75}\" && \
   exec java $JVM_ARGS -cp \"/opt/spice-labs-cli/spice-labs-cli.jar:/opt/spice-labs-cli/plugins/*\" io.spicelabs.cli.SpiceLabsCLI \"$@\"", "--"]
 CMD ["--help"]
-
-# ---- test ------------------------------------------------------------------
-# The test target reuses the deps cache and runs `mvn verify`. Used by CI
-# (build.yml `test` job) so tests run against the exact dependency image that
-# produced the runtime JAR. settings.xml is supplied by CI via env/secret.
-FROM deps AS test
-WORKDIR /workspace
-COPY . .
-# spice-bom + spice-plugin-api are resolved remotely (see builder settings.xml).
-ENTRYPOINT ["mvn", "-B", "-ntp"]
-CMD ["verify"]
