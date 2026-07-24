@@ -5,10 +5,6 @@
 # Build artifacts
 target/
 **/target/
-# Allow Dockerfile.retag to COPY the released fat JAR + ancho into the image.
-# These are downloaded by publish.yml (not present in normal source builds).
-!target/*-fat.jar
-!target/ancho.jar
 *.class
 dependency-reduced-pom.xml
 
