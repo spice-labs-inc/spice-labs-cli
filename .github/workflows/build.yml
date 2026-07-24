@@ -12,70 +12,8 @@ permissions:
   packages: write
 
 jobs:
-  detect-changes:
-    name: Detect Changed Paths
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      force: ${{ steps.build-all.outputs.force }}
-      code: ${{ steps.build-all.outputs.force == 'true' || steps.changes.outputs.code == 'true' }}
-      spice: ${{ steps.build-all.outputs.force == 'true' || steps.changes.outputs.spice == 'true' }}
-    steps:
-      - name: Detect changes
-        uses: dorny/paths-filter@v4
-        id: changes
-        with:
-          filters: |
-            code:
-              - 'src/**'
-              - 'pom.xml'
-              - 'Dockerfile'
-              - 'Dockerfile.enterprise'
-              - 'Dockerfile.federal'
-              - '.dockerignore'
-              - 'spice'
-              - 'spice.ps1'
-              - 'install.sh'
-              - 'install.ps1'
-              - 'completions/**'
-              - '.github/workflows/build.yml'
-              - '.github/actions/**'
-            spice:
-              - 'src/**'
-              - 'pom.xml'
-              - 'Dockerfile'
-              - 'Dockerfile.enterprise'
-              - 'Dockerfile.federal'
-              - '.dockerignore'
-              - 'spice'
-              - 'spice.ps1'
-              - '.github/workflows/build.yml'
-
-      - name: Detect +build-all trigger
-        id: build-all
-        shell: bash
-        env:
-          # The PR description is the trigger surface: ending the body with
-          # `+build-all` forces every image to build, ignoring path filters.
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          set -euo pipefail
-          body="${PR_BODY:-}"
-          # Trim trailing whitespace so a trailing newline doesn't defeat "ends with".
-          body="${body%"${body##*[![:space:]]}"}"
-          if [[ "${body}" == *"+build-all" ]]; then
-            echo "force=true" >> "$GITHUB_OUTPUT"
-            echo "Building all images (PR body ends with +build-all)"
-          else
-            echo "force=false" >> "$GITHUB_OUTPUT"
-          fi
-
   build-deps:
     name: Build and push dependency cache
-    needs: detect-changes
-    if: needs.detect-changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -111,8 +49,6 @@ jobs:
 
   format:
     name: Format and lint
-    needs: detect-changes
-    if: needs.detect-changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Check Out Repository
@@ -136,8 +72,7 @@ jobs:
 
   test:
     name: Maven test
-    needs: [detect-changes, build-deps]
-    if: needs.detect-changes.outputs.code == 'true'
+    needs: build-deps
     runs-on: ubuntu-24.04
     steps:
       - name: Check Out Repository
@@ -208,8 +143,7 @@ jobs:
 
   build-image-spice:
     name: Build and publish spice image
-    needs: [detect-changes, build-deps]
-    if: needs.detect-changes.outputs.spice == 'true'
+    needs: build-deps
     concurrency:
       group: build-image-${{ github.event.pull_request.number }}-spice
       cancel-in-progress: true
@@ -242,12 +176,10 @@ jobs:
 
   build-image-enterprise:
     name: Build and publish enterprise image
-    needs: [detect-changes, build-image-spice]
+    needs: build-image-spice
     # The enterprise image layers the spice wrapper onto the latest released
     # allspice image, so it only needs the spice source (Dockerfile.enterprise
-    # + wrapper scripts), not the deps cache. Gate on the same `spice` flag so
-    # it builds alongside the OSS image on any code change.
-    if: needs.detect-changes.outputs.spice == 'true'
+    # + wrapper scripts), not the deps cache.
     concurrency:
       group: build-image-${{ github.event.pull_request.number }}-enterprise
       cancel-in-progress: true
@@ -328,10 +260,9 @@ jobs:
 
   build-image-federal:
     name: Build and publish federal image
-    needs: [detect-changes, build-image-spice]
+    needs: build-image-spice
     # The federal image extends the enterprise image with report_cli and the
     # rogues gallery for CBOM generation. Same allspice base as enterprise.
-    if: needs.detect-changes.outputs.spice == 'true'
     concurrency:
       group: build-image-${{ github.event.pull_request.number }}-federal
       cancel-in-progress: true
@@ -411,7 +342,6 @@ jobs:
   export-otel:
     name: Export OpenTelemetry traces
     needs:
-      - detect-changes
       - build-deps
       - format
       - test
