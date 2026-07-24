@@ -106,6 +106,16 @@ jobs:
                     <id>github-spice-labs-ginger</id>
                     <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
                   </repository>
+                  <repository>
+                    <id>github-spice-labs-bom</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                  <repository>
+                    <id>github-spice-labs-plugin-api</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
                 </repositories>
               </profile>
 
@@ -139,23 +149,11 @@ jobs:
             </profiles>
 
             <activeProfiles>
-              <activeProfile>default-repos</activeProfile>
+              <activeProfile>github</activeProfile>
             </activeProfiles>
 
           </settings>
           EOF
-
-      - name: Import GPG key
-        run: |
-          echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
-
-      # The shared modules (bom/ + shared/plugin-api) are versioned and released
-      # independently of the CLI by publish-bom.yml / publish-plugin-api.yml. A released CLI
-      # must import a RELEASED spice-bom (Maven Central rejects a released POM that imports a
-      # SNAPSHOT). Take the in-repo spice-bom.version, strip -SNAPSHOT, verify that BOM is
-      # published, and pin the CLI to it before deploying.
-      - name: Resolve, verify and pin the released spice-bom version
-        run: .github/scripts/resolve-bom.sh
 
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false

@@ -25,7 +25,7 @@ inputs:
     required: false
     default: ""
   active-profile:
-    description: "Active profile id (github | maven-central | default-repos)"
+    description: "Active profile id (github | maven-central | ci | default-repos)"
     required: false
     default: "default-repos"
 
@@ -59,6 +59,16 @@ runs:
               <password>\${GH_TOKEN}</password>
             </server>
             <server>
+              <id>github-spice-labs-bom</id>
+              <username>\${GH_USERNAME}</username>
+              <password>\${GH_TOKEN}</password>
+            </server>
+            <server>
+              <id>github-spice-labs-plugin-api</id>
+              <username>\${GH_USERNAME}</username>
+              <password>\${GH_TOKEN}</password>
+            </server>
+            <server>
               <id>github</id>
               <username>\${GH_USERNAME}</username>
               <password>\${GH_TOKEN}</password>
@@ -82,6 +92,16 @@ runs:
                   <id>github-spice-labs-ginger</id>
                   <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
                 </repository>
+                <repository>
+                  <id>github-spice-labs-bom</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
+                  <snapshots><enabled>true</enabled></snapshots>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-plugin-api</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url>
+                  <snapshots><enabled>true</enabled></snapshots>
+                </repository>
               </repositories>
             </profile>
 
@@ -95,6 +115,40 @@ runs:
                 <repository>
                   <id>github-spice-labs-ginger</id>
                   <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-bom</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
+                  <snapshots><enabled>true</enabled></snapshots>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-plugin-api</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url>
+                  <snapshots><enabled>true</enabled></snapshots>
+                </repository>
+              </repositories>
+            </profile>
+
+            <profile>
+              <id>ci</id>
+              <repositories>
+                <repository>
+                  <id>github-spice-labs-goatrodeo</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-ginger</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-bom</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
+                  <snapshots><enabled>true</enabled></snapshots>
+                </repository>
+                <repository>
+                  <id>github-spice-labs-plugin-api</id>
+                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url>
+                  <snapshots><enabled>true</enabled></snapshots>
                 </repository>
               </repositories>
             </profile>
@@ -110,6 +164,9 @@ runs:
                   <id>github-spice-labs-ginger</id>
                   <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
                 </repository>
+                <!-- spice-bom + spice-plugin-api resolve from Maven Central by default;
+                     CI builds that need GHP (e.g. before Central propagation) activate
+                     the `github` or `maven-central` profile instead. -->
               </repositories>
             </profile>
           </profiles>

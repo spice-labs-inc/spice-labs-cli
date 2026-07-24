@@ -50,10 +50,12 @@
 
         <!-- The BOM (io.spicelabs:spice-bom) is the single fixed dependency
              specification; it is imported below and supplies the versions for the
-             runtime classpath + coordinates. It lives in bom/ in this repo and
-             is published independently. ancho is versioned here (NOT in the BOM): it
-             is injected via -javaagent, never on the CLI's own classpath. -->
-        <spice-bom.version>1.0.0-SNAPSHOT</spice-bom.version>
+             runtime classpath + coordinates. It lives in its own repo
+             (spice-labs-inc/spice-bom) and is resolved from GitHub Packages.
+             spice-plugin-api is a transitive dependency of the BOM, so the CLI
+             inherits it. ancho is versioned here (NOT in the BOM): it is injected
+             via -javaagent, never on the CLI's own classpath. -->
+        <spice-bom.version>1.0.4</spice-bom.version>
         <ancho.version>0.0.7</ancho.version>
         <!--        Use this version for local dev-->
         <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->
@@ -345,6 +347,35 @@
     </build>
 
     <profiles>
+        <!-- CI-only profile: resolves private Spice deps from GitHub Packages
+             (goatrodeo, ginger-j, bom, plugin-api) without binding GPG signing
+             or distributionManagement. Used by the build.yml test job so `mvn verify`
+             doesn't require a GPG key. Publish jobs activate `github` or
+             `maven-central` instead. -->
+        <profile>
+            <id>ci</id>
+            <repositories>
+                <repository>
+                    <id>github-spice-labs-goatrodeo</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url>
+                </repository>
+                <repository>
+                    <id>github-spice-labs-ginger</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
+                </repository>
+                <repository>
+                    <id>github-spice-labs-bom</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
+                    <snapshots><enabled>true</enabled></snapshots>
+                </repository>
+                <repository>
+                    <id>github-spice-labs-plugin-api</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url>
+                    <snapshots><enabled>true</enabled></snapshots>
+                </repository>
+            </repositories>
+        </profile>
+
         <profile>
             <id>github</id>
             <distributionManagement>

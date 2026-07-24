@@ -31,7 +31,7 @@ so each plugin jar keeps its own `META-INF/services/...SpiceCommandPlugin` and i
 discovered. Plugins should depend on `io.spicelabs:spice-plugin-api` and on any
 CLI-bundled libraries (goatrodeo, ginger-j, …) as **provided** scope, so those are not
 duplicated here — version convergence is governed by the shared `io.spicelabs:spice-bom`
-(in `bom/`).
+(spice-labs-inc/spice-bom).
 
 ## Public vs internal builds
 

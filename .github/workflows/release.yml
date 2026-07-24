@@ -75,34 +75,7 @@ jobs:
           github-token: ${{ secrets.GH_TOKEN }}
           central-username: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           central-password: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          active-profile: default-repos
-
-      - name: Import GPG key
-        run: |
-          echo "${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}" | gpg --batch --import
-
-      # A released CLI must import a RELEASED spice-bom (Maven Central rejects a
-      # released POM that imports a SNAPSHOT). Take the in-repo spice-bom.version,
-      # strip -SNAPSHOT, verify that BOM is published, and pin the CLI to it. The
-      # BOM + spice-plugin-api are released independently first (publish-bom.yml /
-      # publish-plugin-api.yml); this workflow does not publish them.
-      #
-      # The local CLI POM references the SNAPSHOT BOM, so Maven cannot parse the
-      # project until that BOM is resolvable. We install the in-repo BOM (and the
-      # plugin-api it references) first so the subsequent Maven steps can build the
-      # effective model, then we pin the released BOM version before deploy.
-      - name: Install local SNAPSHOT BOM and plugin-api
-        run: |
-          mvn --batch-mode -f shared/plugin-api/pom.xml install -DskipTests
-          mvn --batch-mode -f bom/pom.xml install -DskipTests
-
-      - name: Resolve, verify and pin the released spice-bom version
-        run: |
-          BOM_SNAP="$(mvn --batch-mode help:evaluate -Dexpression=spice-bom.version -q -DforceStdout)"
-          BOM_VERSION="${BOM_SNAP%-SNAPSHOT}"
-          echo "Releasing CLI against spice-bom ${BOM_VERSION}"
-          mvn --batch-mode dependency:get "-Dartifact=io.spicelabs:spice-bom:${BOM_VERSION}:pom"
-          mvn --batch-mode versions:set-property -Dproperty=spice-bom.version "-DnewVersion=${BOM_VERSION}" -DgenerateBackupPoms=false
+          active-profile: github
 
       - name: Update version in pom.xml using Maven plugin
         run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
