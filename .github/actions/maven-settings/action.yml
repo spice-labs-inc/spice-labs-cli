@@ -172,7 +172,7 @@ runs:
           </profiles>
 
           <activeProfiles>
-            <activeProfile>\${ACTIVE_PROFILE}</activeProfile>
+            <activeProfile>${ACTIVE_PROFILE}</activeProfile>
           </activeProfiles>
 
         </settings>
