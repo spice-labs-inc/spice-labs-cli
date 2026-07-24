@@ -137,85 +137,13 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Write settings.xml for GitHub Packages
-        uses: ./.github/actions/maven-settings
-        with:
-          github-username: SpicyGrzl
-          github-token: ${{ secrets.GH_TOKEN }}
-          central-username: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          central-password: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          active-profile: github
-
-      - name: Download released fat jar and ancho agent
-        # The release image must ship the released fat JAR (version-stamped by
-        # publish_jars), not the SNAPSHOT inside the PR image. Download both
-        # into target/ so Dockerfile.retag can COPY them over the base.
-        run: |
-          mkdir -p target
-          curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
-            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
-          ANCHO_VERSION=$(mvn help:evaluate -Dexpression=ancho.version -q -DforceStdout)
-          mvn --batch-mode dependency:copy \
-            -Dartifact=io.spicelabs:ancho:${ANCHO_VERSION}:jar:fat \
-            -DoutputDirectory=target \
-            -Dmdep.stripVersion=true \
-            -Dmdep.stripClassifier=true \
-            -Dmdep.overWriteIfNewer=true
-        env:
-          GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
       - name: Check if release is a pre-release
         id: prerelease
         run: |
           IS_PRERELEASE=$(gh release view ${{ github.ref_name }} --json isPrerelease -q '.isPrerelease')
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          echo "build-date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ github.token }}
-
-      - name: Resolve PR-head image tag
-        # The release tag points at a merge commit (GitHub merge strategy).
-        # build.yml tags images sha-<PR-head-sha>, so walk the merge commit's
-        # parents to find the PR head (2nd parent), falling back to the
-        # release SHA itself for squash/rebase merges (single-parent).
-        id: resolve
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          RELEASE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          parents=$(gh api "repos/${OWNER}/spice-labs-cli/commits/${RELEASE_SHA}" --jq '.parents[].sha')
-          count=$(echo "$parents" | wc -w)
-          if [ "$count" -ge 2 ]; then
-            PR_HEAD=$(echo "$parents" | sed -n '2p')
-          else
-            PR_HEAD="${RELEASE_SHA}"
-          fi
-          echo "pr-head=${PR_HEAD}" >> "$GITHUB_OUTPUT"
-          echo "Release SHA: ${RELEASE_SHA} (PR head: ${PR_HEAD})"
 
       - name: Extract metadata (tags, labels) for Docker Hub + GHCR
         id: meta
@@ -230,49 +158,38 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=${{ steps.prerelease.outputs.is_prerelease == 'false' }}
 
-      - name: Retag PR image with released JARs (Docker Hub + GHCR)
-        # Layer the released fat JAR + ancho onto the PR image (FROM sha-<PR-head>)
-        # via Dockerfile.retag, stamping version labels. Pushes to both
-        # registries in a single multi-arch build. Falls back to a full source
-        # build if the sha-<PR-head> image doesn't exist.
-        id: push
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          VERSION: ${{ needs.publish_jars.outputs.version }}
-          RELEASE_SHA: ${{ github.sha }}
-          BUILD_DATE: ${{ steps.prerelease.outputs.build-date }}
-          PR_HEAD: ${{ steps.resolve.outputs.pr-head }}
-        run: |
-          set -euo pipefail
-          # Build the --tag args from the newline-separated metadata output.
-          tag_args=()
-          while IFS= read -r t; do
-            [ -n "$t" ] && tag_args+=(--tag "$t")
-          done <<< "${{ steps.meta.outputs.tags }}"
-          base="ghcr.io/${OWNER}/spice-labs-cli:sha-${PR_HEAD}"
-          if docker manifest inspect "${base}" >/dev/null 2>&1; then
-            echo "Retagging ${base} with released JARs"
-            docker buildx build \
-              --file Dockerfile.retag \
-              --build-arg BASE_IMAGE="${base}" \
-              --build-arg VERSION="${VERSION}" \
-              --build-arg REVISION="${RELEASE_SHA}" \
-              --build-arg BUILD_DATE="${BUILD_DATE}" \
-              "${tag_args[@]}" \
-              --push \
-              .
-          else
-            echo "No ${base} found; building from source"
-            docker buildx build \
-              --platform "${PLATFORMS}" \
-              --build-arg GH_TOKEN="${GH_TOKEN}" \
-              "${tag_args[@]}" \
-              --push \
-              .
-          fi
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push image (Docker Hub + GHCR)
+        # Build from source so the entire image carries the release version
+        # (the Dockerfile runs `mvn versions:set -DnewVersion=${VERSION}` before
+        # `mvn package`). Multi-arch; pushes to both registries in one build.
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          context: .
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            GH_TOKEN=${{ secrets.GH_TOKEN }}
+            VERSION=${{ needs.publish_jars.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   build_enterprise:
-    name: Retag (or build) Enterprise Image
+    name: Build and Push Enterprise Image
     runs-on: ubuntu-24.04
     needs: [publish_jars, docker_image]
     permissions:
@@ -289,41 +206,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Write settings.xml for GitHub Packages
-        uses: ./.github/actions/maven-settings
-        with:
-          github-username: SpicyGrzl
-          github-token: ${{ secrets.GH_TOKEN }}
-          central-username: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          central-password: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          active-profile: github
-
-      - name: Download released fat jar and ancho agent
-        run: |
-          mkdir -p target
-          curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
-            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
-          ANCHO_VERSION=$(mvn help:evaluate -Dexpression=ancho.version -q -DforceStdout)
-          mvn --batch-mode dependency:copy \
-            -Dartifact=io.spicelabs:ancho:${ANCHO_VERSION}:jar:fat \
-            -DoutputDirectory=target \
-            -Dmdep.stripVersion=true \
-            -Dmdep.stripClassifier=true \
-            -Dmdep.overWriteIfNewer=true
-        env:
-          GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -331,57 +213,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Retag enterprise image sha-<sha> -> vX.Y.Z
-        id: retag
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          RELEASE_SHA: ${{ github.sha }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          VERSION: ${{ needs.publish_jars.outputs.version }}
-        run: |
-          set -euo pipefail
-          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          image="${ENTERPRISE_IMAGE}"
-
-          # The release tag points at a merge commit; build.yml tags images
-          # sha-<PR-head-sha>. Walk the merge commit's parents to find the
-          # PR head (2nd parent), falling back to the commit itself for
-          # squash/rebase merges.
-          parents=$(gh api "repos/${OWNER}/spice-labs-cli/commits/${RELEASE_SHA}" --jq '.parents[].sha')
-          count=$(echo "$parents" | wc -w)
-          if [ "$count" -ge 2 ]; then
-            PR_HEAD=$(echo "$parents" | sed -n '2p')
-          else
-            PR_HEAD="${RELEASE_SHA}"
-          fi
-          echo "Release SHA: ${RELEASE_SHA} (PR head: ${PR_HEAD})"
-          cur="sha-${PR_HEAD}"
-
-          # Build the release image FROM the sha-<sha> enterprise image
-          # (produced by the merged PR), stamping the version as OCI labels +
-          # SPICE_VERSION env via Dockerfile.retag. Not a pure manifest retag —
-          # the release image is a distinct layer carrying version metadata.
-          # Fall through to a source build only if no sha-<sha> exists.
-          if docker manifest inspect "${image}:${cur}" >/dev/null 2>&1; then
-            docker buildx build \
-              --file Dockerfile.retag \
-              --build-arg BASE_IMAGE="${image}:${cur}" \
-              --build-arg VERSION="${VERSION}" \
-              --build-arg REVISION="${RELEASE_SHA}" \
-              --build-arg BUILD_DATE="${BUILD_DATE}" \
-              --tag "${image}:${RELEASE_TAG}" \
-              --tag "${image}:latest" \
-              --push \
-              .
-            echo "built=false" >> "$GITHUB_OUTPUT"
-            echo "Built ${image}:${RELEASE_TAG} FROM ${image}:${cur} (version ${VERSION})"
-          else
-            echo "No ${image}:${cur} found; will build ${RELEASE_TAG} from source" >&2
-            echo "built=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Resolve latest allspice image tag
-        if: steps.retag.outputs.built == 'true'
         id: allspice
         env:
           GH_TOKEN: ${{ github.token }}
@@ -411,8 +243,9 @@ jobs:
           echo "No allspice base image found (tried latest semver image)" >&2
           exit 1
 
-      - name: Build and push enterprise image (fallback)
-        if: steps.retag.outputs.built == 'true'
+      - name: Build and push enterprise image
+        # FROM the just-released OSS image (SPICE_TAG=vX.Y.Z), which already
+        # carries the released fat JAR. Layers allspice's JAR on top.
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -430,7 +263,7 @@ jobs:
             ${{ env.ENTERPRISE_IMAGE }}:latest
 
   build_federal:
-    name: Retag (or build) Federal Image
+    name: Build and Push Federal Image
     runs-on: ubuntu-24.04
     needs: [publish_jars, docker_image]
     permissions:
@@ -447,41 +280,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Write settings.xml for GitHub Packages
-        uses: ./.github/actions/maven-settings
-        with:
-          github-username: SpicyGrzl
-          github-token: ${{ secrets.GH_TOKEN }}
-          central-username: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          central-password: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          active-profile: github
-
-      - name: Download released fat jar and ancho agent
-        run: |
-          mkdir -p target
-          curl -fL -o target/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar \
-            -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "https://maven.pkg.github.com/spice-labs-inc/spice-labs-cli/io/spicelabs/spice-labs-cli/${{ needs.publish_jars.outputs.version }}/spice-labs-cli-${{ needs.publish_jars.outputs.version }}-fat.jar"
-          ANCHO_VERSION=$(mvn help:evaluate -Dexpression=ancho.version -q -DforceStdout)
-          mvn --batch-mode dependency:copy \
-            -Dartifact=io.spicelabs:ancho:${ANCHO_VERSION}:jar:fat \
-            -DoutputDirectory=target \
-            -Dmdep.stripVersion=true \
-            -Dmdep.stripClassifier=true \
-            -Dmdep.overWriteIfNewer=true
-        env:
-          GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -489,60 +287,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Retag federal image sha-<sha> -> vX.Y.Z
-        id: retag
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          RELEASE_SHA: ${{ github.sha }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          VERSION: ${{ needs.publish_jars.outputs.version }}
-        run: |
-          set -euo pipefail
-          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          image="${FEDERAL_IMAGE}"
-
-          # The release tag points at a merge commit; build.yml tags images
-          # sha-<PR-head-sha>. Walk the merge commit's parents to find the
-          # PR head (2nd parent), falling back to the commit itself for
-          # squash/rebase merges.
-          parents=$(gh api "repos/${OWNER}/spice-labs-cli/commits/${RELEASE_SHA}" --jq '.parents[].sha')
-          count=$(echo "$parents" | wc -w)
-          if [ "$count" -ge 2 ]; then
-            PR_HEAD=$(echo "$parents" | sed -n '2p')
-          else
-            PR_HEAD="${RELEASE_SHA}"
-          fi
-          echo "Release SHA: ${RELEASE_SHA} (PR head: ${PR_HEAD})"
-          cur="sha-${PR_HEAD}"
-
-          if docker manifest inspect "${image}:${cur}" >/dev/null 2>&1; then
-            docker buildx build \
-              --file Dockerfile.retag \
-              --build-arg BASE_IMAGE="${image}:${cur}" \
-              --build-arg VERSION="${VERSION}" \
-              --build-arg REVISION="${RELEASE_SHA}" \
-              --build-arg BUILD_DATE="${BUILD_DATE}" \
-              --tag "${image}:${RELEASE_TAG}" \
-              --tag "${image}:latest" \
-              --push \
-              .
-            echo "built=false" >> "$GITHUB_OUTPUT"
-            echo "Built ${image}:${RELEASE_TAG} FROM ${image}:${cur} (version ${VERSION})"
-          else
-            echo "No ${image}:${cur} found; will build ${RELEASE_TAG} from source" >&2
-            echo "built=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Resolve latest allspice image tag
-        if: steps.retag.outputs.built == 'true'
         id: allspice
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Resolve the latest allspice tag from the actual image tags published
-          # to GHCR, falling back to the last known published image if no semver
-          # tag exists yet.
           ALLSPICE="ghcr.io/${OWNER}/allspice"
 
           try_candidate() {
@@ -564,8 +314,10 @@ jobs:
           echo "No allspice base image found (tried latest semver image)" >&2
           exit 1
 
-      - name: Build and push federal image (fallback)
-        if: steps.retag.outputs.built == 'true'
+      - name: Build and push federal image
+        # FROM the just-released OSS image (SPICE_TAG=vX.Y.Z), which already
+        # carries the released fat JAR. Extends the enterprise image with
+        # report_cli and rogues_gallery for CBOM generation.
         uses: docker/build-push-action@v6
         with:
           context: .

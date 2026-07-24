@@ -114,14 +114,24 @@ SXML
 #   target/spice-labs-cli-<version>.jar            (thin)
 #   target/spice-labs-cli-<version>-fat.jar        (shaded, the runtime JAR)
 #   target/ancho.jar                                (copied by maven-dependency-plugin)
-RUN mvn -B -ntp -DskipTests package
+# VERSION is set by the release workflow (publish.yml) so the JARs carry the
+# release version; PR builds leave it unset and ship the pom's default
+# (0.0.1-SNAPSHOT).
+ARG VERSION=""
+RUN if [ -n "${VERSION}" ]; then mvn -B -ntp versions:set -DnewVersion="${VERSION}" -DgenerateBackupPoms=false; fi && \
+    mvn -B -ntp -DskipTests package
 
 # ---- runtime ----------------------------------------------------------------
 # Slim runtime: JRE only, no JDK, no Maven. The fat JAR is the only artifact;
 # syft is layered in for SBOM generation; the JFR config and wrapper scripts
 # mirror what the install/release flow ships.
 FROM eclipse-temurin:21-jre AS spice
+ARG VERSION="unknown"
 WORKDIR /opt/spice-labs-cli
+
+# Expose the release version to the running process (set by publish.yml; PR
+# builds default to "unknown").
+ENV SPICE_VERSION=${VERSION}
 
 COPY --from=anchore/syft:v1.30.0 /syft /usr/bin/syft
 COPY --from=builder /workspace/target/*-fat.jar ./spice-labs-cli.jar
