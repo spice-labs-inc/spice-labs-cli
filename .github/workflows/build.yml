@@ -23,6 +23,9 @@ jobs:
       - name: Check Out Repository
         uses: actions/checkout@v6
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -39,6 +42,7 @@ jobs:
           context: .
           file: Dockerfile
           target: deps
+          platforms: ${{ env.PLATFORMS }}
           push: true
           tags: ghcr.io/${{ github.repository }}/cache:deps-${{ github.sha }}
           build-args: |
