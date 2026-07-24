@@ -231,7 +231,30 @@ jobs:
         run: |
           set -euo pipefail
           image="ghcr.io/${OWNER}/spice-labs-cli"
-          cur="sha-${RELEASE_SHA}"
+
+          # The release tag points at a merge commit (GitHub merge strategy).
+          # build.yml tags images sha-<PR-head-sha>, not sha-<merge-sha>, so
+          # walk the merge commit's parents to find the PR head (the 2nd
+          # parent of a merge commit) and look for that image. Fall back to the
+          # release SHA itself for squash/rebase merges (single-parent).
+          resolve_pr_head() {
+            local commit="$1"
+            local parents
+            parents=$(gh api "repos/${OWNER}/spice-labs-cli/commits/${commit}" --jq '.parents[].sha')
+            local count
+            count=$(echo "$parents" | wc -w)
+            if [ "$count" -ge 2 ]; then
+              # Merge commit: 2nd parent is the PR head.
+              echo "$parents" | sed -n '2p'
+            else
+              # Squash or rebase merge: the commit itself is the PR head.
+              echo "$commit"
+            fi
+          }
+          PR_HEAD=$(resolve_pr_head "${RELEASE_SHA}")
+          echo "Release SHA: ${RELEASE_SHA} (PR head: ${PR_HEAD})"
+          cur="sha-${PR_HEAD}"
+
           # Build the release image FROM the sha-<sha> image (produced by the
           # merged PR), stamping the version as OCI labels + SPICE_VERSION env
           # via Dockerfile.retag. This is not a pure manifest retag — the
@@ -292,6 +315,7 @@ jobs:
       - name: Retag enterprise image sha-<sha> -> vX.Y.Z
         id: retag
         env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           RELEASE_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           VERSION: ${{ needs.publish_jars.outputs.version }}
@@ -299,7 +323,21 @@ jobs:
           set -euo pipefail
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           image="${ENTERPRISE_IMAGE}"
-          cur="sha-${RELEASE_SHA}"
+
+          # The release tag points at a merge commit; build.yml tags images
+          # sha-<PR-head-sha>. Walk the merge commit's parents to find the
+          # PR head (2nd parent), falling back to the commit itself for
+          # squash/rebase merges.
+          parents=$(gh api "repos/${OWNER}/spice-labs-cli/commits/${RELEASE_SHA}" --jq '.parents[].sha')
+          count=$(echo "$parents" | wc -w)
+          if [ "$count" -ge 2 ]; then
+            PR_HEAD=$(echo "$parents" | sed -n '2p')
+          else
+            PR_HEAD="${RELEASE_SHA}"
+          fi
+          echo "Release SHA: ${RELEASE_SHA} (PR head: ${PR_HEAD})"
+          cur="sha-${PR_HEAD}"
+
           # Build the release image FROM the sha-<sha> enterprise image
           # (produced by the merged PR), stamping the version as OCI labels +
           # SPICE_VERSION env via Dockerfile.retag. Not a pure manifest retag —
@@ -400,6 +438,7 @@ jobs:
       - name: Retag federal image sha-<sha> -> vX.Y.Z
         id: retag
         env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           RELEASE_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           VERSION: ${{ needs.publish_jars.outputs.version }}
@@ -407,7 +446,21 @@ jobs:
           set -euo pipefail
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           image="${FEDERAL_IMAGE}"
-          cur="sha-${RELEASE_SHA}"
+
+          # The release tag points at a merge commit; build.yml tags images
+          # sha-<PR-head-sha>. Walk the merge commit's parents to find the
+          # PR head (2nd parent), falling back to the commit itself for
+          # squash/rebase merges.
+          parents=$(gh api "repos/${OWNER}/spice-labs-cli/commits/${RELEASE_SHA}" --jq '.parents[].sha')
+          count=$(echo "$parents" | wc -w)
+          if [ "$count" -ge 2 ]; then
+            PR_HEAD=$(echo "$parents" | sed -n '2p')
+          else
+            PR_HEAD="${RELEASE_SHA}"
+          fi
+          echo "Release SHA: ${RELEASE_SHA} (PR head: ${PR_HEAD})"
+          cur="sha-${PR_HEAD}"
+
           if docker manifest inspect "${image}:${cur}" >/dev/null 2>&1; then
             docker buildx build \
               --file Dockerfile.retag \
