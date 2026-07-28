@@ -124,9 +124,6 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -221,17 +218,25 @@ jobs:
         run: |
           set -euo pipefail
           # Resolve the latest allspice tag from the actual image tags published
-          # to GHCR, falling back to the last known published image if no semver
-          # tag exists yet.
+          # to GHCR. The tag MUST be multi-arch (amd64+arm64) because the
+          # enterprise/federal images build for both platforms via
+          # cross-compilation (no QEMU).
           ALLSPICE="ghcr.io/${OWNER}/allspice"
 
           try_candidate() {
             local tag="$1"
             [ -n "${tag}" ] || return 1
             if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
-              echo "allspice_tag=${tag}" >> "$GITHUB_OUTPUT"
-              echo "Using allspice image tag: ${tag}"
-              exit 0
+              archs=$(docker manifest inspect "${ALLSPICE}:${tag}" \
+                | jq -r '[.manifests[].platform.architecture] | sort | unique | join(",")' 2>/dev/null)
+              if echo "$archs" | grep -q amd64 && echo "$archs" | grep -q arm64; then
+                echo "allspice_tag=${tag}" >> "$GITHUB_OUTPUT"
+                echo "Using allspice image tag: ${tag} (multi-arch: ${archs})"
+                exit 0
+              else
+                echo "Candidate ${tag} is not multi-arch: ${archs}" >&2
+                return 1
+              fi
             fi
             return 1
           }
@@ -239,9 +244,9 @@ jobs:
           latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
             --jq '[.[] | .metadata.container.tags[] | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort | last' 2>/dev/null)
           echo "latest_semver=${latest_semver}"
-          try_candidate "${latest_semver}"
+          try_candidate "${latest_semver}" || true
 
-          echo "No allspice base image found (tried latest semver image)" >&2
+          echo "No multi-arch allspice base image found" >&2
           exit 1
 
       - name: Build and push enterprise image
@@ -251,6 +256,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.enterprise
+          platforms: ${{ env.PLATFORMS }}
           push: true
           provenance: mode=max
           sbom: true
@@ -300,9 +306,16 @@ jobs:
             local tag="$1"
             [ -n "${tag}" ] || return 1
             if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
-              echo "allspice_tag=${tag}" >> "$GITHUB_OUTPUT"
-              echo "Using allspice image tag: ${tag}"
-              exit 0
+              archs=$(docker manifest inspect "${ALLSPICE}:${tag}" \
+                | jq -r '[.manifests[].platform.architecture] | sort | unique | join(",")' 2>/dev/null)
+              if echo "$archs" | grep -q amd64 && echo "$archs" | grep -q arm64; then
+                echo "allspice_tag=${tag}" >> "$GITHUB_OUTPUT"
+                echo "Using allspice image tag: ${tag} (multi-arch: ${archs})"
+                exit 0
+              else
+                echo "Candidate ${tag} is not multi-arch: ${archs}" >&2
+                return 1
+              fi
             fi
             return 1
           }
@@ -310,9 +323,9 @@ jobs:
           latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
             --jq '[.[] | .metadata.container.tags[] | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort | last' 2>/dev/null)
           echo "latest_semver=${latest_semver}"
-          try_candidate "${latest_semver}"
+          try_candidate "${latest_semver}" || true
 
-          echo "No allspice base image found (tried latest semver image)" >&2
+          echo "No multi-arch allspice base image found" >&2
           exit 1
 
       - name: Build and push federal image
@@ -323,6 +336,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.federal
+          platforms: ${{ env.PLATFORMS }}
           push: true
           provenance: mode=max
           sbom: true

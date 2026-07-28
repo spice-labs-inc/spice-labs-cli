@@ -16,7 +16,9 @@
 # ---- dependency cache -------------------------------------------------------
 # Keyed only on pom.xml. Source changes do not invalidate this layer, so the
 # Maven local repository is reused across every source-only commit.
-FROM eclipse-temurin:21-jdk AS deps
+# Pinned to $BUILDPLATFORM so Maven resolution runs on the build host's native
+# arch (no QEMU emulation); the portable .m2 cache is shared to all platforms.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS deps
 WORKDIR /workspace
 
 ENV MAVEN_CONFIG="-B -ntp"
