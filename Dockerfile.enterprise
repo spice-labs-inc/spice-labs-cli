@@ -22,22 +22,25 @@
 
 # Global build args (available to FROM instructions). Declared before the
 # first FROM so both stages can use them.
+#
+# ALLSPICE_REF pins the allspice asset image by digest so the build is
+# reproducible. Update this reference (and the tag in the comment) to pull in
+# a new allspice release.
+ARG ALLSPICE_REF=ghcr.io/spice-labs-inc/allspice:v1.1.4@sha256:739626616f9871f8929c9d02ae2d6022f22d1f1d56a717e256445602ca754944
 ARG SPICE_IMAGE=spicelabs/spice-labs-cli
 ARG SPICE_TAG=latest
-ARG ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice
-ARG ALLSPICE_TAG=latest
 
 # Stage 1: pull the allspice image to extract its proprietary assets.
-FROM ${ALLSPICE_IMAGE}:${ALLSPICE_TAG} AS allspice
+FROM ${ALLSPICE_REF} AS allspice
 
 # Stage 2: start from the spice-labs-cli OSS image and add allspice's JAR.
 FROM ${SPICE_IMAGE}:${SPICE_TAG}
 
-# Copy only the allspice fat JAR (contains allspice + sassafras + transitive deps).
-# report_cli and rogues_gallery are NOT included — those are federal-only.
-# Drop the fat JAR into plugins/ so ServiceLoader discovers the spice-plugin
-# SPI (registry, survey static) on the classpath.
-COPY --from=allspice /opt/allspice/allspice.jar /opt/spice-labs-cli/plugins/allspice.jar
+# Copy the spice plugin JARs (SpiceCommandPlugin SPI + allspice module
+# classes) into plugins/ so ServiceLoader discovers the registry + survey
+# static commands. The allspice fat JAR stays at /opt/allspice/allspice.jar
+# as a classpath resource; only the plugin dist JARs go into plugins/.
+COPY --from=allspice /opt/allspice/plugins/ /opt/spice-labs-cli/plugins/
 
 # The spice entrypoint and wrapper scripts are already in the OSS image.
 # No changes needed — the CLI is the same; allspice is available as a resource.

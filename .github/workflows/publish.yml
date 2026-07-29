@@ -17,7 +17,6 @@ env:
   PUBLIC_DOCKER_IMAGE: spicelabs/spice-labs-cli
   ENTERPRISE_IMAGE: ghcr.io/spice-labs-inc/spice-labs-cli-enterprise
   FEDERAL_IMAGE: ghcr.io/spice-labs-inc/spice-labs-cli-federal
-  ALLSPICE_IMAGE: ghcr.io/spice-labs-inc/allspice
 
 jobs:
   publish_jars:
@@ -211,47 +210,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Resolve latest allspice image tag
-        id: allspice
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # Resolve the latest allspice tag from the actual image tags published
-          # to GHCR. The tag MUST be multi-arch (amd64+arm64) because the
-          # enterprise/federal images build for both platforms via
-          # cross-compilation (no QEMU).
-          ALLSPICE="ghcr.io/${OWNER}/allspice"
-
-          try_candidate() {
-            local tag="$1"
-            [ -n "${tag}" ] || return 1
-            if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
-              archs=$(docker manifest inspect "${ALLSPICE}:${tag}" \
-                | jq -r '[.manifests[].platform.architecture] | sort | unique | join(",")' 2>/dev/null)
-              if echo "$archs" | grep -q amd64 && echo "$archs" | grep -q arm64; then
-                echo "allspice_tag=${tag}" >> "$GITHUB_OUTPUT"
-                echo "Using allspice image tag: ${tag} (multi-arch: ${archs})"
-                exit 0
-              else
-                echo "Candidate ${tag} is not multi-arch: ${archs}" >&2
-                return 1
-              fi
-            fi
-            return 1
-          }
-
-          latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
-            --jq '[.[] | .metadata.container.tags[] | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort | last' 2>/dev/null)
-          echo "latest_semver=${latest_semver}"
-          try_candidate "${latest_semver}" || true
-
-          echo "No multi-arch allspice base image found" >&2
-          exit 1
-
       - name: Build and push enterprise image
         # FROM the just-released OSS image (SPICE_TAG=vX.Y.Z), which already
-        # carries the released fat JAR. Layers allspice's JAR on top.
+        # carries the released fat JAR. Layers allspice's plugins on top.
+        # The allspice base image is pinned by digest in Dockerfile.enterprise.
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -263,8 +225,6 @@ jobs:
           build-args: |
             SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
             SPICE_TAG=${{ needs.publish_jars.outputs.version }}
-            ALLSPICE_IMAGE=${{ env.ALLSPICE_IMAGE }}
-            ALLSPICE_TAG=${{ steps.allspice.outputs.allspice_tag }}
           tags: |
             ${{ env.ENTERPRISE_IMAGE }}:${{ github.event.release.tag_name }}
             ${{ env.ENTERPRISE_IMAGE }}:latest
@@ -294,44 +254,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Resolve latest allspice image tag
-        id: allspice
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          ALLSPICE="ghcr.io/${OWNER}/allspice"
-
-          try_candidate() {
-            local tag="$1"
-            [ -n "${tag}" ] || return 1
-            if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
-              archs=$(docker manifest inspect "${ALLSPICE}:${tag}" \
-                | jq -r '[.manifests[].platform.architecture] | sort | unique | join(",")' 2>/dev/null)
-              if echo "$archs" | grep -q amd64 && echo "$archs" | grep -q arm64; then
-                echo "allspice_tag=${tag}" >> "$GITHUB_OUTPUT"
-                echo "Using allspice image tag: ${tag} (multi-arch: ${archs})"
-                exit 0
-              else
-                echo "Candidate ${tag} is not multi-arch: ${archs}" >&2
-                return 1
-              fi
-            fi
-            return 1
-          }
-
-          latest_semver=$(gh api "/orgs/${OWNER}/packages/container/allspice/versions" --paginate \
-            --jq '[.[] | .metadata.container.tags[] | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort | last' 2>/dev/null)
-          echo "latest_semver=${latest_semver}"
-          try_candidate "${latest_semver}" || true
-
-          echo "No multi-arch allspice base image found" >&2
-          exit 1
-
       - name: Build and push federal image
         # FROM the just-released OSS image (SPICE_TAG=vX.Y.Z), which already
         # carries the released fat JAR. Extends the enterprise image with
-        # report_cli and rogues_gallery for CBOM generation.
+        # report_cli and rogues_gallery for CBOM generation. The allspice base
+        # image is pinned by digest in Dockerfile.federal.
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -343,8 +270,6 @@ jobs:
           build-args: |
             SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
             SPICE_TAG=${{ needs.publish_jars.outputs.version }}
-            ALLSPICE_IMAGE=${{ env.ALLSPICE_IMAGE }}
-            ALLSPICE_TAG=${{ steps.allspice.outputs.allspice_tag }}
           tags: |
             ${{ env.FEDERAL_IMAGE }}:${{ github.event.release.tag_name }}
             ${{ env.FEDERAL_IMAGE }}:latest
