@@ -23,9 +23,6 @@ jobs:
       - name: Check Out Repository
         uses: actions/checkout@v6
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -224,15 +221,24 @@ jobs:
           # verbatim. Otherwise fall back to the latest semver image tag published
           # to GHCR. PR-number cross-repo pairing is intentionally not supported
           # because PR numbers are not deterministic across repositories.
+          # The tag MUST be multi-arch (amd64+arm64) because the enterprise
+          # image builds for both platforms via cross-compilation (no QEMU).
           ALLSPICE="ghcr.io/${OWNER}/allspice"
 
           try_candidate() {
             local tag="$1"
             [ -n "${tag}" ] || return 1
             if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
-              echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-              echo "Using allspice base: ${ALLSPICE}:${tag}"
-              exit 0
+              archs=$(docker manifest inspect "${ALLSPICE}:${tag}" \
+                | jq -r '[.manifests[].platform.architecture] | sort | unique | join(",")' 2>/dev/null)
+              if echo "$archs" | grep -q amd64 && echo "$archs" | grep -q arm64; then
+                echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+                echo "Using allspice base: ${ALLSPICE}:${tag} (multi-arch: ${archs})"
+                exit 0
+              else
+                echo "Candidate ${tag} is not multi-arch: ${archs}" >&2
+                return 1
+              fi
             fi
             echo "Candidate not found: ${ALLSPICE}:${tag}"
             return 1
@@ -243,7 +249,7 @@ jobs:
           echo "latest_semver=${latest_semver}"
           try_candidate "${latest_semver}" || true
 
-          echo "No allspice base image found (tried override, latest semver image)" >&2
+          echo "No multi-arch allspice base image found" >&2
           exit 1
 
       - name: Build and publish enterprise image
@@ -251,6 +257,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.enterprise
+          platforms: ${{ env.PLATFORMS }}
           push: true
           provenance: mode=max
           sbom: true
@@ -303,6 +310,8 @@ jobs:
           # verbatim. Otherwise fall back to the latest semver image tag published
           # to GHCR. PR-number cross-repo pairing is intentionally not supported
           # because PR numbers are not deterministic across repositories.
+          # The tag MUST be multi-arch (amd64+arm64) because the federal
+          # image builds for both platforms via cross-compilation (no QEMU).
           ALLSPICE="ghcr.io/${OWNER}/allspice"
 
           try_candidate() {
@@ -310,9 +319,16 @@ jobs:
             [ -n "${tag}" ] || return 1
             echo "Trying allspice base candidate: ${ALLSPICE}:${tag}"
             if docker manifest inspect "${ALLSPICE}:${tag}" >/dev/null 2>&1; then
-              echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-              echo "Using allspice base: ${ALLSPICE}:${tag}"
-              exit 0
+              archs=$(docker manifest inspect "${ALLSPICE}:${tag}" \
+                | jq -r '[.manifests[].platform.architecture] | sort | unique | join(",")' 2>/dev/null)
+              if echo "$archs" | grep -q amd64 && echo "$archs" | grep -q arm64; then
+                echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+                echo "Using allspice base: ${ALLSPICE}:${tag} (multi-arch: ${archs})"
+                exit 0
+              else
+                echo "Candidate ${tag} is not multi-arch: ${archs}" >&2
+                return 1
+              fi
             fi
             echo "Candidate not found: ${ALLSPICE}:${tag}"
             return 1
@@ -323,7 +339,7 @@ jobs:
           echo "latest_semver=${latest_semver}"
           try_candidate "${latest_semver}" || true
 
-          echo "No allspice base image found" >&2
+          echo "No multi-arch allspice base image found" >&2
           exit 1
 
       - name: Build and publish federal image
@@ -331,6 +347,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.federal
+          platforms: ${{ env.PLATFORMS }}
           push: true
           provenance: mode=max
           sbom: true

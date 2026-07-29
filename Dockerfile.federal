@@ -32,11 +32,10 @@ FROM ${SPICE_IMAGE}:${SPICE_TAG}
 #   report_cli        — Rust binary for CycloneDX CBOM generation
 #   rogues_gallery*   — PQC rogues gallery data
 COPY --from=allspice /opt/allspice/allspice.jar /opt/spice-labs-cli/plugins/allspice.jar
-COPY --from=allspice /opt/allspice/report_cli /opt/allspice/report_cli
+# COPY --chmod (BuildKit) sets the executable bit without a RUN, so the
+# federal image has zero RUN commands and needs no QEMU for cross-arch.
+COPY --chmod=755 --from=allspice /opt/allspice/report_cli /opt/allspice/report_cli
 COPY --from=allspice /opt/allspice/rogues_gallery* /opt/allspice/
-
-# Ensure report_cli is executable (it's a Rust binary, not a JAR)
-RUN chmod +x /opt/allspice/report_cli
 
 # The spice entrypoint and wrapper scripts are already in the OSS image.
 # No changes needed — the CLI is the same; allspice + report_cli are resources.
