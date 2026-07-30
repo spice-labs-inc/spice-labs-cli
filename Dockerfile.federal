@@ -14,13 +14,16 @@
 
 # Global build args (available to FROM instructions). Declared before the
 # first FROM so both stages can use them.
+#
+# ALLSPICE_REF pins the allspice asset image by digest so the build is
+# reproducible. Update this reference (and the tag in the comment) to pull in
+# a new allspice release.
+ARG ALLSPICE_REF=ghcr.io/spice-labs-inc/allspice:v1.1.4@sha256:739626616f9871f8929c9d02ae2d6022f22d1f1d56a717e256445602ca754944
 ARG SPICE_IMAGE=spicelabs/spice-labs-cli
 ARG SPICE_TAG=latest
-ARG ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice
-ARG ALLSPICE_TAG=latest
 
 # Stage 1: pull the allspice image to extract all proprietary assets.
-FROM ${ALLSPICE_IMAGE}:${ALLSPICE_TAG} AS allspice
+FROM ${ALLSPICE_REF} AS allspice
 
 # Stage 2: start from the spice-labs-cli OSS image and add all allspice assets.
 FROM ${SPICE_IMAGE}:${SPICE_TAG}
@@ -31,7 +34,10 @@ FROM ${SPICE_IMAGE}:${SPICE_TAG}
 #                       discovery on the classpath
 #   report_cli        — Rust binary for CycloneDX CBOM generation
 #   rogues_gallery*   — PQC rogues gallery data
-COPY --from=allspice /opt/allspice/allspice.jar /opt/spice-labs-cli/plugins/allspice.jar
+# Copy the spice plugin JARs into plugins/ (same as enterprise) and the
+# allspice fat JAR + CBOM assets into /opt/allspice/.
+COPY --from=allspice /opt/allspice/plugins/ /opt/spice-labs-cli/plugins/
+COPY --from=allspice /opt/allspice/allspice.jar /opt/allspice/allspice.jar
 # COPY --chmod (BuildKit) sets the executable bit without a RUN, so the
 # federal image has zero RUN commands and needs no QEMU for cross-arch.
 COPY --chmod=755 --from=allspice /opt/allspice/report_cli /opt/allspice/report_cli
