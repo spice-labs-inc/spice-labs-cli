@@ -120,10 +120,17 @@ function Mf-Parse($text) {
 
   # Matched anywhere rather than at the start: a warning logged to stdout inside
   # the container would otherwise be enough to reject an otherwise good manifest.
-  if (-not $text -or -not ($text -match '(?m)^# spice-path-manifest 1$')) { return }
+  # `\r?` because the manifest embedded in this script arrives with whatever line
+  # endings git checked it out with — CRLF on Windows — and `$` in a .NET regex
+  # matches before the `\n`, i.e. after the `\r`.
+  if (-not $text -or -not ($text -match '(?m)^# spice-path-manifest 1\r?$')) { return }
 
   $firstCmd = ""
-  foreach ($line in ($text -split "`r?`n")) {
+  foreach ($rawLine in ($text -split "`r?`n")) {
+    # Trimmed for the same reason: a trailing \r would otherwise survive into the
+    # last field of every record.
+    $line = $rawLine.Trim()
+    if (-not $line) { continue }
     $f = $line -split '\s+'
     if ($f.Count -lt 2) { continue }
     switch ($f[0]) {
