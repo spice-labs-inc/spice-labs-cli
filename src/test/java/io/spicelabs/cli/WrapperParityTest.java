@@ -5,11 +5,16 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.Callable;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.io.TempDir;
+
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
 
 /**
  * Parity tests for bash and PowerShell wrapper scripts.
@@ -25,10 +30,68 @@ class WrapperParityTest {
   static Path projectDir;
   static boolean hasPwsh;
 
+  /**
+   * Manifest handed to the wrappers for the current test, or null to let them fall back to
+   * the one embedded in the script. The registry cases set this, because the plugin that
+   * contributes {@code registry} is not on the test classpath — and the whole point of the
+   * manifest is that the wrapper learns those commands from the image rather than from a
+   * list it carries.
+   */
+  Path manifestFile;
+
   @BeforeAll
   static void setup() {
     projectDir = Path.of(System.getProperty("user.dir"));
     hasPwsh = checkCommand("pwsh");
+  }
+
+  /**
+   * Render a manifest for the built-in commands plus a stand-in for the allspice plugin,
+   * so the registry cases exercise the same path the real plugin takes.
+   */
+  private void useManifestWithRegistryPlugin() throws Exception {
+    CommandLine root = SpiceLabsCLI.newCommandLine();
+    if (!root.getSubcommands().containsKey("registry")) {
+      root.addSubcommand("registry", new CommandLine(new FakeRegistryCommand()));
+    }
+    manifestFile = Files.createTempFile("parity-manifest", ".txt");
+    Files.writeString(manifestFile, PathManifest.render(root, false));
+  }
+
+  @Command(name = "registry", subcommands = {
+      FakeRegistryDiscover.class, FakeRegistryRun.class,
+      FakeRegistryStatus.class, FakeRegistryCbom.class })
+  static class FakeRegistryCommand implements Callable<Integer> {
+    public Integer call() { return 0; }
+  }
+
+  @Command(name = "discover")
+  static class FakeRegistryDiscover implements Callable<Integer> {
+    @Option(names = "--config", required = true, paramLabel = "FILE") Path config;
+    @Option(names = "--output", paramLabel = "FILE") Path output;
+    public Integer call() { return 0; }
+  }
+
+  @Command(name = "run")
+  static class FakeRegistryRun implements Callable<Integer> {
+    @Option(names = "--config", required = true, paramLabel = "FILE") Path config;
+    @Option(names = "--discovery", paramLabel = "FILE") Path discovery;
+    public Integer call() { return 0; }
+  }
+
+  @Command(name = "status")
+  static class FakeRegistryStatus implements Callable<Integer> {
+    @Option(names = "--config", required = true, paramLabel = "FILE") Path config;
+    @Option(names = "--json") boolean json;
+    public Integer call() { return 0; }
+  }
+
+  @Command(name = "cbom")
+  static class FakeRegistryCbom implements Callable<Integer> {
+    @Option(names = "--config", required = true, paramLabel = "FILE") Path config;
+    @Option(names = "--rogues", paramLabel = "FILE") Path rogues;
+    @Option(names = "--output", paramLabel = "DIR") Path output;
+    public Integer call() { return 0; }
   }
 
   static boolean checkCommand(String cmd) {
@@ -158,17 +221,24 @@ class WrapperParityTest {
 
   @Test
   void registryDiscover_spaceSeparatedPaths() throws Exception {
+    useManifestWithRegistryPlugin();
     Path dir = Files.createTempDirectory("parity-reg-discover");
     Path cfg = dir.resolve("nexus.toml");
     Files.writeString(cfg, "x = 1\n");
     Path out = dir.resolve("discovery.toml"); // does not exist yet (parent does)
 
-    assertParityOrBashOnly(
+    String args = assertParityOrBashOnly(
         "registry", "discover", "--config", cfg.toString(), "--output", out.toString());
+
+    assertTrue(args.contains(dir.toAbsolutePath().toString()), "the config's directory is mounted");
+    assertFalse(Files.isDirectory(out),
+        "--output is paramLabel=FILE, so only its parent is created — never a directory "
+            + "named discovery.toml");
   }
 
   @Test
   void registryRun_joinedPaths() throws Exception {
+    useManifestWithRegistryPlugin();
     Path dir = Files.createTempDirectory("parity-reg-run");
     Path cfg = dir.resolve("nexus.toml");
     Files.writeString(cfg, "x = 1\n");
@@ -181,12 +251,66 @@ class WrapperParityTest {
 
   @Test
   void registryStatus_withJson() throws Exception {
+    useManifestWithRegistryPlugin();
     Path dir = Files.createTempDirectory("parity-reg-status");
     Path cfg = dir.resolve("nexus.toml");
     Files.writeString(cfg, "x = 1\n");
 
     assertParityOrBashOnly(
         "registry", "status", "--config", cfg.toString(), "--json");
+  }
+
+  /**
+   * The defect that motivated the manifest. {@code --rogues} is a {@code Path} on a
+   * plugin subcommand; no wrapper's hardcoded list mentioned it, so its value reached the
+   * container with nothing mounted for it. Nothing about the plugin changed to fix this —
+   * the wrapper now derives it from the option's type.
+   */
+  @Test
+  void registryCbom_pluginPathOptionIsMounted() throws Exception {
+    useManifestWithRegistryPlugin();
+    Path dir = Files.createTempDirectory("parity-reg-cbom");
+    Path cfg = dir.resolve("allspice.toml");
+    Files.writeString(cfg, "x = 1\n");
+    Path roguesDir = Files.createTempDirectory("parity-reg-rogues");
+    Path rogues = roguesDir.resolve("rogues.json");
+    Files.writeString(rogues, "{}");
+    Path out = dir.resolve("cbom-out");
+
+    String args = assertParityOrBashOnly(
+        "registry", "cbom", "--config", cfg.toString(),
+        "--rogues", rogues.toString(), "--output", out.toString());
+
+    assertTrue(args.contains(roguesDir.toAbsolutePath().toString()),
+        "--rogues lives in a different tree, so it needs its own mount: " + args);
+    assertTrue(Files.isDirectory(out),
+        "--output is paramLabel=DIR, so the directory itself is created");
+  }
+
+  /**
+   * A subject that happens to share a subcommand's name is still a subject. The old
+   * wrapper matched positional tokens against a hardcoded name list and swallowed them.
+   */
+  @Test
+  void subjectNamedLikeASubcommandIsStillASubject() throws Exception {
+    Path inputDir = Files.createTempDirectory("parity-subject-run");
+    Files.writeString(inputDir.resolve("file.txt"), "test");
+
+    String args = assertParityOrBashOnly(
+        "survey", "inventory", "run", inputDir.toString());
+
+    assertTrue(args.contains("inventory run "), "`run` stays the subject: " + args);
+  }
+
+  /**
+   * Mounting a host directory over one the image owns would hide the installation, so
+   * such a path is relocated and the mapping recorded for PathTranslator to reverse.
+   */
+  @Test
+  void pathUnderAReservedDirectoryIsRelocated() throws Exception {
+    String args = normalizeDockerArgs(runWrapper("bash", "survey", "inventory", "my-app", "/etc"));
+    assertTrue(args.contains("/mnt/spice/"),
+        "a path under a reserved root must not be identity-mounted: " + args);
   }
 
   // ── Infra ─────────────────────────────────────────────────────────────────
@@ -196,7 +320,7 @@ class WrapperParityTest {
    * known platform differences).
    * If pwsh is not available, only test bash.
    */
-  private void assertParityOrBashOnly(String... cliArgs) throws Exception {
+  private String assertParityOrBashOnly(String... cliArgs) throws Exception {
     String bashDockerArgs = normalizeDockerArgs(runWrapper("bash", cliArgs));
 
     if (hasPwsh) {
@@ -208,6 +332,7 @@ class WrapperParityTest {
 
     // Basic sanity: docker args should not be empty
     assertFalse(bashDockerArgs.isBlank(), "Docker args should not be empty");
+    return bashDockerArgs;
   }
 
   /**
@@ -282,6 +407,13 @@ class WrapperParityTest {
     pb.environment().put("PATH", mockBin + ":" + System.getenv("PATH"));
     pb.environment().put("SPICE_LABS_CLI_SKIP_PULL", "1");
     pb.environment().put("SPICE_PASS", "dummy");
+    // The mock docker records every invocation, so a manifest refresh would both clobber
+    // the captured args and make the result depend on whatever image is on the machine.
+    // Tests supply their manifest explicitly instead.
+    pb.environment().put("SPICE_SKIP_MANIFEST_REFRESH", "1");
+    if (manifestFile != null) {
+      pb.environment().put("SPICE_PATH_MANIFEST", manifestFile.toString());
+    }
     pb.redirectErrorStream(true);
 
     Process p = pb.start();
