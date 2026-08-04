@@ -60,11 +60,18 @@ jobs:
         shell: pwsh
         run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
 
+      # Pinned to an explicit version rather than using the runner image's
+      # shellcheck, which tracks whatever ubuntu-24.04 currently ships (0.9.0)
+      # and changes under us when GitHub bumps the image. Versions differ in
+      # what they report, so an unpinned linter can fail a PR that touches
+      # nothing related, and can equally pass locally and fail in CI. One
+      # invocation for all files, so a single run reports every finding.
       - name: Run ShellCheck on shell scripts
         run: |
-          shellcheck install.sh
-          shellcheck test/wrapper/entrypoint.sh
-          shellcheck spice
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 \
+            install.sh \
+            test/wrapper/entrypoint.sh \
+            spice
 
       - name: Run PSScriptAnalyzer on PowerShell scripts
         shell: pwsh
@@ -294,4 +301,5 @@ jobs:
           githubToken: "${{ secrets.GITHUB_TOKEN }}"
 
 # Requirements for builder machine
-# docker jq curl gh shellcheck powershell
+# docker jq curl gh powershell
+# (shellcheck is no longer needed on the machine — it runs from a pinned image)
