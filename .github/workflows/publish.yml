@@ -326,9 +326,10 @@ jobs:
       pull-requests: read
       checks: read
     steps:
-      - name: Export workflow traces to Honeycomb
+      - name: Export workflow traces to OpenObserve
         uses: dash0hq/otel-cicd-action@v4
         with:
-          otlpEndpoint: "grpc://api.eu1.honeycomb.io:443/"
-          otlpHeaders: "x-honeycomb-team=${{ secrets.HONEYCOMB_API_KEY }},x-honeycomb-dataset=build"
+          otlpEndpoint: "https://openobserve-ingest.shared-services.scw.spicelabs.systems/api/default/v1/traces"
+          otlpHeaders: "Authorization=Basic ${{ secrets.OPENOBSERVE_CI_AUTH }}"
+          extraAttributes: "environment=ci"
           githubToken: "${{ secrets.GITHUB_TOKEN }}"
