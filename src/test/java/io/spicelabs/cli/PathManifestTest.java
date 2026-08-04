@@ -163,8 +163,11 @@ class PathManifestTest {
     assertTrue(rogues.contains("create=parent"), "paramLabel=FILE means create the parent");
     assertFalse(rogues.contains("exists"), "an optional output-ish path may be created");
 
-    assertTrue(attrs(manifest, "spice/widget/report", "--config").contains("exists"),
-        "a required path option names something the user must already have");
+    // `required` says the flag must be given, not that its target already exists —
+    // `registry init --file` names a file it is about to create. Enforcing existence in
+    // the wrapper would break that, and pre-empt the CLI's diagnostic for the rest.
+    assertFalse(attrs(manifest, "spice/widget/report", "--config").contains("exists"),
+        "a required path option is still the CLI's to validate, not the wrapper's");
     assertTrue(attrs(manifest, "spice/widget/report", "--out").contains("create=self"),
         "paramLabel=DIR means create the directory itself");
     assertFalse(attrs(manifest, "spice/widget/report", "--json").contains("path"));

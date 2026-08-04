@@ -168,8 +168,13 @@ public final class PathManifest {
    * The trailing attribute list for one argument, each attribute space-prefixed.
    *
    * @param takesValue whether the wrapper must consume a following token
-   * @param positional whether this is a positional parameter (positional paths are inputs
-   *                   by convention throughout this CLI, so they are marked {@code exists})
+   * @param positional whether this is a positional parameter. Only positionals are marked
+   *     {@code exists}: they are inputs by convention throughout this CLI, and the wrapper
+   *     already refused a missing one before manifests existed. A path <em>option</em> is
+   *     never marked, even when {@code required()} — required says the flag must be given,
+   *     not that its target already exists ({@code registry init --file} names a file it
+   *     is about to create). Rejecting those in the wrapper would both break that case and
+   *     pre-empt the CLI's own diagnostic for the ones that genuinely are inputs.
    */
   private static String attributesOf(ArgSpec arg, boolean takesValue, boolean positional) {
     StringBuilder sb = new StringBuilder();
@@ -185,7 +190,7 @@ public final class PathManifest {
     if (isPathType(arg)) {
       sb.append(" path");
       sb.append(" create=").append(createHint(arg));
-      if (positional || arg.required()) {
+      if (positional) {
         sb.append(" exists");
       }
     }
