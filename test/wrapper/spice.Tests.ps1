@@ -40,14 +40,19 @@ class MockDocker {
     if (args.Length > 0 && args[0] == "pull") return 0;
     // Detect runtime survey calls by --entrypoint
     string entrypoint = null;
+    string workDir = null;
     var volumes = new Dictionary<string,string>();
     for (int j = 0; j < args.Length - 1; j++) {
       if (args[j] == "--entrypoint") entrypoint = args[j+1];
+      if (args[j] == "-w") workDir = args[j+1];
       if (args[j] == "-v" && args[j+1].Contains(":")) {
         var vol = args[j+1];
         volumes[ContainerPath(vol)] = HostPath(vol);
       }
     }
+    // Identity mounts mean the working directory the wrapper passes is also a real
+    // host directory, so the mock can write there directly.
+    if (workDir != null && volumes.ContainsKey(workDir)) workDir = volumes[workDir];
     // Phase 1: extraction
     if (entrypoint == "sh" && volumes.Count > 0) {
       foreach (var kv in volumes) {
@@ -87,18 +92,18 @@ class MockDocker {
       if (a.Length > 0 && char.IsLower(a[0]) && !a.StartsWith("--") && a != "run" && a != "host" && a != "never"
           && (a.Contains(":") || a.Contains("/"))) { found = true; continue; }
     }
-    // If no --output was given, write a marker to the default container output
-    // path (/mnt/output) so tests can verify the volume mount.
+    // If no --output was given, write a marker to the container's working directory.
+    // The wrapper mounts the user's current directory at its own path and passes it as
+    // -w, so a relative write inside the container lands there on the host.
     bool hasOutput = false;
     foreach (var a in cli) {
       if (a == "--output" || a.StartsWith("--output=")) { hasOutput = true; break; }
     }
-    if (!hasOutput && volumes.ContainsKey("/mnt/output")) {
-      var outDir = volumes["/mnt/output"];
+    if (!hasOutput && workDir != null) {
       try {
-        Directory.CreateDirectory(outDir);
-        File.WriteAllText(Path.Combine(outDir, "default-marker.txt"), "DEFAULT");
-        Console.WriteLine("WROTE:/mnt/output/default-marker.txt");
+        Directory.CreateDirectory(workDir);
+        File.WriteAllText(Path.Combine(workDir, "default-marker.txt"), "DEFAULT");
+        Console.WriteLine("WROTE:" + workDir + "/default-marker.txt");
       } catch {}
     }
     Console.WriteLine("===SPICE_TEST_BEGIN===");
@@ -335,6 +340,10 @@ exit 0
     $env:PATH = "$($script:MockBinDir)$([System.IO.Path]::PathSeparator)$($env:PATH)"
 
     $env:SPICE_LABS_CLI_SKIP_PULL = '1'
+    # The mock docker records every invocation, so a manifest refresh would clobber the
+    # captured args. These tests exercise the manifest embedded in the wrapper.
+    $env:SPICE_SKIP_MANIFEST_REFRESH = '1'
+    Remove-Item env:SPICE_PATH_MANIFEST -ErrorAction SilentlyContinue
     if ($null -eq $SpiceImage) {
       Remove-Item env:SPICE_IMAGE -ErrorAction SilentlyContinue
     } else {
@@ -446,7 +455,8 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
-      $r.ContainerArgs | Should -Contain '/mnt/input'
+      # Identity mount: the container sees the input at its host path.
+      $r.ContainerArgs | Should -Contain $script:InputDir
     }
 
     It 'survey inventory with single file input' {
@@ -456,7 +466,7 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
-      $r.ContainerArgs | Should -Contain '/mnt/input/file.txt'
+      $r.ContainerArgs | Should -Contain $file
     }
 
     It 'pass decode' {
@@ -539,7 +549,7 @@ Describe 'spice.ps1 wrapper' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir, '--output', $outDir)
       $r.ExitCode | Should -Be 0
       $r.ContainerArgs | Should -Contain '--output'
-      $r.ContainerArgs | Should -Contain '/mnt/output'
+      $r.ContainerArgs | Should -Contain $outDir
       $outDir | Should -Exist
     }
 
@@ -547,15 +557,15 @@ Describe 'spice.ps1 wrapper' {
       $outDir = Join-Path $script:TestDir 'output-eq'
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir, "--output=$outDir")
       $r.ExitCode | Should -Be 0
-      $r.ContainerArgs | Should -Contain '--output'
-      $r.ContainerArgs | Should -Contain '/mnt/output'
+      # The joined form is preserved; only the value is absolutised.
+      $r.ContainerArgs | Should -Contain "--output=$outDir"
       $outDir | Should -Exist
     }
 
     It 'default output dir created when --output omitted (bug #530)' {
-      # When --output is omitted, the wrapper mounts the current directory at
-      # /mnt/output in the container. The container writes to its internal
-      # /mnt/output path; the wrapper does not concern itself with that path.
+      # When --output is omitted, the wrapper mounts the current directory at its own
+      # path and makes it the container's working directory, so a relative write inside
+      # the container lands in the user's current directory on the host.
       $defaultDir = Get-Location
 
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
@@ -563,8 +573,8 @@ Describe 'spice.ps1 wrapper' {
       # Verify the marker file appears in the current directory on the host
       $marker = Join-Path $defaultDir 'default-marker.txt'
       $marker | Should -Exist
-      # Verify a volume mount to /mnt/output is in the docker run args
-      $volArg = $r.DockerRunArgs | Where-Object { $_ -match '/mnt/output' }
+      # Verify the current directory is mounted in the docker run args
+      $volArg = $r.DockerRunArgs | Where-Object { $_ -match [regex]::Escape("$defaultDir") }
       $volArg | Should -Not -BeNullOrEmpty
       Remove-Item $marker -ErrorAction SilentlyContinue
     }
@@ -641,7 +651,7 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
-      $r.ContainerArgs | Should -Contain '/mnt/input'
+      $r.ContainerArgs | Should -Contain $script:InputDir
       $r.ContainerArgs | Should -Contain '--threads'
       $r.ContainerArgs | Should -Contain '4'
       $r.ContainerArgs | Should -Contain '--log-level'
@@ -850,7 +860,7 @@ Describe 'spice.ps1 wrapper' {
 
     It 'includes volume mount for input' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
-      $volMount = $r.DockerRunArgs | Where-Object { $_ -match '/mnt/input' }
+      $volMount = $r.DockerRunArgs | Where-Object { $_ -match [regex]::Escape($script:InputDir) }
       $volMount | Should -Not -BeNullOrEmpty
     }
   }

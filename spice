@@ -49,38 +49,539 @@ if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
 fi
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+#
+# Which arguments are host paths is not decided here. It is read from a path
+# manifest rendered from the live picocli model inside the image — including
+# plugin-contributed commands — so this script needs no knowledge of any
+# specific flag. The two regions below are generated; edit
+# shared/path-manifest.bash and run scripts/update-path-manifest.sh.
 
-abs_path() {
-  local path="$1"
-  [[ "$path" == ~* ]] && path="${path/#\~/$HOME}"
-  if [ ! -e "$path" ]; then
-    echo "ERROR ❌ Input path does not exist: $path" >&2
+# ── BEGIN SHARED path-manifest.bash ──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Spice Labs, Inc. & Contributors
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Path-manifest driven argument walking.
+#
+# CANONICAL SOURCE: spice-labs-cli/shared/path-manifest.bash
+# This block is spliced verbatim into the `spice` wrapper and vendored into
+# allspice's `allspice` wrapper. Edit it here; CI checks the copies match.
+#
+# The wrappers run on the HOST, before `docker run`, so they must know which
+# arguments are host filesystem paths before the JVM (and its picocli model)
+# exists. Rather than hardcode a flag list — which drifted from the commands,
+# and could never cover third-party plugins — they read a *path manifest*
+# rendered from the live command model inside the image. See PathManifest.java.
+#
+# Mounting strategy: identity mounts (`-v $dir:$dir`), so a path's container
+# location equals its host location and arguments need only be absolutised.
+# The one exception is a path under a reserved directory (mounting the host's
+# /opt over the image's would destroy the installation), which is remapped to
+# /mnt/spice/N and recorded in SPICE_PATH_MAP for PathTranslator to reverse.
+#
+# Bash 3.2 (macOS system bash) — no associative arrays, no ${var,,}, no mapfile.
+# Lookup tables are therefore single strings delimited by \001 (record) and
+# \002 (key/value), searched with parameter expansion rather than loops.
+# ─────────────────────────────────────────────────────────────────────────────
+
+MF_REC=$'\001'
+MF_SEP=$'\002'
+
+MF_LOADED=0
+MF_ROOT="spice"
+MF_CMDS=""            # \001<cmdpath>\001…  — command nodes
+MF_ATTRS=""           # \001<cmdpath>|<name>\002<attrs>\001…  — scoped lookup
+MF_INHERITED=""       # same, but only args marked `inherit`
+MF_FLAT=""            # \001<name>\002<attrs>\001…  — union across all commands
+MF_RESERVED_EXACT=""  # :/:/usr:…: — matched exactly, never by prefix
+MF_RESERVED_PREFIX="" # :/opt/allspice:…: — matched by prefix
+
+# Outputs, consumed by the caller after walk_args.
+MF_ARGS=()
+MF_VOLUMES=()
+MF_PATH_MAP=()
+MF_RESULT=""
+
+MF_SEEN_DIRS=""       # :dir:… — directories already mounted
+MF_IDENTITY_DIRS=":"  # :dir:… — of those, the ones mounted at their host path
+MF_MOUNT_MAP=""       # \001<hostdir>\002<containerdir>\001… — assigned targets
+MF_MOUNT_N=0
+
+# ── Loading ──────────────────────────────────────────────────────────────────
+
+# Resolve a manifest into MF_* tables. Every tier is best-effort: an unreadable
+# file, a failed `docker run`, or an image too old to know `path-manifest` all
+# fall through to the next tier, and the embedded built-ins manifest is the
+# floor. This must never abort the CLI — at worst the wrapper behaves as it did
+# before manifests existed.
+mf_load() {
+  local text=""
+
+  # 1. Explicit override (tests, air-gapped installs).
+  if [ -n "${SPICE_PATH_MANIFEST:-}" ] && [ -f "${SPICE_PATH_MANIFEST}" ]; then
+    text="$(cat "${SPICE_PATH_MANIFEST}" 2>/dev/null)" || text=""
+  fi
+
+  # 2. Per-image cache, refreshed from the image when cold.
+  if [ -z "$text" ]; then
+    text="$(mf_refresh)" || text=""
+  fi
+
+  # 3. Manifest installed alongside the wrapper by install.sh. Each wrapper sets
+  #    MF_INSTALLED_MANIFEST to its own file: loading another CLI's manifest
+  #    would describe a command tree this wrapper never sees.
+  if [ -z "$text" ]; then
+    local installed="${MF_INSTALLED_MANIFEST:-${XDG_DATA_HOME:-$HOME/.local/share}/spice/path-manifest}"
+    [ -f "$installed" ] && { text="$(cat "$installed" 2>/dev/null)" || text=""; }
+  fi
+
+  # 4. Built-ins, embedded in this script at build time.
+  if [ -z "$text" ]; then
+    text="$(mf_embedded_manifest)" || text=""
+  fi
+
+  mf_parse "$text"
+}
+
+# Echo the manifest for $IMAGE_REF, using a cache keyed by the image ID so a
+# `docker pull` invalidates it automatically — no TTL, no staleness heuristics.
+mf_refresh() {
+  [ "${SPICE_SKIP_MANIFEST_REFRESH:-0}" = "1" ] && return 1
+  command -v docker >/dev/null 2>&1 || return 1
+
+  local image_id cache_dir cache_file
+  image_id="$(docker image inspect --format '{{.Id}}' "$IMAGE_REF" 2>/dev/null)" || return 1
+  [ -n "$image_id" ] || return 1
+
+  cache_dir="${SPICE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/spice}/path-manifest"
+  # Image IDs are `sha256:<hex>`; the colon is legal in a filename but awkward.
+  cache_file="${cache_dir}/${image_id#sha256:}"
+
+  if [ -s "$cache_file" ]; then
+    cat "$cache_file" 2>/dev/null
+    return 0
+  fi
+
+  local text
+  text="$(docker run --rm ${PULL_FLAG:+$PULL_FLAG} "$IMAGE_REF" path-manifest 2>/dev/null)" || return 1
+  case "$text" in
+    *"# spice-path-manifest "*) ;;
+    *) return 1 ;;  # an image too old to know the command, or log noise only
+  esac
+
+  if mkdir -p "$cache_dir" 2>/dev/null; then
+    printf '%s\n' "$text" >"$cache_file" 2>/dev/null || true
+    # Keep the cache from growing without bound as images come and go.
+    {
+      ls -1t "$cache_dir" 2>/dev/null | tail -n +11 | while read -r stale; do
+        rm -f "${cache_dir}/${stale}" 2>/dev/null || true
+      done
+    } || true
+  fi
+  printf '%s\n' "$text"
+}
+
+# Build the lookup tables from manifest text. Unrecognised lines are ignored
+# rather than rejected, so log output that leaks onto stdout inside the
+# container cannot corrupt the tables.
+mf_parse() {
+  local kind a b rest key attrs first_cmd=""
+  MF_CMDS=""; MF_ATTRS=""; MF_INHERITED=""; MF_FLAT=""
+  MF_RESERVED_EXACT=":"; MF_RESERVED_PREFIX=":"
+  MF_LOADED=0
+
+  # Matched anywhere rather than at the start: a warning logged to stdout inside
+  # the container would otherwise be enough to reject an otherwise good manifest.
+  case "$1" in
+    *"# spice-path-manifest 1"$'\n'*) ;;
+    *) return 1 ;;  # unknown schema version — leave the tables empty
+  esac
+
+  while read -r kind a b rest; do
+    case "$kind" in
+      C)
+        [ -n "$a" ] || continue
+        [ -n "$first_cmd" ] || first_cmd="$a"
+        MF_CMDS="${MF_CMDS}${MF_REC}${a}"
+        ;;
+      O|P)
+        [ -n "$a" ] && [ -n "$b" ] || continue
+        # Positionals are keyed by index so they cannot collide with a flag.
+        [ "$kind" = "P" ] && b="#${b}"
+        key="${a}|${b}"
+        attrs=" ${rest} "
+        MF_ATTRS="${MF_ATTRS}${MF_REC}${key}${MF_SEP}${attrs}"
+        case "$attrs" in *" inherit "*)
+          MF_INHERITED="${MF_INHERITED}${MF_REC}${key}${MF_SEP}${attrs}" ;;
+        esac
+        [ "$kind" = "O" ] && mf_flat_merge "$b" "$attrs"
+        ;;
+      R)  [ -n "$a" ] && MF_RESERVED_EXACT="${MF_RESERVED_EXACT}${a}:" ;;
+      RP) [ -n "$a" ] && MF_RESERVED_PREFIX="${MF_RESERVED_PREFIX}${a}:" ;;
+    esac
+  done <<EOF
+$1
+EOF
+
+  MF_CMDS="${MF_CMDS}${MF_REC}"
+  MF_ATTRS="${MF_ATTRS}${MF_REC}"
+  MF_INHERITED="${MF_INHERITED}${MF_REC}"
+  MF_FLAT="${MF_FLAT}${MF_REC}"
+  [ -n "$first_cmd" ] && MF_ROOT="$first_cmd"
+  MF_LOADED=1
+  return 0
+}
+
+# Merge one option's attributes into the flat (command-agnostic) fallback table.
+# The union is deliberately conservative: `create=parent` and never `exists`, so
+# that falling back can neither create a directory where a file belongs nor
+# reject a path the command would have accepted.
+mf_flat_merge() {
+  local name="$1" attrs="$2" existing merged
+  existing="$(mf_raw_lookup "$MF_FLAT" "$name")" || existing=""
+  merged=" "
+  case "${existing}${attrs}" in *" value "*) merged="${merged}value " ;; esac
+  case "${existing}${attrs}" in *" path "*) merged="${merged}path create=parent " ;; esac
+  case "${existing}${attrs}" in *" hostonly "*) merged="${merged}hostonly " ;; esac
+  # Prepended, not replaced: mf_raw_lookup finds the first match, so the newest
+  # merge wins and the superseded record is simply never read.
+  MF_FLAT="${MF_REC}${name}${MF_SEP}${merged}${MF_FLAT}"
+}
+
+# ── Lookup ───────────────────────────────────────────────────────────────────
+
+# Echo the attribute string stored for $2 in table $1, or nothing.
+mf_raw_lookup() {
+  local table="$1" key="$2" rest
+  rest="${table#*${MF_REC}${key}${MF_SEP}}"
+  [ "$rest" = "$table" ] && return 1
+  printf '%s' "${rest%%${MF_REC}*}"
+}
+
+# Resolve the attributes of <cmdpath> <name> into MF_A, trying in order:
+# the exact command, then any ancestor that declares the arg as inherited, then
+# the flat union. The flat tier exists so that a manifest older than the image
+# (or missing entirely) degrades to roughly the previous behaviour instead of
+# mis-parsing the command line.
+mf_attrs() {
+  local cmdpath="$1" name="$2" ancestor
+  MF_A="$(mf_raw_lookup "$MF_ATTRS" "${cmdpath}|${name}")" && return 0
+  ancestor="$cmdpath"
+  while [ "$ancestor" != "${ancestor%/*}" ]; do
+    ancestor="${ancestor%/*}"
+    MF_A="$(mf_raw_lookup "$MF_INHERITED" "${ancestor}|${name}")" && return 0
+  done
+  MF_A="$(mf_raw_lookup "$MF_FLAT" "$name")" && return 0
+  MF_A=""
+  return 1
+}
+
+mf_is_cmd() {
+  case "$MF_CMDS" in *"${MF_REC}${1}${MF_REC}"*) return 0 ;; esac
+  return 1
+}
+
+# Whether $1 is the leaf name of any command, at any depth. Used where a branch
+# scans arguments without tracking its position in the command tree.
+mf_is_cmd_token() {
+  case "$MF_CMDS" in *"/${1}${MF_REC}"*) return 0 ;; esac
+  return 1
+}
+
+mf_has() { # $1=attrs $2=attribute
+  case "$1" in *" ${2} "*) return 0 ;; esac
+  return 1
+}
+
+mf_takes_value() { mf_attrs "$1" "$2" || return 1; mf_has "$MF_A" value; }
+mf_is_hostonly() { mf_attrs "$1" "$2" || return 1; mf_has "$MF_A" hostonly; }
+mf_is_path() { mf_attrs "$1" "$2" || return 1; mf_has "$MF_A" path; }
+
+# Whether a directory must not be shadowed by a bind mount. Filesystem roots
+# match exactly — /var must be protected while the macOS temp dirs beneath it
+# (/var/folders/…) stay mountable — whereas install directories match by prefix,
+# since everything below /opt/allspice belongs to the image.
+mf_reserved() {
+  local dir="$1" prefix rest
+  case "$MF_RESERVED_EXACT" in *":${dir}:"*) return 0 ;; esac
+  rest="${MF_RESERVED_PREFIX#:}"
+  while [ -n "$rest" ]; do
+    prefix="${rest%%:*}"
+    rest="${rest#*:}"
+    [ -n "$prefix" ] || continue
+    [ "$dir" = "$prefix" ] && return 0
+    case "$dir" in "${prefix}"/*) return 0 ;; esac
+  done
+  return 1
+}
+
+# ── Mounting ─────────────────────────────────────────────────────────────────
+
+# Resolve one path argument for use inside the container, adding whatever bind
+# mount it needs, and leave the result in MF_RESULT.
+#
+# Sets a global rather than echoing because command substitution would run this
+# in a subshell and discard the mounts it registers.
+#
+# $1 value  $2 create mode (self|parent)  $3 must-already-exist (0|1)
+mount_path() {
+  local value="$1" create="$2" must_exist="$3"
+  local dir dir_abs abs target container
+
+  [[ "$value" == ~* ]] && value="${value/#\~/$HOME}"
+  MF_RESULT="$value"
+
+  # A URL or a bare `key=value` is not a host path even on a Path-typed option.
+  case "$value" in *://*) return 0 ;; esac
+
+  if [ -e "$value" ]; then
+    if [ -d "$value" ]; then dir="$value"; else dir="$(dirname "$value")"; fi
+  elif [ "$must_exist" = "1" ]; then
+    echo "ERROR ❌ Input path does not exist: $value" >&2
     echo "INFO  Use --help for usage information." >&2
     exit 2
-  fi
-  if [ -d "$path" ]; then
-    (cd "$path" && pwd)
+  elif [ "$create" = "self" ]; then
+    mkdir -p "$value" 2>/dev/null || return 0
+    dir="$value"
   else
-    (cd "$(dirname "$path")" && echo "$(pwd)/$(basename "$path")")
+    dir="$(dirname "$value")"
+    mkdir -p "$dir" 2>/dev/null || return 0
   fi
+
+  # If the directory still isn't there, the value was probably never a path.
+  # Pass it through untouched and let the CLI produce the real diagnostic.
+  [ -d "$dir" ] || return 0
+  dir_abs="$(cd "$dir" 2>/dev/null && pwd)" || return 0
+  if [ -d "$value" ]; then
+    abs="$dir_abs"
+  else
+    abs="${dir_abs%/}/$(basename "$value")"
+  fi
+
+  target="$(mf_raw_lookup "$MF_MOUNT_MAP" "$dir_abs")" || target=""
+  if [ -z "$target" ] && mf_under_identity_mount "$dir_abs"; then
+    # Already visible through an ancestor's identity mount; a nested bind mount
+    # would add nothing.
+    target="$dir_abs"
+  fi
+  if [ -z "$target" ]; then
+    if mf_reserved "$dir_abs"; then
+      # Mounting here would hide part of the image, so relocate and record the
+      # mapping for PathTranslator to reverse in user-facing messages.
+      MF_MOUNT_N=$((MF_MOUNT_N + 1))
+      target="/mnt/spice/${MF_MOUNT_N}"
+      MF_PATH_MAP+=("${target}:${dir_abs}")
+    else
+      target="$dir_abs"
+    fi
+    MF_MOUNT_MAP="${MF_MOUNT_MAP}${MF_REC}${dir_abs}${MF_SEP}${target}${MF_REC}"
+    mf_mount "$dir_abs" "$target"
+  fi
+
+  container="${target}${abs#$dir_abs}"
+  MF_RESULT="$container"
 }
 
-# Known subcommand tokens (not paths)
-is_subcommand() {
-  case "$1" in
-    survey|inventory|static|runtime|pass|decode) return 0 ;;
-    registry|discover|run|status|list|retry) return 0 ;;
-    *) return 1 ;;
-  esac
+# Add a deduped bind mount, recording identity mounts so nested paths can reuse
+# them instead of stacking a redundant mount inside one.
+mf_mount() {
+  local host="$1" container="$2"
+  case ":$MF_SEEN_DIRS:" in *":${host}:"*) return 0 ;; esac
+  MF_SEEN_DIRS="${MF_SEEN_DIRS}:${host}"
+  [ "$host" = "$container" ] && MF_IDENTITY_DIRS="${MF_IDENTITY_DIRS}${host}:"
+  MF_VOLUMES+=("-v" "${host}:${container}")
+  return 0
 }
 
-# Flags that consume the next arg as a value
-is_value_flag() {
-  case "$1" in
-  --output | --threads | --max-records | --chunk-size | --log-level | --log-file | --tag-json | --goat-rodeo-args | --ginger-args | --features | --config | --discovery) return 0 ;;
-  *) return 1 ;;
-  esac
+# Whether $1 is already reachable inside the container via an identity mount of
+# one of its ancestors.
+mf_under_identity_mount() {
+  local dir="$1" rest prefix
+  rest="${MF_IDENTITY_DIRS#:}"
+  while [ -n "$rest" ]; do
+    prefix="${rest%%:*}"
+    rest="${rest#*:}"
+    [ -n "$prefix" ] || continue
+    case "$dir" in "${prefix}"/*) return 0 ;; esac
+  done
+  return 1
 }
+
+# ── Argument walking ─────────────────────────────────────────────────────────
+
+# Rewrite "$@" into MF_ARGS, mounting every argument the manifest calls a path.
+walk_args() {
+  local cmdpath="$MF_ROOT" posidx=0 pending="" endopts=0
+  local arg flag val create must_exist
+  MF_ARGS=()
+
+  for arg in "$@"; do
+    if [ "$endopts" = "1" ]; then
+      MF_ARGS+=("$arg")
+      continue
+    fi
+
+    # The value of a flag seen on the previous iteration.
+    if [ -n "$pending" ]; then
+      if mf_is_hostonly "$cmdpath" "$pending"; then
+        : # the wrapper handles it; strip both tokens
+      elif mf_is_path "$cmdpath" "$pending"; then
+        mf_create_args "$MF_A"
+        mount_path "$arg" "$create" "$must_exist"
+        MF_ARGS+=("$pending" "$MF_RESULT")
+      else
+        MF_ARGS+=("$pending" "$arg")
+      fi
+      pending=""
+      continue
+    fi
+
+    if [ "$arg" = "--" ]; then
+      endopts=1
+      MF_ARGS+=("$arg")
+      continue
+    fi
+
+    if [[ "$arg" == -* ]]; then
+      flag="${arg%%=*}"
+      if [ "$flag" != "$arg" ]; then
+        val="${arg#*=}"
+        if mf_is_hostonly "$cmdpath" "$flag"; then
+          continue
+        elif mf_is_path "$cmdpath" "$flag"; then
+          mf_create_args "$MF_A"
+          mount_path "$val" "$create" "$must_exist"
+          MF_ARGS+=("${flag}=${MF_RESULT}")
+        else
+          MF_ARGS+=("$arg")
+        fi
+      elif mf_takes_value "$cmdpath" "$arg"; then
+        pending="$arg"
+      elif mf_is_hostonly "$cmdpath" "$arg"; then
+        : # a valueless host-only flag
+      else
+        MF_ARGS+=("$arg")
+      fi
+      continue
+    fi
+
+    # A positional token descends into a subcommand only before any positional
+    # has been consumed here, so a subject that happens to be named `run` or
+    # `status` is still treated as a subject.
+    if [ "$posidx" = "0" ] && mf_is_cmd "${cmdpath}/${arg}"; then
+      cmdpath="${cmdpath}/${arg}"
+      MF_ARGS+=("$arg")
+      continue
+    fi
+
+    if mf_attrs "$cmdpath" "#${posidx}" && mf_has "$MF_A" path; then
+      mf_create_args "$MF_A"
+      mount_path "$arg" "$create" "$must_exist"
+      MF_ARGS+=("$MF_RESULT")
+    else
+      MF_ARGS+=("$arg")
+    fi
+    posidx=$((posidx + 1))
+  done
+
+  # A trailing flag with no value: pass it through so picocli reports it.
+  [ -n "$pending" ] && MF_ARGS+=("$pending")
+  return 0
+}
+
+# Split an attribute string into the two parameters mount_path needs.
+mf_create_args() {
+  case "$1" in *" create=self "*) create="self" ;; *) create="parent" ;; esac
+  case "$1" in *" exists "*) must_exist="1" ;; *) must_exist="0" ;; esac
+}
+# ── END SHARED path-manifest.bash ──
+
+# ── BEGIN GENERATED PATH MANIFEST ──
+mf_embedded_manifest() {
+  cat <<'SPICE_EMBEDDED_MANIFEST'
+# spice-path-manifest 1
+V 1
+G unknown
+R /
+R /bin
+R /boot
+R /dev
+R /etc
+R /lib
+R /lib32
+R /lib64
+R /libx32
+R /opt
+R /proc
+R /root
+R /run
+R /sbin
+R /srv
+R /sys
+R /usr
+R /var
+C spice
+O spice -h flag
+O spice --help flag
+O spice -V flag
+O spice --version flag
+C spice/survey
+O spice/survey -h flag
+O spice/survey --help flag
+O spice/survey -V flag
+O spice/survey --version flag
+C spice/survey/inventory
+O spice/survey/inventory --output value path create=self
+O spice/survey/inventory --no-upload flag
+O spice/survey/inventory --upload-only flag
+O spice/survey/inventory --tag-json value
+O spice/survey/inventory --threads value
+O spice/survey/inventory --max-records value
+O spice/survey/inventory --chunk-size value
+O spice/survey/inventory --log-level value
+O spice/survey/inventory --log-file value hostonly
+O spice/survey/inventory --goat-rodeo-args value
+O spice/survey/inventory --ginger-args value
+O spice/survey/inventory -h flag
+O spice/survey/inventory --help flag
+O spice/survey/inventory -V flag
+O spice/survey/inventory --version flag
+P spice/survey/inventory 0 value
+P spice/survey/inventory 1 value path create=self exists
+C spice/survey/runtime
+O spice/survey/runtime --jfr flag
+O spice/survey/runtime --native-only flag
+O spice/survey/runtime --keep-recording flag
+O spice/survey/runtime --no-upload flag
+O spice/survey/runtime --output value path create=self
+O spice/survey/runtime --log-level value
+O spice/survey/runtime --chunk-size value
+O spice/survey/runtime --anchor value path create=parent
+O spice/survey/runtime -h flag
+O spice/survey/runtime --help flag
+O spice/survey/runtime -V flag
+O spice/survey/runtime --version flag
+P spice/survey/runtime 0 value
+C spice/pass
+O spice/pass -h flag
+O spice/pass --help flag
+O spice/pass -V flag
+O spice/pass --version flag
+C spice/pass/decode
+O spice/pass/decode -h flag
+O spice/pass/decode --help flag
+O spice/pass/decode -V flag
+O spice/pass/decode --version flag
+C spice/generate-completion
+O spice/generate-completion -h flag
+O spice/generate-completion --help flag
+O spice/generate-completion -V flag
+O spice/generate-completion --version flag
+C spice/generate-powershell-completion
+C spice/path-manifest
+SPICE_EMBEDDED_MANIFEST
+}
+# ── END GENERATED PATH MANIFEST ──
 
 SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
 IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
@@ -214,6 +715,12 @@ for arg in "$@"; do
   [[ "$arg" == "-V" || "$arg" == "--version" ]] && echo "script version ${LOCAL_HASH}" && break
 done
 
+# ── Path manifest ────────────────────────────────────────────────────────────
+# Load before any argument walking: everything below asks the manifest which
+# arguments are paths rather than deciding for itself.
+
+mf_load
+
 # ── Runtime survey detection (must happen before general arg parsing) ───────
 # survey runtime args contain "-- <command...>" which the general parser
 # would misinterpret as positional path args. Detect and handle early.
@@ -303,7 +810,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
       [[ "$arg" == "--no-upload" ]] && RT_NO_UPLOAD=1
       [[ "$arg" == "--native-only" ]] && RT_NATIVE_ONLY=1
       [[ "$arg" == "--keep-recording" ]] && RT_KEEP_RECORDING=1
-      if is_value_flag "$arg"; then
+      if mf_takes_value "${MF_ROOT}/survey/runtime" "$arg"; then
         rt_prev="$arg"
       else
         RT_CLI_ARGS+=("$arg")
@@ -312,7 +819,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     fi
 
     # Positional: subcommands pass through, first non-subcommand is subject
-    if is_subcommand "$arg"; then
+    if mf_is_cmd_token "$arg"; then
       RT_CLI_ARGS+=("$arg")
     else
       rt_pos=$((rt_pos + 1))
@@ -426,9 +933,10 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
 
   RT_ANCHOR_MOUNT=()
   if [ -n "$RT_ANCHOR" ]; then
-    RT_ANCHOR_ABS="$(abs_path "$RT_ANCHOR")"
-    RT_ANCHOR_MOUNT=("-v" "${RT_ANCHOR_ABS}:${RT_ANCHOR_ABS}:ro")
-    RT_COLLECT_ARGS+=("--anchor" "${RT_ANCHOR_ABS}")
+    # Mounted like any other path argument, so --anchor stops being special-cased.
+    mount_path "$RT_ANCHOR" parent 1
+    RT_ANCHOR_MOUNT=(${MF_VOLUMES[@]+"${MF_VOLUMES[@]}"})
+    RT_COLLECT_ARGS+=("--anchor" "${MF_RESULT}")
   fi
 
   docker run --rm --entrypoint java \
@@ -454,558 +962,28 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   exit $((RT_TARGET_RC != 0 ? RT_TARGET_RC : RT_COLLECT_RC))
 fi
 
-# ── Registry (allspice) detection ─────────────────────────────────────────────
-# `registry` has its own grammar: --config/--discovery/--output are file paths and there
-# are no subject/input positionals. Mount each path flag's directory at the SAME path in
-# the container (so args need no remapping beyond becoming absolute), which also lets the
-# git-backed state dir — created next to the config — persist on the host.
-
-IS_REGISTRY=0
-for arg in "$@"; do
-  [[ "$arg" == -* ]] && continue # skip leading global flags
-  [ "$arg" = "registry" ] && IS_REGISTRY=1
-  break # first positional decides
-done
-
-if [ "$IS_REGISTRY" = "1" ]; then
-  REG_ARGS=()
-  REG_VOLUMES=()
-  REG_SEEN_DIRS=""
-  reg_prev=""
-
-  reg_dir_of() { # echo the directory to mount for a path (file may not yet exist)
-    local p="$1"
-    if [ -d "$p" ]; then
-      (cd "$p" && pwd)
-    else
-      local parent
-      parent="$(dirname "$p" 2>/dev/null)"
-      [ -n "$parent" ] || parent="."
-      (cd "$parent" 2>/dev/null && pwd) || {
-        echo "ERROR ❌ Directory does not exist for path: $p" >&2
-        exit 2
-      }
-    fi
-  }
-  reg_abs_of() { # echo the absolute path (file may not yet exist)
-    local p="$1"
-    if [ -d "$p" ]; then
-      (cd "$p" && pwd)
-    else echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"; fi
-  }
-  reg_mount() { # add a same-path volume for the given path's dir (deduped)
-    local dir
-    dir="$(reg_dir_of "$1")"
-    case ":$REG_SEEN_DIRS:" in *":$dir:"*) ;; *)
-      REG_SEEN_DIRS="$REG_SEEN_DIRS:$dir"
-      REG_VOLUMES+=("-v" "${dir}:${dir}")
-      ;;
-    esac
-  }
-
-  for arg in "$@"; do
-    # Strip --log-file (handled at shell level)
-    if [[ "$arg" == --log-file=* ]]; then
-      continue
-    elif [[ "$reg_prev" == "--log-file" ]]; then
-      reg_prev=""
-      continue
-    elif [[ "$arg" == "--log-file" ]]; then
-      reg_prev="$arg"
-      continue
-    fi
-
-    # Path flags (=joined form)
-    case "$arg" in
-    --config=* | --discovery=* | --output=* | --dir=* | --file=*)
-      flag="${arg%%=*}"
-      val="${arg#*=}"
-      reg_mount "$val"
-      REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
-      continue
-      ;;
-    --config | --discovery | --output | --dir | --file)
-      reg_prev="$arg"
-      continue
-      ;;
-    esac
-
-    # Path flags (space-separated value)
-    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" || "$reg_prev" == "--dir" || "$reg_prev" == "--file" ]]; then
-      reg_mount "$arg"
-      REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
-      reg_prev=""
-      continue
-    fi
-
-    REG_ARGS+=("$arg")
-  done
-  [ -n "$reg_prev" ] && REG_ARGS+=("$reg_prev")
-
-  exec docker run --rm \
-    --user "$(id -u):$(id -g)" \
-    --network host \
-    ${PULL_FLAG:+$PULL_FLAG} \
-    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
-    ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
-    -e SPICE_PASS \
-    -e SPICE_PATH_MAP \
-    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "$IMAGE_REF" \
-    ${REG_ARGS[@]+"${REG_ARGS[@]}"}
-fi
-
-# ── Registry (allspice) detection ─────────────────────────────────────────────
-# `registry` has its own grammar: --config/--discovery/--output are file paths and there
-# are no subject/input positionals. Mount each path flag's directory at the SAME path in
-# the container (so args need no remapping beyond becoming absolute), which also lets the
-# git-backed state dir — created next to the config — persist on the host.
-
-IS_REGISTRY=0
-for arg in "$@"; do
-  [[ "$arg" == -* ]] && continue # skip leading global flags
-  [ "$arg" = "registry" ] && IS_REGISTRY=1
-  break # first positional decides
-done
-
-if [ "$IS_REGISTRY" = "1" ]; then
-  REG_ARGS=()
-  REG_VOLUMES=()
-  REG_SEEN_DIRS=""
-  reg_prev=""
-
-  reg_dir_of() { # echo the directory to mount for a path (file may not yet exist)
-    local p="$1"
-    if [ -d "$p" ]; then
-      (cd "$p" && pwd)
-    else
-      local parent
-      parent="$(dirname "$p" 2>/dev/null)"
-      [ -n "$parent" ] || parent="."
-      (cd "$parent" 2>/dev/null && pwd) || {
-        echo "ERROR ❌ Directory does not exist for path: $p" >&2
-        exit 2
-      }
-    fi
-  }
-  reg_abs_of() { # echo the absolute path (file may not yet exist)
-    local p="$1"
-    if [ -d "$p" ]; then
-      (cd "$p" && pwd)
-    else echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"; fi
-  }
-  reg_mount() { # add a same-path volume for the given path's dir (deduped)
-    local dir
-    dir="$(reg_dir_of "$1")"
-    case ":$REG_SEEN_DIRS:" in *":$dir:"*) ;; *)
-      REG_SEEN_DIRS="$REG_SEEN_DIRS:$dir"
-      REG_VOLUMES+=("-v" "${dir}:${dir}")
-      ;;
-    esac
-  }
-
-  for arg in "$@"; do
-    # Strip --log-file (handled at shell level)
-    if [[ "$arg" == --log-file=* ]]; then
-      continue
-    elif [[ "$reg_prev" == "--log-file" ]]; then
-      reg_prev=""
-      continue
-    elif [[ "$arg" == "--log-file" ]]; then
-      reg_prev="$arg"
-      continue
-    fi
-
-    # Path flags (=joined form)
-    case "$arg" in
-    --config=* | --discovery=* | --output=* | --dir=* | --file=*)
-      flag="${arg%%=*}"
-      val="${arg#*=}"
-      reg_mount "$val"
-      REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
-      continue
-      ;;
-    --config | --discovery | --output | --dir | --file)
-      reg_prev="$arg"
-      continue
-      ;;
-    esac
-
-    # Path flags (space-separated value)
-    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" || "$reg_prev" == "--dir" || "$reg_prev" == "--file" ]]; then
-      reg_mount "$arg"
-      REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
-      reg_prev=""
-      continue
-    fi
-
-    REG_ARGS+=("$arg")
-  done
-  [ -n "$reg_prev" ] && REG_ARGS+=("$reg_prev")
-
-  exec docker run --rm \
-    --user "$(id -u):$(id -g)" \
-    --network host \
-    ${PULL_FLAG:+$PULL_FLAG} \
-    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
-    ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
-    -e SPICE_PASS \
-    -e SPICE_PATH_MAP \
-    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "$IMAGE_REF" \
-    ${REG_ARGS[@]+"${REG_ARGS[@]}"}
-fi
-
-# ── Registry (allspice) detection ─────────────────────────────────────────────
-# `registry` has its own grammar: --config/--discovery/--output are file paths and there
-# are no subject/input positionals. Mount each path flag's directory at the SAME path in
-# the container (so args need no remapping beyond becoming absolute), which also lets the
-# git-backed state dir — created next to the config — persist on the host.
-
-IS_REGISTRY=0
-for arg in "$@"; do
-  [[ "$arg" == -* ]] && continue          # skip leading global flags
-  [ "$arg" = "registry" ] && IS_REGISTRY=1
-  break                                    # first positional decides
-done
-
-if [ "$IS_REGISTRY" = "1" ]; then
-  REG_ARGS=()
-  REG_VOLUMES=()
-  REG_SEEN_DIRS=""
-  reg_prev=""
-
-  reg_dir_of() {                           # echo the directory to mount for a path (file may not yet exist)
-    local p="$1"
-    if [ -d "$p" ]; then (cd "$p" && pwd)
-    else (cd "$(dirname "$p")" 2>/dev/null && pwd) || {
-      echo "ERROR ❌ Directory does not exist for path: $p" >&2; exit 2; }
-    fi
-  }
-  reg_abs_of() {                           # echo the absolute path (file may not yet exist)
-    local p="$1"
-    if [ -d "$p" ]; then (cd "$p" && pwd)
-    else echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"; fi
-  }
-  reg_mount() {                            # add a same-path volume for the given path's dir (deduped)
-    local dir; dir="$(reg_dir_of "$1")"
-    case ":$REG_SEEN_DIRS:" in *":$dir:"*) ;; *)
-      REG_SEEN_DIRS="$REG_SEEN_DIRS:$dir"
-      REG_VOLUMES+=("-v" "${dir}:${dir}") ;;
-    esac
-  }
-
-  for arg in "$@"; do
-    # Strip --log-file (handled at shell level)
-    if [[ "$arg" == --log-file=* ]]; then continue
-    elif [[ "$reg_prev" == "--log-file" ]]; then reg_prev=""; continue
-    elif [[ "$arg" == "--log-file" ]]; then reg_prev="$arg"; continue; fi
-
-    # Path flags (=joined form)
-    case "$arg" in
-      --config=*|--discovery=*|--output=*)
-        flag="${arg%%=*}"; val="${arg#*=}"
-        reg_mount "$val"
-        REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
-        continue ;;
-      --config|--discovery|--output)
-        reg_prev="$arg"; continue ;;
-    esac
-
-    # Path flags (space-separated value)
-    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" || "$reg_prev" == "--dir" || "$reg_prev" == "--file" ]]; then
-      reg_mount "$arg"
-      REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
-      reg_prev=""
-      continue
-    fi
-
-    REG_ARGS+=("$arg")
-  done
-  [ -n "$reg_prev" ] && REG_ARGS+=("$reg_prev")
-
-  exec docker run --rm \
-    --user "$(id -u):$(id -g)" \
-    --network host \
-    ${PULL_FLAG:+$PULL_FLAG} \
-    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
-    ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
-    -e SPICE_PASS \
-    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "$IMAGE_REF" \
-    ${REG_ARGS[@]+"${REG_ARGS[@]}"}
-fi
-
-# ── Registry (allspice) detection ─────────────────────────────────────────────
-# `registry` has its own grammar: --config/--discovery/--output are file paths and there
-# are no subject/input positionals. Mount each path flag's directory at the SAME path in
-# the container (so args need no remapping beyond becoming absolute), which also lets the
-# git-backed state dir — created next to the config — persist on the host.
-
-IS_REGISTRY=0
-for arg in "$@"; do
-  [[ "$arg" == -* ]] && continue          # skip leading global flags
-  [ "$arg" = "registry" ] && IS_REGISTRY=1
-  break                                    # first positional decides
-done
-
-if [ "$IS_REGISTRY" = "1" ]; then
-  REG_ARGS=()
-  REG_VOLUMES=()
-  REG_SEEN_DIRS=""
-  reg_prev=""
-
-  reg_dir_of() {                           # echo the directory to mount for a path (file may not yet exist)
-    local p="$1"
-    if [ -d "$p" ]; then (cd "$p" && pwd)
-    else (cd "$(dirname "$p")" 2>/dev/null && pwd) || {
-      echo "ERROR ❌ Directory does not exist for path: $p" >&2; exit 2; }
-    fi
-  }
-  reg_abs_of() {                           # echo the absolute path (file may not yet exist)
-    local p="$1"
-    if [ -d "$p" ]; then (cd "$p" && pwd)
-    else echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"; fi
-  }
-  reg_mount() {                            # add a same-path volume for the given path's dir (deduped)
-    local dir; dir="$(reg_dir_of "$1")"
-    case ":$REG_SEEN_DIRS:" in *":$dir:"*) ;; *)
-      REG_SEEN_DIRS="$REG_SEEN_DIRS:$dir"
-      REG_VOLUMES+=("-v" "${dir}:${dir}") ;;
-    esac
-  }
-
-  for arg in "$@"; do
-    # Strip --log-file (handled at shell level)
-    if [[ "$arg" == --log-file=* ]]; then continue
-    elif [[ "$reg_prev" == "--log-file" ]]; then reg_prev=""; continue
-    elif [[ "$arg" == "--log-file" ]]; then reg_prev="$arg"; continue; fi
-
-    # Path flags (=joined form)
-    case "$arg" in
-      --config=*|--discovery=*|--output=*)
-        flag="${arg%%=*}"; val="${arg#*=}"
-        reg_mount "$val"
-        REG_ARGS+=("${flag}=$(reg_abs_of "$val")")
-        continue ;;
-      --config|--discovery|--output)
-        reg_prev="$arg"; continue ;;
-    esac
-
-    # Path flags (space-separated value)
-    if [[ "$reg_prev" == "--config" || "$reg_prev" == "--discovery" || "$reg_prev" == "--output" || "$reg_prev" == "--dir" || "$reg_prev" == "--file" ]]; then
-      reg_mount "$arg"
-      REG_ARGS+=("$reg_prev" "$(reg_abs_of "$arg")")
-      reg_prev=""
-      continue
-    fi
-
-    REG_ARGS+=("$arg")
-  done
-  [ -n "$reg_prev" ] && REG_ARGS+=("$reg_prev")
-
-  exec docker run --rm \
-    --user "$(id -u):$(id -g)" \
-    --network host \
-    ${PULL_FLAG:+$PULL_FLAG} \
-    ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
-    ${REG_VOLUMES[@]+"${REG_VOLUMES[@]}"} \
-    -e SPICE_PASS \
-    -e SPICE_PATH_MAP \
-    ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-    "$IMAGE_REF" \
-    ${REG_ARGS[@]+"${REG_ARGS[@]}"}
-fi
-
-# ── Find paths in args and build docker command ──────────────────────────────
+# ── Argument walking and mounts ──────────────────────────────────────────────
 #
-# Walk the args to find:
-#   - The input path: second positional arg (first is subject)
-#   - The --output value: named flag
-# Everything else passes through, with paths rewritten to container mounts.
+# One pass for every command, built-in or plugin-contributed. Each argument the
+# manifest calls a path is absolutised and bind-mounted at its own host path, so
+# the container sees it where the user typed it and nothing needs rewriting —
+# except a path under a reserved directory, which is remapped and recorded in
+# SPICE_PATH_MAP for the CLI to reverse in its messages.
 
-INPUT_PATH=""
-OUTPUT_PATH=""
-CONFIG_PATH=""
-DISCOVERY_PATH=""
-POSITIONAL_INDEX=0
-DOCKER_ARGS=()
-VOLUMES=()
-# Build a path map (container→host) so the CLI can translate container paths
-# back to host paths in error messages. Passed via SPICE_PATH_MAP env var.
-PATH_MAP=()
+walk_args "$@"
 
-prev=""
-for arg in "$@"; do
-  # Strip --log-file (handled at shell level)
-  if [[ "$arg" == --log-file=* ]]; then
-    continue
-  elif [[ "$prev" == "--log-file" ]]; then
-    prev=""
-    continue
-  elif [[ "$arg" == "--log-file" ]]; then
-    prev="$arg"
-    continue
-  fi
-
-  # Capture --output value
-  if [[ "$arg" == --output=* ]]; then
-    OUTPUT_PATH="${arg#--output=}"
-    prev=""
-    continue # will re-add after resolving
-  elif [[ "$prev" == "--output" ]]; then
-    OUTPUT_PATH="$arg"
-    prev=""
-    continue # will re-add after resolving
-  elif [[ "$arg" == "--output" ]]; then
-    prev="$arg"
-    continue
-  fi
-
-  # Capture --config value (registry subcommands)
-  if [[ "$arg" == --config=* ]]; then
-    CONFIG_PATH="${arg#--config=}"
-    prev=""
-    continue
-  elif [[ "$prev" == "--config" ]]; then
-    CONFIG_PATH="$arg"
-    prev=""
-    continue
-  elif [[ "$arg" == "--config" ]]; then
-    prev="$arg"
-    continue
-  fi
-
-  # Capture --discovery value (registry run)
-  if [[ "$arg" == --discovery=* ]]; then
-    DISCOVERY_PATH="${arg#--discovery=}"
-    prev=""
-    continue
-  elif [[ "$prev" == "--discovery" ]]; then
-    DISCOVERY_PATH="$arg"
-    prev=""
-    continue
-  elif [[ "$arg" == "--discovery" ]]; then
-    prev="$arg"
-    continue
-  fi
-
-  # Handle other value-consuming flags
-  if [ -n "$prev" ]; then
-    DOCKER_ARGS+=("$prev" "$arg")
-    prev=""
-    continue
-  fi
-
-  if [[ "$arg" == -* ]]; then
-    if is_value_flag "$arg"; then
-      prev="$arg"
-    else
-      DOCKER_ARGS+=("$arg")
-    fi
-    continue
-  fi
-
-  # It's a positional arg
-  if is_subcommand "$arg"; then
-    DOCKER_ARGS+=("$arg")
-  else
-    POSITIONAL_INDEX=$((POSITIONAL_INDEX + 1))
-    if [ "$POSITIONAL_INDEX" -eq 1 ]; then
-      # Subject — pass through
-      DOCKER_ARGS+=("$arg")
-    elif [ "$POSITIONAL_INDEX" -eq 2 ]; then
-      # Input path — capture for volume mount
-      INPUT_PATH="$arg"
-    else
-      DOCKER_ARGS+=("$arg")
-    fi
-  fi
-done
-# Flush any trailing flag
-[ -n "$prev" ] && DOCKER_ARGS+=("$prev")
-
-# ── Resolve input path ───────────────────────────────────────────────────────
-
-if [ -n "$INPUT_PATH" ]; then
-  HOST_INPUT="$(abs_path "$INPUT_PATH")"
-  if [ -f "$HOST_INPUT" ]; then
-    VOLUMES+=("-v" "$(dirname "$HOST_INPUT"):/mnt/input")
-    DOCKER_ARGS+=("/mnt/input/$(basename "$HOST_INPUT")")
-    PATH_MAP+=("/mnt/input/$(basename "$HOST_INPUT"):$INPUT_PATH")
-  else
-    VOLUMES+=("-v" "${HOST_INPUT}:/mnt/input")
-    DOCKER_ARGS+=("/mnt/input")
-    PATH_MAP+=("/mnt/input:$INPUT_PATH")
-  fi
+# Always make the working directory visible, so relative paths the CLI resolves
+# itself (and its default output location) land on the host.
+if ! mf_reserved "$PWD" && ! mf_under_identity_mount "$PWD"; then
+  mf_mount "$PWD" "$PWD"
 fi
+WORKDIR_FLAG=()
+mf_reserved "$PWD" || WORKDIR_FLAG=("-w" "$PWD")
 
-# ── Resolve output path ─────────────────────────────────────────────────────
-
-if [ -n "$OUTPUT_PATH" ]; then
-  [ ! -d "$OUTPUT_PATH" ] && mkdir -p "$OUTPUT_PATH"
-  HOST_OUTPUT="$(abs_path "$OUTPUT_PATH")"
-  VOLUMES+=("-v" "${HOST_OUTPUT}:/mnt/output")
-  DOCKER_ARGS+=("--output" "/mnt/output")
-  PATH_MAP+=("/mnt/output:$OUTPUT_PATH")
-elif [ -z "$CONFIG_PATH" ]; then
-  # Always mount an output directory at /mnt/output so container output
-  # persists on the host. Default to the current directory.
-  # Skip for registry commands (which use --config) — they manage their own
-  # output dirs via the config TOML.
-  DEFAULT_OUTPUT="$PWD"
-  VOLUMES+=("-v" "${DEFAULT_OUTPUT}:/mnt/output")
-  PATH_MAP+=("/mnt/output:$DEFAULT_OUTPUT")
+SPICE_PATH_MAP=""
+if [ ${#MF_PATH_MAP[@]} -gt 0 ]; then
+  SPICE_PATH_MAP=$(printf '%s\n' "${MF_PATH_MAP[@]}")
 fi
-
-# ── Resolve config path (registry subcommands) ──────────────────────────────
-# Mount the config file's parent dir so allspice can read the config AND write
-# to the allspice-state/ git repo it creates beside it.
-
-if [ -n "$CONFIG_PATH" ]; then
-  HOST_CONFIG="$(abs_path "$CONFIG_PATH")"
-  CONFIG_DIR="$(dirname "$HOST_CONFIG")"
-  CONFIG_FILE="$(basename "$HOST_CONFIG")"
-  VOLUMES+=("-v" "${CONFIG_DIR}:/mnt/config")
-  # Replace the config path in DOCKER_ARGS with the container path
-  for i in "${!DOCKER_ARGS[@]}"; do
-    if [[ "${DOCKER_ARGS[$i]}" == "$CONFIG_PATH" ]]; then
-      DOCKER_ARGS[i]="/mnt/config/${CONFIG_FILE}"
-    fi
-  done
-  PATH_MAP+=("/mnt/config/${CONFIG_FILE}:$CONFIG_PATH")
-  PATH_MAP+=("/mnt/config:$(dirname "$CONFIG_PATH")")
-fi
-
-# ── Resolve discovery path (registry run) ───────────────────────────────────
-
-if [ -n "$DISCOVERY_PATH" ]; then
-  HOST_DISCOVERY="$(abs_path "$DISCOVERY_PATH")"
-  DISCOVERY_DIR="$(dirname "$HOST_DISCOVERY")"
-  DISCOVERY_FILE="$(basename "$HOST_DISCOVERY")"
-  # If discovery is in the same dir as config, it's already mounted
-  if [ -n "$CONFIG_PATH" ] && [ "$DISCOVERY_DIR" = "$(dirname "$(abs_path "$CONFIG_PATH")")" ]; then
-    for i in "${!DOCKER_ARGS[@]}"; do
-      if [[ "${DOCKER_ARGS[$i]}" == "$DISCOVERY_PATH" ]]; then
-        DOCKER_ARGS[i]="/mnt/config/${DISCOVERY_FILE}"
-      fi
-    done
-  else
-    VOLUMES+=("-v" "${DISCOVERY_DIR}:/mnt/discovery")
-    for i in "${!DOCKER_ARGS[@]}"; do
-      if [[ "${DOCKER_ARGS[$i]}" == "$DISCOVERY_PATH" ]]; then
-        DOCKER_ARGS[i]="/mnt/discovery/${DISCOVERY_FILE}"
-      fi
-    done
-    PATH_MAP+=("/mnt/discovery/${DISCOVERY_FILE}:$DISCOVERY_PATH")
-    PATH_MAP+=("/mnt/discovery:$(dirname "$DISCOVERY_PATH")")
-  fi
-fi
-
-# ── Run (non-runtime) ────────────────────────────────────────────────────────
-
-# Serialize PATH_MAP into a newline-separated string for the container
-SPICE_PATH_MAP=$(printf '%s\n' "${PATH_MAP[@]}")
 export SPICE_PATH_MAP
 
 exec docker run --rm \
@@ -1013,9 +991,10 @@ exec docker run --rm \
   --network host \
   ${PULL_FLAG:+$PULL_FLAG} \
   ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
-  ${VOLUMES+"${VOLUMES[@]}"} \
+  ${MF_VOLUMES[@]+"${MF_VOLUMES[@]}"} \
+  ${WORKDIR_FLAG[@]+"${WORKDIR_FLAG[@]}"} \
   -e SPICE_PASS \
   -e SPICE_PATH_MAP \
   ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
   "$IMAGE_REF" \
-  ${DOCKER_ARGS[@]+"${DOCKER_ARGS[@]}"}
+  ${MF_ARGS[@]+"${MF_ARGS[@]}"}
