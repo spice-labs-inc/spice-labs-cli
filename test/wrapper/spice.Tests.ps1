@@ -289,6 +289,14 @@ pwsh -NoProfile -File "$mockDockerPs1" "$@"
     chmod +x $mockDockerSh 2>`$null
   }
 
+  function global:Convert-TestPathToDockerPath($p) {
+    if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+      if ($p -match '^([A-Za-z]):') { $p = $p -replace '^[A-Za-z]:', "/$($matches[1].ToLower())" }
+      $p = $p -replace '\\', '/'
+    }
+    return $p
+  }
+
   # Write a manifest describing the `registry` plugin, standing in for what the
   # enterprise image reports. The wrapper has no built-in knowledge of these
   # commands — that is the point — so a test exercising them must supply the
@@ -461,8 +469,9 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
-      # Identity mount: the container sees the input at its host path.
-      $r.ContainerArgs | Should -Contain $script:InputDir
+      # Identity mount: the container sees the input where the user typed it,
+      # modulo the Windows drive-letter translation docker requires.
+      $r.ContainerArgs | Should -Contain (Convert-TestPathToDockerPath $script:InputDir)
     }
 
     It 'survey inventory with single file input' {
@@ -472,7 +481,7 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
-      $r.ContainerArgs | Should -Contain $file
+      $r.ContainerArgs | Should -Contain (Convert-TestPathToDockerPath $file)
     }
 
     It 'pass decode' {
@@ -555,7 +564,7 @@ Describe 'spice.ps1 wrapper' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir, '--output', $outDir)
       $r.ExitCode | Should -Be 0
       $r.ContainerArgs | Should -Contain '--output'
-      $r.ContainerArgs | Should -Contain $outDir
+      $r.ContainerArgs | Should -Contain (Convert-TestPathToDockerPath $outDir)
       $outDir | Should -Exist
     }
 
@@ -564,7 +573,7 @@ Describe 'spice.ps1 wrapper' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir, "--output=$outDir")
       $r.ExitCode | Should -Be 0
       # The joined form is preserved; only the value is absolutised.
-      $r.ContainerArgs | Should -Contain "--output=$outDir"
+      $r.ContainerArgs | Should -Contain "--output=$(Convert-TestPathToDockerPath $outDir)"
       $outDir | Should -Exist
     }
 
@@ -657,7 +666,7 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
-      $r.ContainerArgs | Should -Contain $script:InputDir
+      $r.ContainerArgs | Should -Contain (Convert-TestPathToDockerPath $script:InputDir)
       $r.ContainerArgs | Should -Contain '--threads'
       $r.ContainerArgs | Should -Contain '4'
       $r.ContainerArgs | Should -Contain '--log-level'
@@ -769,14 +778,6 @@ Describe 'spice.ps1 wrapper' {
   }
 
   # ── Registry command (same-path mounts) ────────────────────────────────────
-
-  function global:Convert-TestPathToDockerPath($p) {
-    if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
-      if ($p -match '^([A-Za-z]):') { $p = $p -replace '^[A-Za-z]:', "/$($matches[1].ToLower())" }
-      $p = $p -replace '\\', '/'
-    }
-    return $p
-  }
 
   Context 'Registry command (same-path mounts)' {
     It 'registry init --dir rewrites relative path to absolute same-path' {
