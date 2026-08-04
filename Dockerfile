@@ -157,6 +157,10 @@ COPY --from=builder /workspace/target/plugins/ ./plugins/
 COPY --from=builder /workspace/src/main/resources/jfr/spice-jfr.jfc ./spice-jfr.jfc
 COPY --from=builder /workspace/spice ./spice
 COPY --from=builder /workspace/spice.ps1 ./spice.ps1
+# No path manifest is baked into the image: `spice path-manifest` renders it from the
+# live command model, so it stays correct when the enterprise/federal images layer
+# further plugins on top of this one. install.sh seeds it, and the wrapper refreshes
+# it per image ID.
 
 # -cp (not -jar) so plugins/* joins the classpath; the wildcard is quoted so the JVM,
 # not the shell, expands it. Main class is named explicitly.

@@ -19,6 +19,11 @@ setup_file() {
 
 setup() {
   export SPICE_LABS_CLI_SKIP_PULL=1
+  # The mock/test image is queried for its path manifest otherwise, which would both
+  # slow every test down and make results depend on the image on the machine. Tests
+  # that need a manifest supply one explicitly via use_registry_manifest.
+  export SPICE_SKIP_MANIFEST_REFRESH=1
+  unset SPICE_PATH_MANIFEST
   export SPICE_IMAGE="$TEST_IMAGE"
   export SPICE_IMAGE_TAG=latest
   export SPICE_PASS=test-pass-value
@@ -85,6 +90,40 @@ refute_arg() {
   }
 }
 
+# Point the wrapper at a manifest describing the `registry` plugin, standing in for
+# what the enterprise image reports. The wrapper has no built-in knowledge of these
+# commands — that is the point — so a test exercising them must supply the manifest,
+# just as the real image does.
+use_registry_manifest() {
+  export SPICE_PATH_MANIFEST="$TEST_TMPDIR/registry.path-manifest"
+  cat > "$SPICE_PATH_MANIFEST" <<'MANIFEST'
+# spice-path-manifest 1
+V 1
+G test-fixture
+R /
+R /etc
+R /opt
+R /usr
+R /var
+C spice
+C spice/registry
+C spice/registry/init
+C spice/registry/discover
+C spice/registry/run
+C spice/registry/cbom
+O spice/registry/init --config-only flag
+O spice/registry/init --dir value path create=self
+O spice/registry/init --file value path create=parent
+O spice/registry/discover --config value path create=parent exists
+O spice/registry/discover --output value path create=parent
+O spice/registry/run --config value path create=parent exists
+O spice/registry/run --discovery value path create=parent exists
+O spice/registry/cbom --config value path create=parent exists
+O spice/registry/cbom --rogues value path create=parent exists
+O spice/registry/cbom --output value path create=self
+MANIFEST
+}
+
 # ── Args: basic commands ─────────────────────────────────────────────────────
 
 @test "survey inventory with directory input" {
@@ -93,7 +132,8 @@ refute_arg() {
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
-  assert_arg "/mnt/input"
+  # Identity mount: the container sees the input at its host path.
+  assert_arg "$TEST_TMPDIR/input"
 }
 
 @test "survey inventory with single file input" {
@@ -102,7 +142,7 @@ refute_arg() {
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
-  assert_arg "/mnt/input/file.txt"
+  assert_arg "$TEST_TMPDIR/input/file.txt"
 }
 
 @test "pass decode" {
@@ -197,6 +237,7 @@ refute_arg() {
 @test "registry init --dir rewrites relative path to absolute same-path" {
   local initdir="$TEST_TMPDIR/registry-init"
   mkdir -p "$initdir"
+  use_registry_manifest
   pushd "$TEST_TMPDIR" > /dev/null
   run "$WRAPPER" registry init --dir "./registry-init"
   popd > /dev/null
@@ -210,6 +251,7 @@ refute_arg() {
 @test "registry init --config-only --file rewrites relative path to absolute same-path" {
   local outfile="$TEST_TMPDIR/init-config/allspice.toml"
   mkdir -p "$TEST_TMPDIR/init-config"
+  use_registry_manifest
   pushd "$TEST_TMPDIR" > /dev/null
   run "$WRAPPER" registry init --config-only --file "./init-config/allspice.toml"
   popd > /dev/null
@@ -224,6 +266,7 @@ refute_arg() {
 @test "registry discover --config rewrites relative path to absolute same-path" {
   local config="$TEST_TMPDIR/config/allspice.toml"
   mkdir -p "$TEST_TMPDIR/config"
+  use_registry_manifest
   pushd "$TEST_TMPDIR" > /dev/null
   run "$WRAPPER" registry discover --config "./config/allspice.toml"
   popd > /dev/null
@@ -238,6 +281,7 @@ refute_arg() {
   local config="$TEST_TMPDIR/config/allspice.toml"
   local discovery="$TEST_TMPDIR/discovery/packages.json"
   mkdir -p "$TEST_TMPDIR/config" "$TEST_TMPDIR/discovery"
+  use_registry_manifest
   pushd "$TEST_TMPDIR" > /dev/null
   run "$WRAPPER" registry run --config "./config/allspice.toml" --discovery "./discovery/packages.json"
   popd > /dev/null
@@ -257,7 +301,7 @@ refute_arg() {
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input" --output "$outdir"
   [ "$status" -eq 0 ]
   assert_arg "--output"
-  assert_arg "/mnt/output"
+  assert_arg "$outdir"
   [ -d "$outdir" ]
 }
 
@@ -265,8 +309,8 @@ refute_arg() {
   local outdir="$TEST_TMPDIR/output-eq"
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input" "--output=$outdir"
   [ "$status" -eq 0 ]
-  assert_arg "--output"
-  assert_arg "/mnt/output"
+  # The joined form is preserved; only the value is absolutised.
+  assert_arg "--output=$outdir"
   [ -d "$outdir" ]
 }
 
@@ -279,16 +323,16 @@ refute_arg() {
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input" --output "$outdir"
   [ "$status" -eq 0 ]
   assert_arg "--output"
-  assert_arg "/mnt/output"
+  assert_arg "$outdir"
   [ -f "$outdir/marker.txt" ]
   [ "$(cat "$outdir/marker.txt")" = "OK" ]
 }
 
 @test "default output dir mounted when --output omitted" {
   # Reproduces bug #530
-  # When --output is omitted, the wrapper mounts the current directory at
-  # /mnt/output in the container. The container writes to its internal
-  # /mnt/output path; the wrapper itself does not concern itself with that path.
+  # When --output is omitted, the wrapper mounts the current directory at its own
+  # path and sets it as the container's working directory, so a relative write inside
+  # the container lands in the user's current directory on the host.
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
   # The marker file must appear in the current directory on the host.
@@ -367,7 +411,7 @@ refute_arg() {
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
-  assert_arg "/mnt/input"
+  assert_arg "$TEST_TMPDIR/input"
   assert_arg "--threads"
   assert_arg "4"
   assert_arg "--log-level"
@@ -593,7 +637,7 @@ SCRIPT
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
-  assert_arg "/mnt/input"
+  assert_arg "$spaced_dir"
 }
 
 @test "path with spaces: file input" {
@@ -604,7 +648,7 @@ SCRIPT
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
-  assert_arg "/mnt/input/file with spaces.txt"
+  assert_arg "$spaced_file"
 }
 
 @test "path with dollar sign: handled correctly" {
@@ -613,7 +657,7 @@ SCRIPT
   echo "test" > "$dollar_dir/file.txt"
   run "$WRAPPER" survey inventory myapp "$dollar_dir"
   [ "$status" -eq 0 ]
-  assert_arg "/mnt/input"
+  assert_arg "$dollar_dir"
 }
 
 @test "relative path: converted to absolute" {
@@ -624,7 +668,8 @@ SCRIPT
   run "$WRAPPER" survey inventory myapp "./input"
   popd > /dev/null
   [ "$status" -eq 0 ]
-  assert_arg "/mnt/input"
+  # A relative path still reaches the container absolutised.
+  assert_arg "$TEST_TMPDIR/input"
 }
 
 @test "parent directory reference: resolved correctly" {
@@ -634,7 +679,7 @@ SCRIPT
   run "$WRAPPER" survey inventory myapp "../nested/input"
   popd > /dev/null
   [ "$status" -eq 0 ]
-  assert_arg "/mnt/input"
+  assert_arg "$TEST_TMPDIR/nested/input"
 }
 
 @test "symlink to directory: resolved to real path" {
@@ -643,7 +688,7 @@ SCRIPT
   ln -s "$TEST_TMPDIR/realdir" "$TEST_TMPDIR/linkdir"
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/linkdir"
   [ "$status" -eq 0 ]
-  assert_arg "/mnt/input"
+  assert_arg "$TEST_TMPDIR/realdir"
 }
 
 @test "symlink to file: passes through as symlink path" {
@@ -652,8 +697,7 @@ SCRIPT
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/linkfile.txt"
   [ "$status" -eq 0 ]
   # The script resolves the symlink's directory but keeps the filename
-  # The mount is the directory containing the symlink
-  assert_arg "/mnt/input/linkfile.txt"
+  assert_arg "$TEST_TMPDIR/linkfile.txt"
 }
 
 # ── Runtime survey error handling ────────────────────────────────────────────
@@ -719,7 +763,7 @@ SCRIPT
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
-  assert_arg "/mnt/input"
+  assert_arg "$TEST_TMPDIR/input"
   assert_arg "--threads"
   assert_arg "4"
   assert_arg "--log-level"
@@ -755,4 +799,72 @@ SCRIPT
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
   [ "$(container_env SPICE_LABS_JVM_ARGS)" = "-Xmx2g -XX:+UseG1GC" ]
+}
+
+# ── Path manifest resolution ─────────────────────────────────────────────────
+
+@test "an image that does not know path-manifest falls back silently" {
+  # The test image echoes its args rather than emitting a manifest, so the refresh
+  # produces nothing usable. That must degrade to the embedded manifest, not fail.
+  unset SPICE_SKIP_MANIFEST_REFRESH
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "$TEST_TMPDIR/input"
+}
+
+@test "an unreadable manifest override falls back to the embedded manifest" {
+  export SPICE_PATH_MANIFEST="$TEST_TMPDIR/does-not-exist"
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "$TEST_TMPDIR/input"
+}
+
+@test "a manifest of an unknown schema version is ignored, not obeyed" {
+  export SPICE_PATH_MANIFEST="$TEST_TMPDIR/future.path-manifest"
+  cat > "$SPICE_PATH_MANIFEST" <<'MANIFEST'
+# spice-path-manifest 99
+V 99
+C spice
+MANIFEST
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  # No usable manifest at all: arguments pass through untouched rather than being
+  # mis-parsed against a format this wrapper does not understand.
+  assert_arg "myapp"
+}
+
+@test "a manifest is cached per image id and reused" {
+  unset SPICE_SKIP_MANIFEST_REFRESH
+  export SPICE_CACHE_DIR="$TEST_TMPDIR/cache"
+  local image_id
+  image_id="$(docker image inspect --format '{{.Id}}' "$TEST_IMAGE")"
+  mkdir -p "$SPICE_CACHE_DIR/path-manifest"
+  # A cached manifest that renames the input positional to a non-path proves the
+  # cache is consulted: the input would otherwise be absolutised.
+  cat > "$SPICE_CACHE_DIR/path-manifest/${image_id#sha256:}" <<'MANIFEST'
+# spice-path-manifest 1
+V 1
+C spice
+C spice/survey
+C spice/survey/inventory
+P spice/survey/inventory 0 value
+P spice/survey/inventory 1 value
+MANIFEST
+  pushd "$TEST_TMPDIR" > /dev/null
+  run "$WRAPPER" survey inventory myapp "./input"
+  popd > /dev/null
+  [ "$status" -eq 0 ]
+  assert_arg "./input"
+}
+
+@test "a path under a reserved directory is relocated, not mounted over" {
+  run "$WRAPPER" survey inventory myapp /etc
+  [ "$status" -eq 0 ]
+  # Bind-mounting the host's /etc over the container's would break the image.
+  refute_arg "/etc"
+  container_args | grep -q '^/mnt/spice/' || {
+    echo "expected a relocated mountpoint; actual args:"
+    container_args | sed 's/^/  /'
+    return 1
+  }
 }

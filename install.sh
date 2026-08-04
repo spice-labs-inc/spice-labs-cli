@@ -4,6 +4,7 @@ set -euo pipefail
 # To Install : `curl -sSfL https://install.spicelabs.io | bash`
 
 TARGET_DIR="${HOME}/.local/bin"
+DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/spice"
 COMPLETION_DIR="${HOME}/.local/share/spice/completions"
 SCRIPT_URL="https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice"
 
@@ -28,6 +29,19 @@ else
   rm -f "$COMPLETION_DIR/spice.bash.tmp"
   echo "💡 Skipped tab completion (needs Docker + the spice image). Generate it later with:"
   echo "   spice generate-completion > \"$COMPLETION_DIR/spice.bash\""
+fi
+
+# Seed the path manifest from the same image, so the first invocation already
+# knows which arguments to bind-mount — including any plugin's. The wrapper
+# refreshes this itself when the image changes; this only removes the cost from
+# the first run. Skipped gracefully, exactly like completion above.
+mkdir -p "$DATA_DIR"
+if SPICE_LABS_CLI_SKIP_PULL=1 SPICE_SKIP_MANIFEST_REFRESH=1 \
+     "$TARGET_DIR/spice" path-manifest > "$DATA_DIR/path-manifest.tmp" 2>/dev/null \
+   && grep -q '^# spice-path-manifest ' "$DATA_DIR/path-manifest.tmp"; then
+  mv "$DATA_DIR/path-manifest.tmp" "$DATA_DIR/path-manifest"
+else
+  rm -f "$DATA_DIR/path-manifest.tmp"
 fi
 
 if [[ ":$PATH:" != *":$TARGET_DIR:"* ]]; then
