@@ -15,6 +15,11 @@ setup_file() {
 # ── Per-test setup/teardown ──────────────────────────────────────────────────
 
 setup() {
+  # The mock docker records every invocation, so a manifest refresh would clobber the
+  # captured args. Tests here exercise the embedded manifest.
+  export SPICE_SKIP_MANIFEST_REFRESH=1
+  unset SPICE_PATH_MANIFEST
+
   TEST_TMPDIR="$(mktemp -d)"
   MOCK_BIN="$TEST_TMPDIR/mock-bin"
   mkdir -p "$MOCK_BIN"
