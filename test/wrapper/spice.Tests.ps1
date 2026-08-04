@@ -324,6 +324,42 @@ exit 0
     chmod +x $mockJavaSh 2>`$null
   }
 
+  # Write a manifest describing the `registry` plugin, standing in for what the
+  # enterprise image reports. The wrapper has no built-in knowledge of these
+  # commands — that is the point — so a test exercising them must supply the
+  # manifest, just as the real image does. Mirrors use_registry_manifest in
+  # spice.bats; keep the two in step.
+  function New-RegistryManifest {
+    $path = Join-Path $script:TestDir 'registry.path-manifest'
+    @'
+# spice-path-manifest 1
+V 1
+G test-fixture
+R /
+R /etc
+R /opt
+R /usr
+R /var
+C spice
+C spice/registry
+C spice/registry/init
+C spice/registry/discover
+C spice/registry/run
+C spice/registry/cbom
+O spice/registry/init --config-only flag
+O spice/registry/init --dir value path create=self
+O spice/registry/init --file value path create=parent
+O spice/registry/discover --config value path create=parent
+O spice/registry/discover --output value path create=parent
+O spice/registry/run --config value path create=parent
+O spice/registry/run --discovery value path create=parent
+O spice/registry/cbom --config value path create=parent
+O spice/registry/cbom --rogues value path create=parent
+O spice/registry/cbom --output value path create=self
+'@ | Set-Content -LiteralPath $path -Encoding ascii
+    return $path
+  }
+
   # ── Helper: run the wrapper with mock docker and parse output ────────────
   function Invoke-SpiceWrapper {
     [CmdletBinding()]
@@ -333,7 +369,8 @@ exit 0
       [string]$SpicePass = 'test-pass-value',
       [string]$DockerFlags,
       [AllowNull()]
-      [string]$SpiceImage = 'spice-wrapper-test'
+      [string]$SpiceImage = 'spice-wrapper-test',
+      [string]$PathManifest
     )
 
     # Put mock docker first on PATH
@@ -343,7 +380,11 @@ exit 0
     # The mock docker records every invocation, so a manifest refresh would clobber the
     # captured args. These tests exercise the manifest embedded in the wrapper.
     $env:SPICE_SKIP_MANIFEST_REFRESH = '1'
-    Remove-Item env:SPICE_PATH_MANIFEST -ErrorAction SilentlyContinue
+    if ($PathManifest) {
+      $env:SPICE_PATH_MANIFEST = $PathManifest
+    } else {
+      Remove-Item env:SPICE_PATH_MANIFEST -ErrorAction SilentlyContinue
+    }
     if ($null -eq $SpiceImage) {
       Remove-Item env:SPICE_IMAGE -ErrorAction SilentlyContinue
     } else {
@@ -778,7 +819,7 @@ Describe 'spice.ps1 wrapper' {
       New-Item -ItemType Directory -Path $initDir -Force | Out-Null
       Push-Location $script:TestDir
       try {
-        $r = Invoke-SpiceWrapper -Arguments @('registry', 'init', '--dir', './registry-init')
+        $r = Invoke-SpiceWrapper -PathManifest (New-RegistryManifest) -Arguments @('registry', 'init', '--dir', './registry-init')
         $r.ExitCode | Should -Be 0
         $r.ContainerArgs | Should -Contain 'registry'
         $r.ContainerArgs | Should -Contain 'init'
@@ -793,7 +834,7 @@ Describe 'spice.ps1 wrapper' {
       New-Item -ItemType Directory -Path $outDir -Force | Out-Null
       Push-Location $script:TestDir
       try {
-        $r = Invoke-SpiceWrapper -Arguments @('registry', 'init', '--config-only', '--file', './init-config/allspice.toml')
+        $r = Invoke-SpiceWrapper -PathManifest (New-RegistryManifest) -Arguments @('registry', 'init', '--config-only', '--file', './init-config/allspice.toml')
         $r.ExitCode | Should -Be 0
         $r.ContainerArgs | Should -Contain 'registry'
         $r.ContainerArgs | Should -Contain 'init'
@@ -810,7 +851,7 @@ Describe 'spice.ps1 wrapper' {
       New-Item -ItemType Directory -Path $configDir -Force | Out-Null
       Push-Location $script:TestDir
       try {
-        $r = Invoke-SpiceWrapper -Arguments @('registry', 'discover', '--config', './config/allspice.toml')
+        $r = Invoke-SpiceWrapper -PathManifest (New-RegistryManifest) -Arguments @('registry', 'discover', '--config', './config/allspice.toml')
         $r.ExitCode | Should -Be 0
         $r.ContainerArgs | Should -Contain 'registry'
         $r.ContainerArgs | Should -Contain 'discover'
@@ -828,7 +869,7 @@ Describe 'spice.ps1 wrapper' {
       New-Item -ItemType Directory -Path $discoveryDir -Force | Out-Null
       Push-Location $script:TestDir
       try {
-        $r = Invoke-SpiceWrapper -Arguments @('registry', 'run', '--config', './config/allspice.toml', '--discovery', './discovery/packages.json')
+        $r = Invoke-SpiceWrapper -PathManifest (New-RegistryManifest) -Arguments @('registry', 'run', '--config', './config/allspice.toml', '--discovery', './discovery/packages.json')
         $r.ExitCode | Should -Be 0
         $r.ContainerArgs | Should -Contain 'registry'
         $r.ContainerArgs | Should -Contain 'run'

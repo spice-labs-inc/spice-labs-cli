@@ -114,32 +114,36 @@ MF_MOUNT_N=0
 # floor. This must never abort the CLI — at worst the wrapper behaves as it did
 # before manifests existed.
 mf_load() {
-  local text=""
+  local text installed
 
   # 1. Explicit override (tests, air-gapped installs).
   if [ -n "${SPICE_PATH_MANIFEST:-}" ] && [ -f "${SPICE_PATH_MANIFEST}" ]; then
     text="$(cat "${SPICE_PATH_MANIFEST}" 2>/dev/null)" || text=""
+    if mf_parse "$text"; then return 0; fi
   fi
 
   # 2. Per-image cache, refreshed from the image when cold.
-  if [ -z "$text" ]; then
-    text="$(mf_refresh)" || text=""
-  fi
+  text="$(mf_refresh)" || text=""
+  if mf_parse "$text"; then return 0; fi
 
   # 3. Manifest installed alongside the wrapper by install.sh. Each wrapper sets
   #    MF_INSTALLED_MANIFEST to its own file: loading another CLI's manifest
   #    would describe a command tree this wrapper never sees.
-  if [ -z "$text" ]; then
-    local installed="${MF_INSTALLED_MANIFEST:-${XDG_DATA_HOME:-$HOME/.local/share}/spice/path-manifest}"
-    [ -f "$installed" ] && { text="$(cat "$installed" 2>/dev/null)" || text=""; }
+  installed="${MF_INSTALLED_MANIFEST:-${XDG_DATA_HOME:-$HOME/.local/share}/spice/path-manifest}"
+  if [ -f "$installed" ]; then
+    text="$(cat "$installed" 2>/dev/null)" || text=""
+    if mf_parse "$text"; then return 0; fi
   fi
 
   # 4. Built-ins, embedded in this script at build time.
-  if [ -z "$text" ]; then
-    text="$(mf_embedded_manifest)" || text=""
-  fi
+  text="$(mf_embedded_manifest)" || text=""
+  mf_parse "$text" || true
 
-  mf_parse "$text"
+  # Always succeeds. A manifest that cannot be parsed at any tier leaves the
+  # tables empty, which makes the wrapper pass arguments through untouched —
+  # degraded, but working. Returning non-zero here would instead abort the whole
+  # script under `set -e`, which is the opposite of the intent.
+  return 0
 }
 
 # Echo the manifest for $IMAGE_REF, using a cache keyed by the image ID so a

@@ -114,12 +114,12 @@ C spice/registry/cbom
 O spice/registry/init --config-only flag
 O spice/registry/init --dir value path create=self
 O spice/registry/init --file value path create=parent
-O spice/registry/discover --config value path create=parent exists
+O spice/registry/discover --config value path create=parent
 O spice/registry/discover --output value path create=parent
-O spice/registry/run --config value path create=parent exists
-O spice/registry/run --discovery value path create=parent exists
-O spice/registry/cbom --config value path create=parent exists
-O spice/registry/cbom --rogues value path create=parent exists
+O spice/registry/run --config value path create=parent
+O spice/registry/run --discovery value path create=parent
+O spice/registry/cbom --config value path create=parent
+O spice/registry/cbom --rogues value path create=parent
 O spice/registry/cbom --output value path create=self
 MANIFEST
 }
@@ -682,13 +682,16 @@ SCRIPT
   assert_arg "$TEST_TMPDIR/nested/input"
 }
 
-@test "symlink to directory: resolved to real path" {
+@test "symlink to directory: mounted under the path the user gave" {
   mkdir -p "$TEST_TMPDIR/realdir"
   echo "test" > "$TEST_TMPDIR/realdir/file.txt"
   ln -s "$TEST_TMPDIR/realdir" "$TEST_TMPDIR/linkdir"
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/linkdir"
   [ "$status" -eq 0 ]
-  assert_arg "$TEST_TMPDIR/realdir"
+  # `cd` + `pwd` resolve logically, so the symlink path is what reaches the
+  # container — as it did before manifests. Docker resolves the host side of
+  # the mount, so the contents are the real directory's either way.
+  assert_arg "$TEST_TMPDIR/linkdir"
 }
 
 @test "symlink to file: passes through as symlink path" {
