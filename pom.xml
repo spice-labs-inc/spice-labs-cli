@@ -96,6 +96,10 @@
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>ginger-j</artifactId>
+            <!-- Overrides the spice-bom pin: needs the publishStatus analyzeStats overload.
+                 Replace with the next ginger-j release (then drop the override once
+                 spice-bom picks it up). -->
+            <version>0.0.1-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>

@@ -3,6 +3,7 @@
 
 package io.spicelabs.cli;
 
+import java.util.Map;
 import java.util.UUID;
 
 import io.spicelabs.goatrodeo.ProgressListener;
@@ -31,7 +32,8 @@ final class AnalyzeProgressPublisher implements ProgressListener {
     /** What this publisher knows how to invoke. Real code passes {@code ginger::publishStatus}. */
     @FunctionalInterface
     interface StatusPublisher {
-        void publish(UUID subJobId, String status, Integer progress, String message);
+        void publish(UUID subJobId, String status, Integer progress, String message,
+                Map<String, Object> analyzeStats);
     }
 
     private static final long MIN_INTERVAL_MS = 2000L;
@@ -42,14 +44,21 @@ final class AnalyzeProgressPublisher implements ProgressListener {
 
     private final StatusPublisher publisher;
     private final UUID subJobId;
+    private final AnalyzeStats stats;
 
     private long lastEmitMillis = 0L;
     private int lastEmitPercent = -1;
     private boolean terminated = false;
 
     AnalyzeProgressPublisher(StatusPublisher publisher, UUID subJobId) {
+        this(publisher, subJobId, null);
+    }
+
+    /** With a non-null {@code stats}, progress ticks are recorded into it and its payload rides the terminal publish. */
+    AnalyzeProgressPublisher(StatusPublisher publisher, UUID subJobId, AnalyzeStats stats) {
         this.publisher = publisher;
         this.subJobId = subJobId;
+        this.stats = stats;
     }
 
     /** Opening tick: RUNNING / 0 / "Analyzing source". */
@@ -59,6 +68,9 @@ final class AnalyzeProgressPublisher implements ProgressListener {
 
     @Override
     public void onProgress(long current, long total) {
+        if (stats != null) {
+            stats.recordProgress(current, total);
+        }
         int percent;
         if (total <= 0) {
             percent = START_PERCENT;
@@ -108,7 +120,7 @@ final class AnalyzeProgressPublisher implements ProgressListener {
         }
         lastEmitMillis = System.currentTimeMillis();
         lastEmitPercent = percent;
-        publisher.publish(subJobId, "RUNNING", percent, message);
+        publisher.publish(subJobId, "RUNNING", percent, message, null);
     }
 
     private void publishTerminal(int percent, String status, String message) {
@@ -118,6 +130,6 @@ final class AnalyzeProgressPublisher implements ProgressListener {
         terminated = true;
         lastEmitMillis = System.currentTimeMillis();
         lastEmitPercent = percent;
-        publisher.publish(subJobId, status, percent, message);
+        publisher.publish(subJobId, status, percent, message, stats != null ? stats.toPayload() : null);
     }
 }

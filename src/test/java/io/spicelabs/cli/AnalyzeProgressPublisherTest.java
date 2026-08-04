@@ -5,28 +5,37 @@ package io.spicelabs.cli;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AnalyzeProgressPublisherTest {
 
-    private record Call(UUID subJobId, String status, Integer percent, String message) {}
+    private record Call(UUID subJobId, String status, Integer percent, String message,
+            Map<String, Object> analyzeStats) {}
 
     private List<Call> calls;
     private UUID subJobId;
     private AnalyzeProgressPublisher publisher;
+
+    private Call call(UUID sid, String status, Integer percent, String message) {
+        return new Call(sid, status, percent, message, null);
+    }
 
     @BeforeEach
     void setUp() {
         calls = new ArrayList<>();
         subJobId = UUID.randomUUID();
         publisher = new AnalyzeProgressPublisher(
-                (sid, status, percent, message) -> calls.add(new Call(sid, status, percent, message)),
+                (sid, status, percent, message, stats) ->
+                        calls.add(new Call(sid, status, percent, message, stats)),
                 subJobId);
     }
 
@@ -34,7 +43,7 @@ class AnalyzeProgressPublisherTest {
     void start_emitsOpeningTickAtZero() {
         publisher.start();
         assertEquals(1, calls.size());
-        assertEquals(new Call(subJobId, "RUNNING", 0, "Analyzing source"), calls.get(0));
+        assertEquals(call(subJobId, "RUNNING", 0, "Analyzing source"), calls.get(0));
     }
 
     @Test
@@ -70,7 +79,7 @@ class AnalyzeProgressPublisherTest {
     @Test
     void complete_emitsCompletedTerminalAtOneHundred() {
         publisher.complete();
-        assertEquals(new Call(subJobId, "COMPLETED", 100, "Analysis complete"), calls.get(0));
+        assertEquals(call(subJobId, "COMPLETED", 100, "Analysis complete"), calls.get(0));
     }
 
     @Test
@@ -79,19 +88,19 @@ class AnalyzeProgressPublisherTest {
         publisher.fail("boom");
 
         assertEquals(2, calls.size());
-        assertEquals(new Call(subJobId, "FAILED", 50, "Analysis failed: boom"), calls.get(1));
+        assertEquals(call(subJobId, "FAILED", 50, "Analysis failed: boom"), calls.get(1));
     }
 
     @Test
     void fail_emitsZeroWhenNothingPublishedYet() {
         publisher.fail("never started");
-        assertEquals(new Call(subJobId, "FAILED", 0, "Analysis failed: never started"), calls.get(0));
+        assertEquals(call(subJobId, "FAILED", 0, "Analysis failed: never started"), calls.get(0));
     }
 
     @Test
     void building_pinsAtNinetyFive() {
         publisher.building();
-        assertEquals(new Call(subJobId, "RUNNING", 95, "Building bundle"), calls.get(0));
+        assertEquals(call(subJobId, "RUNNING", 95, "Building bundle"), calls.get(0));
     }
 
     @Test
@@ -112,5 +121,51 @@ class AnalyzeProgressPublisherTest {
         publisher.onProgress(0, 0);
         assertTrue(calls.size() >= 1);
         assertEquals(5, calls.get(0).percent());
+    }
+
+    private AnalyzeProgressPublisher withStats(AnalyzeStats stats) {
+        return new AnalyzeProgressPublisher(
+                (sid, status, percent, message, analyzeStats) ->
+                        calls.add(new Call(sid, status, percent, message, analyzeStats)),
+                subJobId, stats);
+    }
+
+    @Test
+    void complete_attachesStatsPayloadOnTerminalOnly() {
+        AnalyzeProgressPublisher p = withStats(new AnalyzeStats());
+        p.onProgress(40, 100);
+        p.onProgress(100, 100);
+        p.complete();
+
+        assertEquals(3, calls.size());
+        assertNull(calls.get(0).analyzeStats(), "running ticks carry no stats");
+        assertNull(calls.get(1).analyzeStats(), "running ticks carry no stats");
+        Map<String, Object> stats = calls.get(2).analyzeStats();
+        assertNotNull(stats);
+        assertEquals(100L, stats.get("itemsSeen"));
+        assertEquals(100L, stats.get("itemsProcessed"));
+    }
+
+    @Test
+    void fail_attachesStatsPayload() {
+        AnalyzeProgressPublisher p = withStats(new AnalyzeStats());
+        p.onProgress(30, 90);
+        p.fail("boom");
+
+        Map<String, Object> stats = calls.get(calls.size() - 1).analyzeStats();
+        assertNotNull(stats);
+        assertEquals(90L, stats.get("itemsSeen"));
+        assertEquals(30L, stats.get("itemsProcessed"));
+    }
+
+    @Test
+    void complete_withoutStatsOrTicksAttachesNothing() {
+        publisher.complete();
+        assertNull(calls.get(0).analyzeStats());
+
+        calls.clear();
+        AnalyzeProgressPublisher p = withStats(new AnalyzeStats());
+        p.complete();
+        assertNull(calls.get(0).analyzeStats(), "empty stats publish no payload");
     }
 }

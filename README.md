@@ -126,6 +126,19 @@ spice pass decode
 
 Flags can appear anywhere before the `--` separator.
 
+### Subject names and CI metadata
+
+The `<subject>` argument names the thing you ship, not the build: use the same name on
+every run (for example `payments-api`) so results accumulate under one identity. Names
+ending in a date, build number, commit hash, UUID, or version print a warning; the run
+still proceeds, and the server can alias a name later.
+
+Volatile per-run facts belong in `--tag-json`. When running under a recognized CI system
+(GitHub Actions, GitLab CI, Jenkins), the CLI adds a `spice:ci` key to the tag JSON
+automatically with the provider and pipeline run URL/id, so survey results link back to
+the run that produced them. Supply your own `spice:ci` key in `--tag-json` to override
+this, or leave it out to accept the detected values.
+
 ### `--tag-json` on Windows PowerShell 5.1
 
 PowerShell 5.1 strips outer single quotes before passing an argument to the CLI,
