@@ -147,7 +147,8 @@ mf_parse() {
         MF_CMDS="${MF_CMDS}${MF_REC}${a}"
         ;;
       O|P)
-        [ -n "$a" ] && [ -n "$b" ] || continue
+        # A record needs both a command path and a name to be usable at all.
+        if [ -z "$a" ] || [ -z "$b" ]; then continue; fi
         # Positionals are keyed by index so they cannot collide with a flag.
         [ "$kind" = "P" ] && b="#${b}"
         key="${a}|${b}"
