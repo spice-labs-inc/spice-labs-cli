@@ -28,7 +28,6 @@
 MF_REC=$'\001'
 MF_SEP=$'\002'
 
-MF_LOADED=0
 MF_ROOT="spice"
 MF_CMDS=""            # \001<cmdpath>\001…  — command nodes
 MF_ATTRS=""           # \001<cmdpath>|<name>\002<attrs>\001…  — scoped lookup
@@ -113,6 +112,9 @@ mf_refresh() {
   if mkdir -p "$cache_dir" 2>/dev/null; then
     printf '%s\n' "$text" >"$cache_file" 2>/dev/null || true
     # Keep the cache from growing without bound as images come and go.
+    # Cache entries are named after image IDs, so they are always plain hex —
+    # `ls` parsing is safe here in a way it would not be for arbitrary names.
+    # shellcheck disable=SC2012
     {
       ls -1t "$cache_dir" 2>/dev/null | tail -n +11 | while read -r stale; do
         rm -f "${cache_dir}/${stale}" 2>/dev/null || true
@@ -129,7 +131,6 @@ mf_parse() {
   local kind a b rest key attrs first_cmd=""
   MF_CMDS=""; MF_ATTRS=""; MF_INHERITED=""; MF_FLAT=""
   MF_RESERVED_EXACT=":"; MF_RESERVED_PREFIX=":"
-  MF_LOADED=0
 
   # Matched anywhere rather than at the start: a warning logged to stdout inside
   # the container would otherwise be enough to reject an otherwise good manifest.
@@ -169,7 +170,6 @@ EOF
   MF_INHERITED="${MF_INHERITED}${MF_REC}"
   MF_FLAT="${MF_FLAT}${MF_REC}"
   [ -n "$first_cmd" ] && MF_ROOT="$first_cmd"
-  MF_LOADED=1
   return 0
 }
 
@@ -192,11 +192,15 @@ mf_flat_merge() {
 # ── Lookup ───────────────────────────────────────────────────────────────────
 
 # Echo the attribute string stored for $2 in table $1, or nothing.
+#
+# The delimiters and the key are quoted so they match literally: only the
+# leading `*` is meant as a wildcard. Unquoted, an option name containing a
+# glob character would be matched as a pattern rather than looked up.
 mf_raw_lookup() {
   local table="$1" key="$2" rest
-  rest="${table#*${MF_REC}${key}${MF_SEP}}"
+  rest="${table#*"${MF_REC}${key}${MF_SEP}"}"
   [ "$rest" = "$table" ] && return 1
-  printf '%s' "${rest%%${MF_REC}*}"
+  printf '%s' "${rest%%"${MF_REC}"*}"
 }
 
 # Resolve the attributes of <cmdpath> <name> into MF_A, trying in order:
@@ -319,7 +323,9 @@ mount_path() {
     mf_mount "$dir_abs" "$target"
   fi
 
-  container="${target}${abs#$dir_abs}"
+  # Quoted so a directory whose name contains a glob character is stripped
+  # literally rather than matched as a pattern.
+  container="${target}${abs#"$dir_abs"}"
   MF_RESULT="$container"
 }
 
