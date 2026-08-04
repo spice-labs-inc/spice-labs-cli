@@ -64,6 +64,9 @@ jobs:
         run: |
           shellcheck install.sh
           shellcheck test/wrapper/entrypoint.sh
+          shellcheck scripts/update-path-manifest.sh
+          # `spice` embeds shared/path-manifest.bash, so checking the wrapper
+          # covers the shared library in the context it actually runs in.
           shellcheck spice
 
       - name: Run PSScriptAnalyzer on PowerShell scripts
