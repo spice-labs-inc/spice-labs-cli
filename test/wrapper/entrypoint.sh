@@ -38,10 +38,9 @@ for arg in "$@"; do
 done
 
 # Write to the default output location inside the container.
-# The wrapper mounts the CLI's default host output directory at /mnt/output when
-# --output is omitted, so the default output path is /mnt/output.
-default_out="/mnt/output"
-mkdir -p "$default_out" 2>/dev/null
+# The wrapper mounts the user's current directory at its own path and makes it the
+# container's working directory, so a relative write lands there on the host.
+default_out="$(pwd)"
 echo "DEFAULT" > "$default_out/default-marker.txt" 2>/dev/null && echo "WROTE:${default_out}/default-marker.txt"
 
 # ANSI-colored output for log-file stripping tests
