@@ -44,6 +44,9 @@ import picocli.CommandLine.Command;
         AutoComplete.GenerateCompletion.class,
         // PowerShell equivalent: built-ins + each plugin's contributed fragment.
         GeneratePowershellCompletion.class,
+        // Tells the host wrapper which arguments are paths to bind-mount, derived from
+        // the live command model (plugins included) rather than a hardcoded list.
+        PathManifestCommand.class,
     },
     footer = {
         "",
