@@ -72,7 +72,7 @@ final class DefaultSpiceContext implements SpiceContext {
   }
 
   @Override
-  public SpiceConfiguration configuration() {
+  public SpiceConfiguration passConfiguration() {
     return configuration;
   }
 }
