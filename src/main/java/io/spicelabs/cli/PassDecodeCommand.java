@@ -65,6 +65,6 @@ public class PassDecodeCommand implements java.util.concurrent.Callable<Integer>
     if (spicePassOverride != null && !spicePassOverride.isBlank()) {
       return spicePassOverride;
     }
-    return System.getenv("SPICE_PASS");
+    return DefaultSpiceContext.current().spicePass().orElse(null);
   }
 }

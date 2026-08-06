@@ -56,6 +56,7 @@ public class SpicePassDecoder {
     CLAIM_NAMES.put("x-upload-server", "Upload Server");
     CLAIM_NAMES.put("x-public-key", "Public Key");
     CLAIM_NAMES.put("x-challenge", "Challenge");
+    CLAIM_NAMES.put("x-cutoff", "Artifact Cutoff");
   }
 
   public SpicePassDecoder(String spicePass) {
@@ -81,8 +82,38 @@ public class SpicePassDecoder {
     return claim.isNull() ? null : claim.asString();
   }
 
+  /** The organization the pass was issued for ({@code x-uuid-org}), or null. */
+  public String getOrganizationId() {
+    Claim claim = jwt.getClaim("x-uuid-org");
+    return claim.isNull() ? null : claim.asString();
+  }
+
+  /** The user the pass was issued to ({@code x-uuid-user}), or null. */
+  public String getUserId() {
+    Claim claim = jwt.getClaim("x-uuid-user");
+    return claim.isNull() ? null : claim.asString();
+  }
+
   public Instant getExpiresAt() {
     return jwt.getExpiresAt() != null ? jwt.getExpiresAt().toInstant() : null;
+  }
+
+  /**
+   * The artifact cutoff carried by the pass: artifacts published after this instant are out of
+   * scope for the survey. Encoded as the {@code x-cutoff} claim in epoch seconds. Null when the
+   * pass carries no cutoff, which means "no cutoff" rather than "cutoff at the epoch".
+   */
+  public Instant getCutoff() {
+    Claim claim = jwt.getClaim("x-cutoff");
+    if (claim.isNull() || claim.isMissing()) {
+      return null;
+    }
+    Long epochSeconds = claim.asLong();
+    if (epochSeconds == null) {
+      log.warn("Ignoring x-cutoff claim: expected epoch seconds, got {}", claim);
+      return null;
+    }
+    return Instant.ofEpochSecond(epochSeconds);
   }
 
   public String getStatus() {
@@ -152,7 +183,7 @@ public class SpicePassDecoder {
   }
 
   private String formatClaimValue(String key, Claim claim) {
-    if (key.equals("iat") || key.equals("exp") || key.equals("nbf")) {
+    if (key.equals("iat") || key.equals("exp") || key.equals("nbf") || key.equals("x-cutoff")) {
       try {
         long epoch = claim.asLong();
         Instant instant = Instant.ofEpochSecond(epoch);

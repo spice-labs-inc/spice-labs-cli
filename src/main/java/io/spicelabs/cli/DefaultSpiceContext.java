@@ -17,23 +17,48 @@ package io.spicelabs.cli;
 
 import java.util.Optional;
 
+import io.spicelabs.cli.spi.SpiceConfiguration;
 import io.spicelabs.cli.spi.SpiceContext;
 
 /**
  * The CLI's implementation of {@link SpiceContext} handed to plugins. Keeps plugin
- * behaviour (version reporting, {@code SPICE_PASS} resolution, logging) consistent with
+ * behaviour (version reporting, {@code SPICE_PASS} resolution, configuration) consistent with
  * the built-in commands. This is the app's concrete impl, not part of the public SPI.
+ *
+ * <p>The pass is read from the environment and decoded <em>once</em>, at construction, and the
+ * resulting {@link SpiceConfiguration} is shared by every plugin and by the built-in commands
+ * that consult {@link #current()}. Resolving it once is what makes "the cutoff in force" a
+ * single fact about the run rather than something each caller re-derives.
  */
 final class DefaultSpiceContext implements SpiceContext {
 
-  private final String version;
+  private static volatile DefaultSpiceContext current;
 
-  private DefaultSpiceContext(String version) {
+  private final String version;
+  private final String spicePass;
+  private final SpiceConfiguration configuration;
+
+  private DefaultSpiceContext(String version, String spicePass) {
     this.version = version;
+    this.spicePass = spicePass;
+    this.configuration = PassConfiguration.of(spicePass);
   }
 
   static DefaultSpiceContext create() {
-    return new DefaultSpiceContext(SpiceLabsCLI.VersionProvider.getVersionString());
+    DefaultSpiceContext context = new DefaultSpiceContext(
+        SpiceLabsCLI.VersionProvider.getVersionString(), System.getenv("SPICE_PASS"));
+    current = context;
+    return context;
+  }
+
+  /**
+   * The context for this run, creating it if the CLI has not built one yet (as happens when a
+   * command class is exercised directly by a test). Built-in commands use this so they see the
+   * same resolved values as plugins.
+   */
+  static DefaultSpiceContext current() {
+    DefaultSpiceContext context = current;
+    return context != null ? context : create();
   }
 
   @Override
@@ -43,7 +68,11 @@ final class DefaultSpiceContext implements SpiceContext {
 
   @Override
   public Optional<String> spicePass() {
-    String pass = System.getenv("SPICE_PASS");
-    return (pass == null || pass.isBlank()) ? Optional.empty() : Optional.of(pass);
+    return (spicePass == null || spicePass.isBlank()) ? Optional.empty() : Optional.of(spicePass);
+  }
+
+  @Override
+  public SpiceConfiguration configuration() {
+    return configuration;
   }
 }
