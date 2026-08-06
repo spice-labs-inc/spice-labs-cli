@@ -81,21 +81,25 @@
     <dependencies>
         <!-- The spice runtime classpath, declared directly with versions from the
              imported BOM. The shade plugin bundles these compile deps into the fat jar. -->
-        <!-- Pinned ahead of the BOM: SpiceContext.API_VERSION moved to 2 when
-             SpiceConfiguration was added, so the CLI needs 1.1.0 rather than the 1.0.2 the
-             imported BOM manages. Drop this <version> once spice-bom picks up 1.1.0. -->
+        <!-- Both pinned ahead of the BOM, and both must move together when spice-bom
+             catches up:
+               spice-plugin-api 1.2.0 — SpiceContext.API_VERSION is 3 (configuration()
+                 carries a plugin's config table; the pass accessor is passConfiguration()).
+               goatrodeo 0.18.0 — supplies TomlTables, the one place a TOML table is
+                 converted to and from the plain maps the plugin SPI carries. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>
-            <version>1.1.0-SNAPSHOT</version>
-        </dependency>
-        <dependency>
-            <groupId>info.picocli</groupId>
-            <artifactId>picocli</artifactId>
+            <version>1.2.0-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>goatrodeo_3</artifactId>
+            <version>0.18.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
