@@ -64,18 +64,63 @@ public class SpiceLabsCLI implements Runnable {
 
   private static final Logger log = LoggerFactory.getLogger(SpiceLabsCLI.class);
 
+  /**
+   * Declared so it appears in `--help` and, being typed as a {@link java.nio.file.Path}, in
+   * the path manifest — which is what makes the wrapper bind-mount it. The value is read from
+   * the raw arguments before picocli runs, because plugins must be mounted with their tables
+   * already in hand, and mounting happens while the command line is still being built.
+   *
+   * <p>Deliberately <em>not</em> {@code ScopeType.INHERIT}. Subcommands have their own
+   * {@code --config} meaning their own config file — allspice's {@code registry} commands do
+   * — and inheriting would both collide with those and blur two different files into one
+   * name. This is spice's config file and belongs before the subcommand:
+   * {@code spice --config <file> survey inventory …}.
+   */
+  @CommandLine.Option(
+      names = {"--config"},
+      paramLabel = "FILE",
+      description = "TOML configuration file. Defaults to the standard config location.")
+  private java.nio.file.Path configFile;
+
   public static void main(String[] args) {
     // Force US locale so the CLI's output (number/size formatting, etc.) is
     // deterministic regardless of the host's default locale.
     Locale.setDefault(Locale.US);
     int exitCode;
     try {
-      exitCode = newCommandLine().execute(args);
+      // Read before picocli runs: plugins are mounted while the command line is being
+      // built, and each needs its own table in hand by then.
+      RunConfiguration runConfiguration = RunConfiguration.load(configFileArgument(args));
+      exitCode = newCommandLine(runConfiguration).execute(args);
+    } catch (IllegalArgumentException e) {
+      log.error("❌ {}", e.getMessage());
+      exitCode = CommandLine.ExitCode.USAGE;
     } catch (Exception e) {
       log.error("Fatal error: {}", e.getMessage(), e);
       exitCode = 1;
     }
     System.exit(exitCode);
+  }
+
+  /**
+   * The value of {@code --config} as written on the command line, in either the
+   * {@code --config <file>} or {@code --config=<file>} form, or null if absent.
+   *
+   * <p>Scanned rather than parsed because this is needed before picocli exists. Doing it by
+   * hand risks disagreeing with picocli about what was written, so the option is also
+   * declared on the command — `--help` and the path manifest are both generated from that
+   * declaration, and `SpiceLabsCLITest` checks the two agree.
+   */
+  static java.nio.file.Path configFileArgument(String[] args) {
+    for (int i = 0; i < args.length; i++) {
+      if ("--config".equals(args[i]) && i + 1 < args.length) {
+        return java.nio.file.Path.of(args[i + 1]);
+      }
+      if (args[i].startsWith("--config=")) {
+        return java.nio.file.Path.of(args[i].substring("--config=".length()));
+      }
+    }
+    return null;
   }
 
   /**
@@ -86,6 +131,11 @@ public class SpiceLabsCLI implements Runnable {
    * ServiceLoader and mounted dynamically — see PluginLoader.
    */
   static CommandLine newCommandLine() {
+    return newCommandLine(RunConfiguration.EMPTY);
+  }
+
+  /** Build the command line with a configuration file already read. */
+  static CommandLine newCommandLine(RunConfiguration runConfiguration) {
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
     cmd.setParameterExceptionHandler((ex, a) -> {
       CommandLine offending = ex.getCommandLine();
@@ -124,7 +174,7 @@ public class SpiceLabsCLI implements Runnable {
     });
     // Discover and mount any subcommand plugins present on the classpath (e.g. the
     // proprietary `registry` plugin). Built-in commands are unaffected when none exist.
-    PluginLoader.registerPlugins(cmd, DefaultSpiceContext.create());
+    PluginLoader.registerPlugins(cmd, DefaultSpiceContext.create(), runConfiguration);
     // Hide the picocli-provided `generate-completion` from --help (it stays invokable —
     // install.sh calls it). The PowerShell generator is already hidden via its annotation.
     CommandLine genCompletion = cmd.getSubcommands().get("generate-completion");
