@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -323,6 +324,13 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         builder.withTagJson(tagJson);
       }
 
+      // Artifacts published after the pass's cutoff are out of scope: GoatRodeo drops any entry
+      // modified after this instant, along with everything that transitively contains it.
+      passCutoff().ifPresent(cutoff -> {
+        log.info("Ignoring artifacts published after {}", cutoff);
+        builder.withCutoff(cutoff);
+      });
+
       if (survey != null) {
         builder.withTagDate(survey.submissionTimestamp().toString());
       }
@@ -397,7 +405,26 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     if (spicePassOverride != null && !spicePassOverride.isBlank()) {
       return spicePassOverride;
     }
-    return System.getenv("SPICE_PASS");
+    return DefaultSpiceContext.current().spicePass().orElse(null);
+  }
+
+  /**
+   * The artifact cutoff in force for this survey, derived from the pass actually in use.
+   * Deriving it from {@link #resolveSpicePass()} rather than from the environment means a
+   * {@code --spice-pass} override carries its own cutoff, instead of silently inheriting the
+   * ambient pass's. {@link SpicePassDecoder#getCutoff()} owns the interpretation of the
+   * {@code x-cutoff} claim, so it is written down exactly once.
+   */
+  private Optional<Instant> passCutoff() {
+    String pass = resolveSpicePass();
+    if (pass == null || pass.isBlank()) {
+      return Optional.empty();
+    }
+    try {
+      return Optional.ofNullable(new SpicePassDecoder(pass).getCutoff());
+    } catch (RuntimeException e) {
+      return Optional.empty();
+    }
   }
 
   private void logProjectInfo(String spicePass) {

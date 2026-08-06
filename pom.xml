@@ -81,9 +81,15 @@
     <dependencies>
         <!-- The spice runtime classpath, declared directly with versions from the
              imported BOM. The shade plugin bundles these compile deps into the fat jar. -->
+        <!-- Pinned ahead of the BOM, to the SNAPSHOT channel rather than the 1.0.2
+             release the imported BOM manages. The SPI's pom version does not track its
+             contract: SpiceContext.API_VERSION does, and `spice` mounts a plugin only
+             when that plugin's apiVersion() equals its own exactly. Drop these
+             <version>s once spice-bom catches up. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>info.picocli</groupId>
