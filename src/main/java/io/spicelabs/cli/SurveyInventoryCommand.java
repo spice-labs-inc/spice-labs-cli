@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ch.qos.logback.classic.Level;
+import io.spicelabs.cli.spi.SpiceConfiguration;
 import io.spicelabs.ginger.Ginger;
 import io.spicelabs.goatrodeo.GoatRodeo;
 import io.spicelabs.goatrodeo.GoatRodeoBuilder;
@@ -323,6 +325,13 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         builder.withTagJson(tagJson);
       }
 
+      // Artifacts published after the pass's cutoff are out of scope: GoatRodeo drops any entry
+      // modified after this instant, along with everything that transitively contains it.
+      configuration().cutoff().ifPresent(cutoff -> {
+        log.info("Ignoring artifacts published after {}", cutoff);
+        builder.withExpiry(cutoff);
+      });
+
       if (survey != null) {
         builder.withTagDate(survey.submissionTimestamp().toString());
       }
@@ -397,7 +406,17 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     if (spicePassOverride != null && !spicePassOverride.isBlank()) {
       return spicePassOverride;
     }
-    return System.getenv("SPICE_PASS");
+    return DefaultSpiceContext.current().spicePass().orElse(null);
+  }
+
+  /**
+   * The configuration in force for this survey, derived from the pass actually in use. Deriving
+   * it from {@link #resolveSpicePass()} rather than from the environment means a
+   * {@code --spice-pass} override carries its own cutoff, instead of silently inheriting the
+   * ambient pass's.
+   */
+  private SpiceConfiguration configuration() {
+    return PassConfiguration.of(resolveSpicePass());
   }
 
   private void logProjectInfo(String spicePass) {

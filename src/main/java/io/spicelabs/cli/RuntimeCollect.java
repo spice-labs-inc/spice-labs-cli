@@ -33,7 +33,7 @@ public class RuntimeCollect {
     public static void main(String[] args) throws Exception {
         // Probe config download mode: streams JSON to stdout, no file written
         if (args.length >= 1 && "--download-probes".equals(args[0])) {
-            String spicePass = System.getenv("SPICE_PASS");
+            String spicePass = DefaultSpiceContext.current().spicePass().orElse(null);
             if (spicePass == null || spicePass.isBlank()) {
                 System.exit(1);
             }
@@ -130,7 +130,7 @@ public class RuntimeCollect {
         AnalyzeProgressPublisher analyzeProgress = null;
         String spicePass = null;
         if (!noUpload) {
-            spicePass = System.getenv("SPICE_PASS");
+            spicePass = DefaultSpiceContext.current().spicePass().orElse(null);
             if (spicePass == null || spicePass.isBlank()) {
                 log.error("SPICE_PASS not set");
                 System.exit(1);

@@ -55,7 +55,7 @@
              spice-plugin-api is a transitive dependency of the BOM, so the CLI
              inherits it. ancho is versioned here (NOT in the BOM): it is injected
              via -javaagent, never on the CLI's own classpath. -->
-        <spice-bom.version>1.0.4</spice-bom.version>
+        <spice-bom.version>1.0.5</spice-bom.version>
         <ancho.version>0.0.7</ancho.version>
         <!--        Use this version for local dev-->
         <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->
@@ -81,9 +81,13 @@
     <dependencies>
         <!-- The spice runtime classpath, declared directly with versions from the
              imported BOM. The shade plugin bundles these compile deps into the fat jar. -->
+        <!-- Pinned ahead of the BOM: SpiceContext.API_VERSION moved to 2 when
+             SpiceConfiguration was added, so the CLI needs 1.1.0 rather than the 1.0.2 the
+             imported BOM manages. Drop this <version> once spice-bom picks up 1.1.0. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>
+            <version>1.1.0-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>info.picocli</groupId>
