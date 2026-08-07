@@ -151,6 +151,8 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                     "SPICE_PASS must be set for upload. Use --no-upload to run locally.");
         }
 
+        VolatileSubjectDetector.warnIfVolatile(log, subject);
+
         // Anchor: the build artifact this survey is of, hashed so the survey can be correlated with an
         // inventory survey into a combined CBOM. Validated + hashed up front; warn loudly if absent so
         // the user knows why no combined CBOM.

@@ -185,6 +185,18 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       validateTagJson(tagJson);
     }
 
+    VolatileSubjectDetector.warnIfVolatile(log, subject);
+
+    Map<String, Object> ciTags = CiTags.detect(System.getenv());
+    if (ciTags != null) {
+      String merged = CiTags.merge(tagJson, ciTags);
+      if (merged != null && !merged.equals(tagJson)) {
+        tagJson = merged;
+        log.info("Detected {} CI environment; tagging survey with {} metadata",
+            ciTags.get("provider"), CiTags.KEY);
+      }
+    }
+
     if (threads == null) {
       int availableCores = Runtime.getRuntime().availableProcessors();
       threads = Math.max(1, Math.round(availableCores / 2.0f));
@@ -245,7 +257,11 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
           .parentId(survey.parentId())
           .idempotencyKey(survey.idempotencyKey())
           .userAgent(survey.userAgent());
-      analyzeProgress = new AnalyzeProgressPublisher(statusPublisher::publishStatus, survey.analyzeSubJobId());
+      // Completeness counters ride the terminal ANALYZE status publish; upload-only runs
+      // do no local analyze, so there is nothing to report.
+      AnalyzeStats analyzeStats = uploadOnly ? null : AnalyzeStats.scanInput(input);
+      analyzeProgress = new AnalyzeProgressPublisher(
+          statusPublisher::publishStatus, survey.analyzeSubJobId(), analyzeStats);
     }
 
     if (uploadOnly) {
