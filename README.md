@@ -107,8 +107,8 @@ spice pass decode
 | `--threads` | Number of threads to use | half of available CPU cores |
 | `--max-records` | Max records to process per batch | `5000` |
 | `--chunk-size` | Target chunk size in MB for uploads | `64` |
-| `--goat-rodeo-args` | Additional GoatRodeo args in key=value format | _(none)_ |
-| `--ginger-args` | Additional Ginger args in key=value format | _(none)_ |
+| `--analysis-args` | Additional analysis args in key=value format | _(none)_ |
+| `--upload-args` | Additional upload args in key=value format | _(none)_ |
 
 ### Runtime Survey
 

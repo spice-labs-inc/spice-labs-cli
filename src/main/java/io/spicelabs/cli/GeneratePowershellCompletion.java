@@ -67,7 +67,7 @@ public class GeneratePowershellCompletion implements Callable<Integer> {
       $SpiceCompletions = @{
         survey = @{
           __sub     = @('inventory', 'runtime')
-          inventory = @('--output', '--no-upload', '--upload-only', '--threads', '--max-records', '--chunk-size', '--log-level', '--tag-json', '--goat-rodeo-args', '--ginger-args', '--help')
+          inventory = @('--output', '--no-upload', '--upload-only', '--threads', '--max-records', '--chunk-size', '--log-level', '--tag-json', '--analysis-args', '--upload-args', '--help')
           runtime   = @('--jfr', '--no-upload', '--native-only', '--keep-recording', '--anchor', '--output', '--log-level', '--help')
         }
         pass = @{

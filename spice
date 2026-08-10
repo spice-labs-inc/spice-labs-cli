@@ -551,8 +551,8 @@ O spice/survey/inventory --max-records value
 O spice/survey/inventory --chunk-size value
 O spice/survey/inventory --log-level value
 O spice/survey/inventory --log-file value hostonly
-O spice/survey/inventory --goat-rodeo-args value
-O spice/survey/inventory --ginger-args value
+O spice/survey/inventory --analysis-args value
+O spice/survey/inventory --upload-args value
 O spice/survey/inventory -h flag
 O spice/survey/inventory --help flag
 O spice/survey/inventory -V flag
