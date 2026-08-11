@@ -87,6 +87,27 @@ class SurveyInventoryCommandTest {
   }
 
   @Test
+  void aLogFileInAConfigFileIsRefused(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+      throws Exception {
+    // The wrapper mounts what it can see on the command line and does not parse TOML, so a
+    // path written here would be written inside the container and lost. `--log-file` works.
+    java.nio.file.Path config =
+        java.nio.file.Files.writeString(
+            dir.resolve("config.toml"), "[logging]\nfile = \"/tmp/spice.log\"\n");
+    RunConfiguration.load(config);
+    try {
+      SurveyInventoryCommand command = new SurveyInventoryCommand();
+
+      IllegalArgumentException thrown =
+          assertThrows(IllegalArgumentException.class, command::configureLogging);
+
+      assertTrue(thrown.getMessage().contains("--log-file"), thrown.getMessage());
+    } finally {
+      RunConfiguration.load(null);
+    }
+  }
+
+  @Test
   void theLogFileFlagBindsOntoTheLoggingGroup() {
     // It was declared and never applied: the description promised "output appended to both
     // console and file" and nothing wrote one.
