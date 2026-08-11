@@ -86,7 +86,8 @@
                  imported BOM manages. Its pom version does not track its contract:
                  SpiceContext.API_VERSION does, and `spice` mounts a plugin only when
                  that plugin's apiVersion() equals its own exactly (passClaims() carries
-                 the pass's claims; configuration() carries the groups a plugin claimed).
+                 the pass's claims; configuration() carries the groups a plugin claimed;
+                 configurationPathKeys() names the settings the wrapper must mount).
                goatrodeo 0.18.0 — supplies TomlTables, the one place a TOML table is
                  converted to and from the plain maps the plugin SPI carries.
                spice-config 1.0.0 — the naming, layering and precedence rules, in the
