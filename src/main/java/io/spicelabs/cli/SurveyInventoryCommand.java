@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
+import io.spicelabs.config.LogbackLogging;
+import io.spicelabs.config.Logging;
 import io.spicelabs.config.Names;
 import io.spicelabs.config.Resolution;
 import io.spicelabs.config.Setting;
@@ -313,6 +315,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         .withFlag("analysis", "max_records", maxRecords, "--max-records")
         .withFlag("upload", "target_chunk_size", chunkSizeMB, "--chunk-size")
         .withFlag("logging", "level", logLevel, "--log-level")
+        .withFlag("logging", "file", logFile, "--log-file")
         .resolve();
   }
 
@@ -554,7 +557,8 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   }
 
   private void configureLogging() {
-    Level level = LogLevelParser.parse(logLevel);
+    Resolution settings = resolveSettings();
+    Level level = Level.toLevel(Logging.level(settings), Level.INFO);
     String levelStr = level.toString();
 
     ch.qos.logback.classic.Logger rootLogger =
@@ -588,6 +592,14 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       log.info("Logging level set to {}", level);
     }
 
+    // A file, if one was asked for — shared wiring, so the format matches every other
+    // Spice tool's and two logs can be read side by side. `--log-file` was declared and
+    // never applied before this: the description promised a file and nothing wrote one.
+    LogbackLogging.apply(settings, Logger.ROOT_LOGGER_NAME);
+
+    // An *output*, not an input: the Scala components read this property, and it is
+    // written once here from the resolved level rather than being a channel anyone
+    // configures through.
     System.setProperty("scala.logging.level", levelStr);
   }
 

@@ -140,4 +140,28 @@ class SurveyInventoryCommandTest {
       assertTrue(thrown.getMessage().contains(credential), thrown.getMessage());
     }
   }
+
+  @Test
+  void theLogFileFlagBindsOntoTheLoggingGroup() {
+    // It was declared and never applied: the description promised "output appended to both
+    // console and file" and nothing wrote one.
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+    command.logFile = "/tmp/spice-test.log";
+    command.logLevel = "debug";
+
+    io.spicelabs.config.Resolution settings = command.resolveSettings();
+
+    assertEquals(
+        "/tmp/spice-test.log",
+        io.spicelabs.config.Logging.file(settings).orElseThrow());
+    assertEquals("DEBUG", io.spicelabs.config.Logging.level(settings));
+  }
+
+  @Test
+  void theLoggingGroupSuppliesTheLevelWhenNoFlagDoes() {
+    // So `[logging] level` and SPICE_LOGGING_LEVEL work, not only the flag.
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+
+    assertEquals("INFO", io.spicelabs.config.Logging.level(command.resolveSettings()));
+  }
 }
