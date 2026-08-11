@@ -359,6 +359,42 @@ mf_under_identity_mount() {
   return 1
 }
 
+# ── Configuration-file paths ─────────────────────────────────────────────────
+
+# Mount the paths a configuration file names.
+#
+# The wrapper mounts what it can see, and it cannot see inside a TOML file — reading one
+# from a shell script would mean shipping a parser in bash, or guessing which values are
+# paths, and guessing is how a run ends up writing its output inside a container that is
+# about to be discarded. So the CLI reads them, in the same round-trip that produces the
+# manifest, and lists them here as `P <path>` lines.
+#
+# They go through `mount_path`, exactly as an argument would: the same deduplication, the
+# same identity mounts, and the same relocation when a path would otherwise hide part of
+# the image. Nothing is rewritten afterwards, though — the value stays inside the config
+# file, where the CLI reads it, so it has to be reachable at the path the user wrote.
+mount_config_paths() {
+  local text="$1" line value
+  while IFS= read -r line; do
+    case "$line" in
+      "P "*) value="${line#P }" ;;
+      *) continue ;;
+    esac
+    [ -n "$value" ] || continue
+    mount_path "$value" parent 0
+    # A relocated path is one the container cannot see where the config file says it is.
+    # Warn rather than fail: the CLI will report it properly, in its own words, and a
+    # wrapper that refuses a run over a mount detail it cannot fix is worse than one that
+    # says what it did.
+    if [ "$MF_RESULT" != "$value" ]; then
+      echo "WARN  ⚠️  $value is mounted at $MF_RESULT inside the container; a setting that names it may not resolve." >&2
+    fi
+  done <<EOF
+$text
+EOF
+  return 0
+}
+
 # ── Argument walking ─────────────────────────────────────────────────────────
 
 # Rewrite "$@" into MF_ARGS, mounting every argument the manifest calls a path.
