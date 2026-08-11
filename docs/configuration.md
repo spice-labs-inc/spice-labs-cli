@@ -123,6 +123,28 @@ own variables — `SPICE_IMAGE`, `SPICE_CACHE_DIR`, `SPICE_PATH_MANIFEST`, `SPIC
 never be mistaken for settings. They are read on the host before any JVM exists and are not
 part of any configuration. No group may be named `image`, `cache`, `path` or `pass`.
 
+## Logging is a group like any other
+
+```toml
+[logging]
+level = "debug"          # error, warn, info, debug, trace
+file = "/tmp/spice.log"  # in addition to the console
+```
+
+`--log-level` and `--log-file` set the same two keys, and so does
+`SPICE_LOGGING_LEVEL`. Every Spice tool reads this group, with the same keys and the same
+precedence, so a level means one thing wherever it is set and two runs' logs can be read
+side by side.
+
+Standalone components differ only in the prefix: `GOATRODEO_LOGGING_LEVEL`,
+`ALLSPICE_LOGGING_LEVEL`, `SASSAFRAS_LOGGING_LEVEL`, `GINGER_LOGGING_LEVEL`.
+
+Each tool moves only its own loggers. A level says how much *that* program should say, and
+lifting a noisy dependency along with it buries the output you asked for.
+
+A library never applies this: the group is applied by whichever program owns the process,
+because a library reconfiguring its host's logging is a rude surprise.
+
 ## Precedence
 
     defaults  <  [group]  <  [command.group]  <  environment  <  command line
