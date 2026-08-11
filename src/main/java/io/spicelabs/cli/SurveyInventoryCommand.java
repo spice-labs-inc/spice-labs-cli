@@ -23,8 +23,13 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+
+import io.spicelabs.config.Names;
+import io.spicelabs.config.Resolution;
+import io.spicelabs.config.Setting;
 import java.util.Map;
 import java.util.Optional;
 
@@ -100,7 +105,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   Integer threads;
 
   @Option(names = "--max-records", description = "Max records to process per batch (default: 5000)")
-  int maxRecords = 5000;
+  Integer maxRecords;
 
   @Option(names = "--chunk-size", description = "Target chunk size in MB for uploads (default: 64)")
   Integer chunkSizeMB;
@@ -186,12 +191,6 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       validateTagJson(tagJson);
     }
 
-    if (threads == null) {
-      int availableCores = Runtime.getRuntime().availableProcessors();
-      threads = Math.max(1, Math.round(availableCores / 2.0f));
-      log.info("Using {} threads (half of {} available CPU cores)", threads, availableCores);
-    }
-
     // Resolve output directory
     if (output == null) {
       String userHome = System.getProperty("user.home");
@@ -275,6 +274,47 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     return survey;
   }
 
+  /**
+   * The configuration groups this command reads.
+   *
+   * <p>Named for the job rather than the component: {@code analysis} is the same group
+   * {@code spice registry} claims, so {@code [analysis] threads = 16} written once in the
+   * config file governs both. Declared here for the same reason a plugin declares its
+   * claims — it is what lets a table nobody reads be reported as a probable typo.
+   */
+  static final List<String> GROUPS = List.of("analysis", "upload", "logging");
+
+  /** Where this command's command-scoped overrides live: {@code [survey.inventory.*]}. */
+  static final List<String> COMMAND_PATH = List.of("survey", "inventory");
+
+  /**
+   * Decide every setting for this run.
+   *
+   * <p>Defaults, then the shared group, then the command-scoped group, then the
+   * environment, then the flags — and any disagreement between two of those is reported as
+   * it is resolved, because this is the only place they meet.
+   *
+   * <p>The flags are <em>bindings onto group keys</em>, not values of their own. That is the
+   * point of the whole exercise: before this, {@code --threads} and
+   * {@code [survey.inventory.analysis] threads} were separate routes to the same engine
+   * setting, and nothing reconciled them.
+   */
+  Resolution resolveSettings() {
+    int cores = Runtime.getRuntime().availableProcessors();
+    long halfTheCores = Math.max(1, Math.round(cores / 2.0f));
+    return RunConfiguration.current()
+        .resolverFor(COMMAND_PATH, GROUPS)
+        .withDefaults(Map.of(
+            "analysis", Map.of("threads", halfTheCores, "max_records", 5000L),
+            "upload", Map.of("target_chunk_size", 64L),
+            "logging", Map.of("level", "INFO")))
+        .withFlag("analysis", "threads", threads, "--threads")
+        .withFlag("analysis", "max_records", maxRecords, "--max-records")
+        .withFlag("upload", "target_chunk_size", chunkSizeMB, "--chunk-size")
+        .withFlag("logging", "level", logLevel, "--log-level")
+        .resolve();
+  }
+
   protected void doSurvey(SurveyRegistration.Context survey, AnalyzeProgressPublisher analyzeProgress)
       throws Exception {
     log.info("📦 Surveying artifacts...");
@@ -305,28 +345,31 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         payloadDir = singleFileDir;
       }
 
-      String level = (logLevel == null) ? "INFO" : logLevel.toUpperCase();
+      // Every setting this command's components read, from every source, decided in one
+      // place. `--threads` and `--max-records` are bindings onto [analysis] keys rather
+      // than values of their own, so there is one `threads` and not one per route.
+      Resolution settings = resolveSettings();
+
+      String level = settings.setting("logging", "level").map(Setting::asString)
+          .map(String::toUpperCase).orElse("INFO");
       System.setProperty("scala.logging.level", level);
       System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", level);
 
       GoatRodeoBuilder builder = GoatRodeo.builder()
           .withPayload(payloadDir.toString())
           .withOutput(surveyOutput.toString())
-          .withThreads(threads)
-          .withMaxRecords(maxRecords)
           .withStaticMetadata(true)
           .withFsFilePaths(true)
           .withTag(subject)
           .withTempDir(tmpDir.toString())
           .withExtraArgs(goatRodeoArgs);
 
-      // Settings from the config file's [survey.inventory.analysis] table. Applied before
-      // the flags below so an explicit flag still wins, and handed over without spice
-      // knowing what is in it — the analysis engine owns that schema.
-      Map<String, Object> analysis =
-          RunConfiguration.current().tableFor("survey", "inventory", "analysis");
+      // The [analysis] group, handed over without spice knowing what is in it — the
+      // analysis engine owns that schema and rejects a key it does not have, which is why
+      // this command carries no list of the engine's settings.
+      Map<String, Object> analysis = settings.group("analysis");
       if (!analysis.isEmpty()) {
-        builder.withConfiguration(analysis, "survey.inventory.analysis");
+        builder.withConfiguration(analysis, "analysis");
       }
 
       if (tagJson != null && !tagJson.isBlank()) {
@@ -375,16 +418,28 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       AnalyzeProgressPublisher analyzeProgress) throws Exception {
     log.info("📦 Uploading ADGs...");
 
+    // `--upload-args` takes raw uploader flags: the escape hatch for something this
+    // schema does not model yet. It goes through `extraArgs`, which the uploader applies
+    // *inside* run(), after everything set here — so it wins, as an escape hatch must.
     Map<String, String> gingerArgsMap = new HashMap<>(gingerArgs);
-    if (chunkSizeMB != null && chunkSizeMB > 0) {
-      gingerArgsMap.put("--target-chunk-size", chunkSizeMB.toString());
-      log.info("Using target chunk size: {}MB", chunkSizeMB);
-    }
 
     Ginger ginger = Ginger.builder()
         .jwt(spicePass)
         .adgDir(gingerInputDir.orElse(input))
         .extraArgs(gingerArgsMap);
+
+    // The [upload] group, applied through the uploader's typed setters rather than as
+    // flag strings. Two reasons, and the second is the important one.
+    //
+    // The uploader models these settings properly — `targetChunkSizeMB(Integer)`, not
+    // `--target-chunk-size=64` — so going through the typed API is checked at compile
+    // time and cannot depend on a key name deriving a flag that happens to exist.
+    //
+    // And `extraArgs` is applied inside the uploader's run() and assigns its `jwt` and
+    // `uuid` fields, so anything reaching it overrides the Spice Pass. Forwarding a
+    // config-file group there wholesale would have let `[upload] jwt = "…"` replace the
+    // credential the platform issued — the one thing configuration must never do.
+    applyUploadSettings(ginger, resolveSettings());
 
     if (survey != null) {
       ginger.parentId(survey.parentId())
@@ -509,14 +564,54 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     System.setProperty("scala.logging.level", levelStr);
   }
 
+  /**
+   * The settings a user may write in {@code [upload]}, and where each one goes.
+   *
+   * <p>A closed list, deliberately. The uploader accepts other arguments — the pass, the
+   * ADG directory, the output path — but those are the run's own, decided by this command
+   * from the pass and the command line, and a config file has no business supplying them.
+   * Anything else in the group is an error naming the key, rather than a flag quietly
+   * forwarded to a program that will warn about it in a log nobody reads.
+   */
+  void applyUploadSettings(Ginger ginger, Resolution settings) {
+    List<String> unknown = new ArrayList<>();
+    settings
+        .group("upload")
+        .forEach(
+            (key, value) -> {
+              Setting setting = settings.setting("upload", key).orElseThrow();
+              switch (key) {
+                case "target_chunk_size" -> ginger.targetChunkSizeMB((int) setting.asLong());
+                case "encrypt_only" -> ginger.encryptOnly(setting.asBoolean());
+                case "skip_key" -> ginger.skipKey(setting.asBoolean());
+                case "comment" -> ginger.comment(setting.asString());
+                case "bundle_format_version" -> ginger.bundleFormatVersion((int) setting.asLong());
+                default -> unknown.add(key);
+              }
+            });
+    if (!unknown.isEmpty()) {
+      throw new IllegalArgumentException(
+          "[upload] has no setting called " + String.join(", ", unknown));
+    }
+  }
+
   private static boolean hasSpicePass(String spicePass) {
     return spicePass != null && !spicePass.isBlank();
   }
 
   /** Encrypt-only runs (via --upload-args) never contact a server, so we skip survey registration. */
   boolean isEncryptOnly() {
-    return gingerArgs.containsKey("--encrypt-only")
-        && !"false".equalsIgnoreCase(gingerArgs.get("--encrypt-only"));
+    // Both ways of saying it: `[upload] encrypt_only = true` and the raw
+    // `--upload-args=--encrypt-only`. A run that never contacts a server must skip
+    // registration however that was said, and the raw flag wins for the same reason it
+    // wins everywhere else.
+    if (gingerArgs.containsKey("--encrypt-only")) {
+      return !"false".equalsIgnoreCase(gingerArgs.get("--encrypt-only"));
+    }
+    return resolveSettings()
+        .setting("upload", "encrypt_only")
+        .map(Setting::asBoolean)
+        .orElse(false);
   }
 
   static void deleteRecursively(Path path) {

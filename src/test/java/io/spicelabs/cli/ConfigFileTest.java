@@ -4,6 +4,7 @@
 package io.spicelabs.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -60,31 +61,70 @@ class ConfigFileTest {
   }
 
   @Test
-  void aTableIsSlicedByCommandPath(@TempDir Path dir) throws Exception {
+  void aSharedGroupReachesEveryCommandThatClaimsIt(@TempDir Path dir) throws Exception {
+    // The behaviour the whole model exists for: `threads` is written once and both
+    // commands run with it, neither naming a file of its own.
     Path config = Files.writeString(dir.resolve("config.toml"), """
-        [survey.inventory]
-        threads = 4
-
-        [survey.inventory.analysis]
-        max_records = 42
-
-        [registry]
-        anything = "the plugin's own schema"
+        [analysis]
+        threads = 16
         """);
     RunConfiguration run = RunConfiguration.load(config);
 
-    assertEquals(4L, run.tableFor("survey", "inventory").get("threads"));
-    assertEquals(42L, run.tableFor("survey", "inventory", "analysis").get("max_records"));
     assertEquals(
-        "the plugin's own schema", run.tableFor("registry").get("anything"));
+        16L,
+        run.groupsFor(List.of("survey", "inventory"), List.of("analysis")).get("analysis").get("threads"));
+    assertEquals(
+        16L,
+        run.groupsFor(List.of("registry"), List.of("analysis")).get("analysis").get("threads"));
   }
 
   @Test
-  void anAbsentTableIsEmptyRatherThanNull(@TempDir Path dir) throws Exception {
-    Path config = Files.writeString(dir.resolve("config.toml"), "[registry]\nx = 1\n");
+  void aCommandScopedGroupOverridesTheSharedOne(@TempDir Path dir) throws Exception {
+    Path config = Files.writeString(dir.resolve("config.toml"), """
+        [analysis]
+        threads = 16
+        max_records = 42
+
+        [registry.analysis]
+        threads = 4
+        """);
     RunConfiguration run = RunConfiguration.load(config);
-    assertEquals(Map.of(), run.tableFor("survey", "inventory"));
-    assertEquals(Map.of(), run.tableFor("nothing", "here"));
+
+    Map<String, Object> registry =
+        run.groupsFor(List.of("registry"), List.of("analysis")).get("analysis");
+    assertEquals(4L, registry.get("threads"), "the command's own value wins");
+    assertEquals(42L, registry.get("max_records"), "and the rest of the shared group still applies");
+
+    assertEquals(
+        16L,
+        run.groupsFor(List.of("survey", "inventory"), List.of("analysis")).get("analysis").get("threads"),
+        "another command is unaffected");
+  }
+
+  @Test
+  void aCommandCannotReadAGroupItDidNotClaim(@TempDir Path dir) throws Exception {
+    Path config = Files.writeString(dir.resolve("config.toml"), """
+        [analysis]
+        threads = 16
+
+        [upload]
+        chunk_size_mb = 128
+        """);
+    RunConfiguration run = RunConfiguration.load(config);
+
+    Map<String, Map<String, Object>> groups =
+        run.groupsFor(List.of("registry"), List.of("analysis"));
+
+    assertEquals(Map.of("threads", 16L), groups.get("analysis"));
+    assertNull(groups.get("upload"), "a group it did not claim is not there at all");
+  }
+
+  @Test
+  void anAbsentGroupIsEmptyRatherThanNull(@TempDir Path dir) throws Exception {
+    Path config = Files.writeString(dir.resolve("config.toml"), "[analysis]\nthreads = 1\n");
+    RunConfiguration run = RunConfiguration.load(config);
+
+    assertEquals(Map.of(), run.groupsFor(List.of("registry"), List.of("upload")));
   }
 
   @Test
@@ -97,9 +137,9 @@ class ConfigFileTest {
         [registry.analysis]
         threads = 3
         """);
-    Object nested = RunConfiguration.load(config).tableFor("registry").get("analysis");
-    assertTrue(nested instanceof Map, "expected a plain Map, got: " + nested.getClass());
-    assertEquals(3L, ((Map<?, ?>) nested).get("threads"));
+    Object root = RunConfiguration.load(config).root().get("registry");
+    assertTrue(root instanceof Map, "expected a plain Map, got: " + root.getClass());
+    assertTrue(((Map<?, ?>) root).get("analysis") instanceof Map, "and so is the nested table");
   }
 
   @Test

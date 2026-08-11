@@ -85,13 +85,23 @@
                spice-plugin-api — the SNAPSHOT channel rather than the 1.0.2 release the
                  imported BOM manages. Its pom version does not track its contract:
                  SpiceContext.API_VERSION does, and `spice` mounts a plugin only when
-                 that plugin's apiVersion() equals its own exactly.
+                 that plugin's apiVersion() equals its own exactly (passClaims() carries
+                 the pass's claims; configuration() carries the groups a plugin claimed).
                goatrodeo 0.18.0 — supplies TomlTables, the one place a TOML table is
-                 converted to and from the plain maps the plugin SPI carries. -->
+                 converted to and from the plain maps the plugin SPI carries.
+               spice-config 1.0.0 — the naming, layering and precedence rules, in the
+                 one implementation every component shares. A released artifact on
+                 Maven Central, so unlike the two above it needs no repository
+                 declaration and no credentials. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>
             <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>spice-config</artifactId>
+            <version>1.0.0</version>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
