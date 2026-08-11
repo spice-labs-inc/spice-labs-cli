@@ -128,11 +128,15 @@ part of any configuration. No group may be named `image`, `cache`, `path` or `pa
 ```toml
 [logging]
 level = "debug"          # error, warn, info, debug, trace
-file = "/tmp/spice.log"  # in addition to the console
 ```
 
-`--log-level` and `--log-file` set the same two keys, and so does
-`SPICE_LOGGING_LEVEL`. Every Spice tool reads this group, with the same keys and the same
+`--log-level` sets the same key, and so does `SPICE_LOGGING_LEVEL`.
+
+**`file` is not settable here.** `--log-file` is the wrapper's: it tees the whole run to
+that path on the *host*, which catches output from subprocesses a logging appender inside
+the container would never see. The wrapper mounts the paths it can see on the command line
+and deliberately does not parse TOML, so a path written in this file would be written
+inside the container and lost when it exits. Writing one is an error that says so. Every Spice tool reads this group, with the same keys and the same
 precedence, so a level means one thing wherever it is set and two runs' logs can be read
 side by side.
 
