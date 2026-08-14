@@ -228,17 +228,30 @@ if (-not $rawArgs) {
 }
 if ($allArgs[0] -eq 'pull') { exit 0 }
 if ($env:DOCKER_ARGS_FILE) { $allArgs -join "`n" | Set-Content -Path $env:DOCKER_ARGS_FILE }
-$cliArgs = @(); $foundImage = $false; $envVars = @{}; $prevFlag = ''
+$cliArgs = @(); $foundImage = $false; $envVars = @{}; $volumes = @{}; $prevFlag = ''
 foreach ($a in $allArgs) {
   if ($foundImage) { $cliArgs += $a; continue }
   if ($prevFlag -eq '-e') { if ($a -match '^([^=]+)=(.*)$') { $envVars[$Matches[1]] = $Matches[2] }; $prevFlag = ''; continue }
+  if ($prevFlag -eq '-v') { $parts = $a -split ':', 2; if ($parts.Count -ge 2) { $volumes[$parts[1]] = $parts[0] }; $prevFlag = ''; continue }
   if ($a -eq '-e') { $prevFlag = '-e'; continue }
+  if ($a -eq '-v') { $prevFlag = '-v'; continue }
   $prevFlag = ''
   # The actual wrapper always places the image ref immediately before the CLI args,
   # so once we see a known command name the following args belong to the CLI.
   if ($a -eq 'survey' -or $a -eq 'pass' -or $a -eq 'registry') { $foundImage = $true; $cliArgs += $a; continue }
   if ($a -match '^[a-z]' -and $a -notmatch '^--' -and $a -notmatch '^host$' -and $a -match '(:|/)') { $foundImage = $true; continue }
   if ($a -match '^spice-') { $foundImage = $true; continue }
+}
+# If no --output was given and /mnt/output is mounted, write the default marker
+# file to the host dir so tests can verify the volume mount (mirrors the C# mock).
+$hasOutput = $false
+foreach ($ca in $cliArgs) { if ($ca -eq '--output' -or $ca -like '--output=*') { $hasOutput = $true; break } }
+if (-not $hasOutput -and $volumes['/mnt/output']) {
+  $outDir = $volumes['/mnt/output']
+  try {
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    Set-Content -Path (Join-Path $outDir 'default-marker.txt') -Value 'DEFAULT'
+  } catch {}
 }
 Write-Output '===SPICE_TEST_BEGIN==='
 foreach ($ca in $cliArgs) { Write-Output "ARG:$ca" }
@@ -248,40 +261,62 @@ Write-Output "$([char]27)[32mCOLORED:green-text$([char]27)[0m"
 Write-Output "$([char]27)[31mCOLORED:red-text$([char]27)[0m"
 [Console]::Error.WriteLine('STDERR:test-error-output')
 Write-Output '===SPICE_TEST_END==='
-exit 0
+# Check for TEST_EXIT_CODE in -e args (mirrors the C# mock)
+$exitCode = 0
+$pf = ''
+foreach ($a in $allArgs) {
+  if ($pf -eq '-e' -and $a -match '^TEST_EXIT_CODE=(\d+)$') { $exitCode = [int]$Matches[1] }
+  $pf = $a
+}
+exit $exitCode
 '@
     # Shell mock handles runtime survey entrypoint calls directly (no pwsh needed)
     # and falls back to the pwsh mock for normal docker run calls.
     Set-Content -Path $mockDockerSh -Value @"
 #!/bin/bash
-if [ "`\`$1" = 'pull' ]; then exit 0; fi
+if [ "`$1" = 'pull' ]; then exit 0; fi
 
 # Detect runtime survey Docker calls by --entrypoint
 _entrypoint=""
 _vol_host=""
 _prev=""
-for _arg in "`\`$@"; do
-  if [ "`\`$_prev" = "--entrypoint" ]; then _entrypoint="`\`$_arg"; fi
-  if [ "`\`$_prev" = "-v" ]; then _vol_host="`\`${_arg%%:*}"; fi
-  _prev="`\`$_arg"
+for _arg in "`$@"; do
+  if [ "`$_prev" = "--entrypoint" ]; then _entrypoint="`$_arg"; fi
+  if [ "`$_prev" = "-v" ]; then _vol_host="`${_arg%%:*}"; fi
+  _prev="`$_arg"
 done
 
 # Phase 1: extraction (--entrypoint sh) — create mock files in workdir
-if [ "`\`$_entrypoint" = "sh" ] && [ -n "`\`$_vol_host" ] && [ -d "`\`$_vol_host" ]; then
-  echo "mock" > "`\`$_vol_host/ancho.jar"
-  echo "mock" > "`\`$_vol_host/spice-jfr.jfc"
+if [ "`$_entrypoint" = "sh" ] && [ -n "`$_vol_host" ] && [ -d "`$_vol_host" ]; then
+  echo "mock" > "`$_vol_host/ancho.jar"
+  echo "mock" > "`$_vol_host/spice-jfr.jfc"
   echo done
   exit 0
 fi
 
 # Phase 4: RuntimeCollect (--entrypoint java) — just succeed
-if [ "`\`$_entrypoint" = "java" ]; then
+if [ "`$_entrypoint" = "java" ]; then
   exit 0
 fi
 
 pwsh -NoProfile -File "$mockDockerPs1" "$@"
 "@
     chmod +x $mockDockerSh 2>`$null
+
+    # Mock java on PATH for JVM mode tests (mirrors the Windows java.exe mock)
+    $script:JavaArgsFile = Join-Path $script:MockBinDir 'java-args.txt'
+    $mockJavaSh = Join-Path $script:MockBinDir 'java'
+    Set-Content -Path $mockJavaSh -Value @"
+#!/bin/bash
+if [ -n "`$JAVA_ARGS_FILE" ]; then
+  echo "`$@" > "`$JAVA_ARGS_FILE"
+fi
+echo '===SPICE_TEST_BEGIN==='
+for arg in "`$@"; do echo "ARG:`$arg"; done
+echo '===SPICE_TEST_END==='
+exit 0
+"@
+    chmod +x $mockJavaSh 2>`$null
   }
 
   # ── Helper: run the wrapper with mock docker and parse output ────────────
@@ -926,7 +961,7 @@ if (`$jto -match 'settings=([^,]+)') {
     It 'JAVA_TOOL_OPTIONS set for target' {
       $dump = Join-Path $script:TestDir 'jto-dump.txt'
       $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-jto-$PID"
-      $cmd = New-TestScript -Name 'dump-jto' -WinBody "Set-Content -Path '$dump' -Value `$env:JAVA_TOOL_OPTIONS" -UnixBody "echo `\"`\`$JAVA_TOOL_OPTIONS`\" > `"$dump`""
+      $cmd = New-TestScript -Name 'dump-jto' -WinBody "Set-Content -Path '$dump' -Value `$env:JAVA_TOOL_OPTIONS" -UnixBody "echo `"`$JAVA_TOOL_OPTIONS`" > `"$dump`""
       try {
         $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
         $dump | Should -Exist

@@ -100,10 +100,11 @@ teardown() {
   run "$WRAPPER" survey inventory myapp /some/path --threads 4
   [ "$status" -eq 0 ]
 
-  # Check java was called with the jar and the args
+  # Check java was called via -cp (so classpath plugins load) + explicit main class
   local java_args="$(cat "$JAVA_ARGS_FILE")"
-  [[ "$java_args" == *"-jar"* ]]
+  [[ "$java_args" == *"-cp"* ]]
   [[ "$java_args" == *"$jar"* ]]
+  [[ "$java_args" == *"io.spicelabs.cli.SpiceLabsCLI"* ]]
   [[ "$java_args" == *"survey"* ]]
   [[ "$java_args" == *"--threads"* ]]
 }
@@ -190,12 +191,35 @@ MOCK
 # ── Error handling tests ─────────────────────────────────────────────────────
 
 @test "docker not installed: exits with clear error" {
-  # Remove docker mock and clear PATH to only include essential commands
+  # Remove docker mock; build a restricted PATH from symlinks to the system
+  # binaries that contains NO docker at all. This keeps the test portable where
+  # a real docker binary exists on the host PATH (e.g. /usr/bin/docker on
+  # Linux runners) while also working on macOS where docker is absent anyway.
   /bin/rm -f "$MOCK_BIN/docker"
-  export PATH="/bin:/usr/bin"
-  
+  local sysbin="$TEST_TMPDIR/sysbin"
+  mkdir -p "$sysbin"
+  local dir tool name
+  for dir in /bin /usr/bin; do
+    if [ -d "$dir" ]; then
+      for tool in "$dir"/*; do
+        [ -x "$tool" ] || continue
+        name="$(basename "$tool")"
+        case "$name" in
+          docker) continue ;;
+        esac
+        [ -e "$sysbin/$name" ] || ln -s "$tool" "$sysbin/$name"
+      done
+    fi
+  done
+  local saved_path="$PATH"
+  export PATH="$sysbin"
+
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR"
-  [ "$status" -eq 1 ]
+  local status_rc="$status"
+  # Restore PATH before teardown: teardown's rm must not resolve into the
+  # temp dir that it is about to delete.
+  export PATH="$saved_path"
+  [ "$status_rc" -eq 1 ]
   [[ "$output" == *"Docker is not installed"* ]]
 }
 
