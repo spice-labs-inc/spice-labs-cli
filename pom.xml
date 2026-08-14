@@ -373,6 +373,11 @@
                     <url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url>
                     <snapshots><enabled>true</enabled></snapshots>
                 </repository>
+                <repository>
+                    <id>github-spice-labs-config</id>
+                    <url>https://maven.pkg.github.com/spice-labs-inc/spice-config</url>
+                    <snapshots><enabled>true</enabled></snapshots>
+                </repository>
             </repositories>
         </profile>
 
