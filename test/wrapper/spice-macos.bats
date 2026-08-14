@@ -100,10 +100,11 @@ teardown() {
   run "$WRAPPER" survey inventory myapp /some/path --threads 4
   [ "$status" -eq 0 ]
 
-  # Check java was called with the jar and the args
+  # Check java was called via -cp (so classpath plugins load) + explicit main class
   local java_args="$(cat "$JAVA_ARGS_FILE")"
-  [[ "$java_args" == *"-jar"* ]]
+  [[ "$java_args" == *"-cp"* ]]
   [[ "$java_args" == *"$jar"* ]]
+  [[ "$java_args" == *"io.spicelabs.cli.SpiceLabsCLI"* ]]
   [[ "$java_args" == *"survey"* ]]
   [[ "$java_args" == *"--threads"* ]]
 }
@@ -190,12 +191,35 @@ MOCK
 # ── Error handling tests ─────────────────────────────────────────────────────
 
 @test "docker not installed: exits with clear error" {
-  # Remove docker mock and clear PATH to only include essential commands
+  # Remove the docker mock, then build a PATH identical to the wrapper's normal
+  # runtime PATH except that no `docker` binary (mock or real) is reachable.
+  # Symlinking every executable found in the current PATH dirs keeps the
+  # wrapper's full toolchain (awk, shasum, dirname, basename, ...) available on
+  # any OS, while excluding docker wherever it is installed.
   /bin/rm -f "$MOCK_BIN/docker"
-  export PATH="/bin:/usr/bin"
-  
+  local saved_path="$PATH"
+  local sysbin="$TEST_TMPDIR/sysbin"
+  mkdir -p "$sysbin"
+  local dir tool name dirs
+  IFS=: read -ra dirs <<< "$saved_path"
+  for dir in "${dirs[@]}"; do
+    [[ "$dir" == /* && -d "$dir" ]] || continue
+    for tool in "$dir"/*; do
+      [ -x "$tool" ] || continue
+      name="$(basename "$tool")"
+      [[ "$name" == "docker" ]] && continue
+      [ -e "$sysbin/$name" ] || ln -s "$tool" "$sysbin/$name"
+    done
+  done
+  export PATH="$sysbin"
+
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR"
-  [ "$status" -eq 1 ]
+  local status_rc="$status"
+  echo "docker-missing status=${status_rc} output=${output}"
+  # Restore PATH before teardown: teardown's rm must not resolve into the
+  # temp dir that it is about to delete.
+  export PATH="$saved_path"
+  [ "$status_rc" -eq 1 ]
   [[ "$output" == *"Docker is not installed"* ]]
 }
 
