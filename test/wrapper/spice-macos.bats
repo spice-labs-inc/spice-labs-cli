@@ -191,31 +191,31 @@ MOCK
 # ── Error handling tests ─────────────────────────────────────────────────────
 
 @test "docker not installed: exits with clear error" {
-  # Remove docker mock; build a restricted PATH from symlinks to the system
-  # binaries that contains NO docker at all. This keeps the test portable where
-  # a real docker binary exists on the host PATH (e.g. /usr/bin/docker on
-  # Linux runners) while also working on macOS where docker is absent anyway.
+  # Remove the docker mock, then build a PATH identical to the wrapper's normal
+  # runtime PATH except that no `docker` binary (mock or real) is reachable.
+  # Symlinking every executable found in the current PATH dirs keeps the
+  # wrapper's full toolchain (awk, shasum, dirname, basename, ...) available on
+  # any OS, while excluding docker wherever it is installed.
   /bin/rm -f "$MOCK_BIN/docker"
+  local saved_path="$PATH"
   local sysbin="$TEST_TMPDIR/sysbin"
   mkdir -p "$sysbin"
-  local dir tool name
-  for dir in /bin /usr/bin; do
-    if [ -d "$dir" ]; then
-      for tool in "$dir"/*; do
-        [ -x "$tool" ] || continue
-        name="$(basename "$tool")"
-        case "$name" in
-          docker) continue ;;
-        esac
-        [ -e "$sysbin/$name" ] || ln -s "$tool" "$sysbin/$name"
-      done
-    fi
+  local dir tool name dirs
+  IFS=: read -ra dirs <<< "$saved_path"
+  for dir in "${dirs[@]}"; do
+    [[ "$dir" == /* && -d "$dir" ]] || continue
+    for tool in "$dir"/*; do
+      [ -x "$tool" ] || continue
+      name="$(basename "$tool")"
+      [[ "$name" == "docker" ]] && continue
+      [ -e "$sysbin/$name" ] || ln -s "$tool" "$sysbin/$name"
+    done
   done
-  local saved_path="$PATH"
   export PATH="$sysbin"
 
   run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR"
   local status_rc="$status"
+  echo "docker-missing status=${status_rc} output=${output}"
   # Restore PATH before teardown: teardown's rm must not resolve into the
   # temp dir that it is about to delete.
   export PATH="$saved_path"
