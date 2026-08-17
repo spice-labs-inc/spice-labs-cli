@@ -408,7 +408,7 @@ class SpiceLabsCLITest {
     int rc = cmd.execute("survey", "inventory",
         "test-subject", inputDir.toString(),
         "--no-upload", "--output", outputDir.toString(),
-        "--goat-rodeo-args=maxRecords=10,tempDir=/tmp/test");
+        "--analysis-args=maxRecords=10,tempDir=/tmp/test");
 
     assertEquals(0, rc);
   }

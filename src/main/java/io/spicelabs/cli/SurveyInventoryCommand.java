@@ -111,15 +111,15 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   String logFile;
 
   @Option(
-      names = "--goat-rodeo-args",
-      description = "Additional GoatRodeo args in key=value format",
+      names = "--analysis-args",
+      description = "Additional analysis args in key=value format",
       split = ","
   )
   List<String> goatRodeoArgsRaw;
 
   @Option(
-      names = "--ginger-args",
-      description = "Additional Ginger args in key=value format",
+      names = "--upload-args",
+      description = "Additional upload args in key=value format",
       split = ","
   )
   List<String> gingerArgsRaw;
@@ -276,7 +276,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
   protected void doSurvey(SurveyRegistration.Context survey, AnalyzeProgressPublisher analyzeProgress)
       throws Exception {
-    log.info("📦 Surveying artifacts with GoatRodeo...");
+    log.info("📦 Surveying artifacts...");
 
     String originalScalaLevel = System.getProperty("scala.logging.level");
     String originalSlf4jLevel = System.getProperty("org.slf4j.simpleLogger.defaultLogLevel");
@@ -477,7 +477,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     return spicePass != null && !spicePass.isBlank();
   }
 
-  /** Encrypt-only runs (via --ginger-args) never contact a server, so we skip survey registration. */
+  /** Encrypt-only runs (via --upload-args) never contact a server, so we skip survey registration. */
   boolean isEncryptOnly() {
     return gingerArgs.containsKey("--encrypt-only")
         && !"false".equalsIgnoreCase(gingerArgs.get("--encrypt-only"));

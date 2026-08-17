@@ -68,9 +68,12 @@ jobs:
       # invocation for all files, so a single run reports every finding.
       - name: Run ShellCheck on shell scripts
         run: |
+          # `spice` embeds shared/path-manifest.bash, so checking the wrapper
+          # covers the shared library in the context it actually runs in.
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 \
             install.sh \
             test/wrapper/entrypoint.sh \
+            scripts/update-path-manifest.sh \
             spice
 
       - name: Run PSScriptAnalyzer on PowerShell scripts
