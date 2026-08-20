@@ -596,7 +596,7 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
         if (spicePassOverride != null && !spicePassOverride.isBlank()) {
             return spicePassOverride;
         }
-        return System.getenv("SPICE_PASS");
+        return DefaultSpiceContext.current().spicePass().orElse(null);
     }
 
     private static boolean hasSpicePass(String spicePass) {
