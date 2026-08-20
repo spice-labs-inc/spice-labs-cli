@@ -43,42 +43,133 @@ The Java-side discovery in `ConfigFile` exists for `java -jar` runs that bypass 
 Inside the container it finds nothing, which is the correct outcome and needs no container
 detection.
 
-## The shape of the file
+## Groups
 
-A command's settings live at its command path; a component the command embeds gets a
-sub-table named after it.
+Settings live in **groups**, named for the job rather than for whoever does it — `analysis`,
+`upload`, `crypto`, `pipeline`, `repositories`.
 
 ```toml
-[survey.inventory]
-threads = 8
-
-# The analysis engine's own schema, carried by spice without being understood
-[survey.inventory.analysis]
-max_records = 100000
-mime_filter = ["+application/java-archive"]
-
-# A plugin's own schema, likewise
-[registry]
-
-[[registry.repositories]]
-id = "nexus"
-
-[registry.analysis]
+# Shared: every command that claims `analysis` sees this
+[analysis]
 threads = 16
+max_records = 100000
+
+[upload]
+target_chunk_size = 64        # also: encrypt_only, skip_key, comment, bundle_format_version
+
+[crypto]
+max_classes = 50000
+
+# Scoped: only `spice registry` sees this
+[registry.analysis]
+threads = 4
 ```
 
-**`spice` does not understand the tables it carries.** That is the point: it is what keeps
-this CLI free of every plugin's schema. The previous attempt at cross-program configuration
-failed exactly there — an allowlist of another program's flags, maintained here, that drifted
-until it permitted flags that program does not have.
+A group is **shared**. `[analysis] threads = 16` written once governs `spice survey
+inventory` and `spice registry` alike, so you configure the job and not each component that
+performs part of it. A same-named table under a command's path overrides for that command
+alone.
 
-Plugins receive their table through `SpiceContext.configuration()` (SPI 3), already parsed and
-sliced to their own command path. A plugin never sees the file and never learns where its
-table sits.
+A command reads a group only if it **claims** it, and it receives nothing else. That is what
+makes sharing safe: a command cannot read settings meant for another, and a table nobody
+claims can be reported as a probable typo rather than silently doing nothing.
+
+```
+WARN ⚠️  No command reads [anaylsis] — check the spelling, or the plugin may not be installed
+```
+
+A group is usually a table of settings. Some name a list of things — `[[repositories]]` — and
+have no keys to layer, so a later source replaces such a group whole or leaves it alone.
+
+**A group may not share a name with a command.** At the root of the file a table is either a
+group or a command's scope, so `[registry.analysis]` can only mean "the analysis group, for
+the registry command" if nothing called `registry` is also a group.
+
+**`spice` does not understand the groups it carries.** That is the point: it is what keeps
+this CLI free of every component's schema. The previous attempt at cross-program
+configuration failed exactly there — an allowlist of another program's flags, maintained
+here, that drifted until it permitted flags that program does not have.
+
+Plugins receive their claimed groups through `SpiceContext.configuration()` (SPI 4), already
+resolved. A plugin never sees the file and never learns where its tables sit.
+
+## One setting, three names
+
+| Form | Shape | Example |
+| --- | --- | --- |
+| Config key | `snake_case` in a group | `[analysis] max_records` |
+| Flag | its kebab-case form | `--max-records` |
+| Environment | `SPICE_<GROUP>_<KEY>` | `SPICE_ANALYSIS_MAX_RECORDS` |
+
+No exceptions, so there is no table of them to remember. The one variation: when a command
+claims two groups that both define `threads`, the flag is qualified as `--analysis-threads` —
+still derived, not remembered.
+
+Flags are *bindings onto group keys*, not values of their own. `--threads` and `[analysis]
+threads` are one setting reached two ways, rather than two settings that have to be kept in
+agreement.
+
+Run a component standalone and only the prefix changes:
+
+| Component | Prefix |
+| --- | --- |
+| `spice` | `SPICE_` |
+| `goatrodeo` | `GOATRODEO_` |
+| `allspice` | `ALLSPICE_` |
+| `sassafras` | `SASSAFRAS_` |
+
+The environment is matched against *claimed group names* rather than parsed, so the wrapper's
+own variables — `SPICE_IMAGE`, `SPICE_CACHE_DIR`, `SPICE_PATH_MANIFEST`, `SPICE_PASS` — can
+never be mistaken for settings. They are read on the host before any JVM exists and are not
+part of any configuration. No group may be named `image`, `cache`, `path` or `pass`.
 
 ## Precedence
 
-    defaults  <  config file  <  environment  <  command line
+    defaults  <  [group]  <  [command.group]  <  environment  <  command line
+
+Resolution does not depend on the order sources are supplied in: a value may only be
+displaced by one from a strictly later layer.
+
+**There is no fifth channel.** System properties are not a configuration input anywhere in
+`spice` or its components. Setting one to steer a third-party library is an *output*, written
+once from a resolved configuration and never read back.
+
+## Disagreements are reported
+
+One place decides which source wins, so one place can say so:
+
+```
+INFO ⚙️  analysis.threads = 8 (SPICE_ANALYSIS_THREADS) overrides 16 ([analysis] in ~/.config/spice/config.toml)
+```
+
+Overriding a *default* is deliberately not reported: that happens for every setting on every
+run, and the noise would bury the cases where two deliberate choices conflict.
+
+`spice config explain` prints the whole resolved configuration with an origin per key —
+which is also how to answer "why is it doing that?":
+
+```
+$ spice config explain survey inventory
+# /home/u/.config/spice/config.toml
+
+[analysis]
+  max_records = 100000    [analysis] in /home/u/.config/spice/config.toml
+  threads     = 4         [survey.inventory.analysis] in /home/u/.config/spice/config.toml
+```
+
+Standalone components print the same thing with `--explain-config` (`allspice
+explain-config`).
+
+A value that came from the environment shows quoted — `threads = "8"` — because the
+environment has no types and the value really is text until the component that knows the
+schema coerces it.
+
+## Where the rules live
+
+Naming, layering, precedence and provenance are implemented once, in
+[`spice-config`](https://github.com/spice-labs-inc/spice-config), and shared by every
+component. Rules copied into several codebases are rules that will disagree, and these
+already have.
 
 ## What the config file cannot set
 
