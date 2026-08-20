@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
+import io.spicelabs.config.LogbackLogging;
+import io.spicelabs.config.Logging;
 import io.spicelabs.config.Names;
 import io.spicelabs.config.Resolution;
 import io.spicelabs.config.Setting;
@@ -312,6 +314,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         .withFlag("analysis", "max_records", maxRecords, "--max-records")
         .withFlag("upload", "target_chunk_size", chunkSizeMB, "--chunk-size")
         .withFlag("logging", "level", logLevel, "--log-level")
+        .withFlag("logging", "file", logFile, "--log-file")
         .resolve();
   }
 
@@ -526,8 +529,9 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     }
   }
 
-  private void configureLogging() {
-    Level level = LogLevelParser.parse(logLevel);
+  void configureLogging() {
+    Resolution settings = resolveSettings();
+    Level level = Level.toLevel(Logging.level(settings), Level.INFO);
     String levelStr = level.toString();
 
     ch.qos.logback.classic.Logger rootLogger =
@@ -561,7 +565,49 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       log.info("Logging level set to {}", level);
     }
 
+    // A log file, if one was asked for.
+    //
+    // `--log-file` belongs to the wrapper, which tees the whole run to it on the *host*
+    // and strips the flag before the container ever sees it — so this only fires for a
+    // direct `java -jar` run, where there is no wrapper to do it. The two therefore
+    // cannot both write: whichever is running is the only one that sees the flag.
+    //
+    // A path from the *config file* is refused, in `rejectConfiguredLogFile`, because the
+    // wrapper cannot see inside a TOML table to mount it.
+    rejectConfiguredLogFile();
+    LogbackLogging.apply(settings, Logger.ROOT_LOGGER_NAME);
+
+    // An *output*, not an input: the Scala components read this property, and it is
+    // written once here from the resolved level rather than being a channel anyone
+    // configures through.
     System.setProperty("scala.logging.level", levelStr);
+  }
+
+  /**
+   * Refuse {@code [logging] file} written in a configuration file.
+   *
+   * <p>The wrapper mounts the paths it can see on the command line — that is what the path
+   * manifest is for — and it deliberately does not parse TOML, so a path written in a config
+   * file is invisible to it. Under Docker such a file would be written inside the container
+   * and lost when it exits, which is the silent-configuration failure this whole arrangement
+   * exists to prevent.
+   *
+   * <p>Refused rather than warned: a log nobody can read is not a partial success, and the
+   * flag that does work is one word away.
+   */
+  private void rejectConfiguredLogFile() {
+    boolean fromConfigFile =
+        RunConfiguration.current()
+            .root()
+            .containsKey(Logging.GROUP)
+            && RunConfiguration.current().root().get(Logging.GROUP) instanceof Map<?, ?> group
+            && group.containsKey("file");
+    if (fromConfigFile) {
+      throw new IllegalArgumentException(
+          "[logging] file cannot be set in a configuration file — the wrapper mounts only the "
+              + "paths named on the command line, so a file named here would be written inside "
+              + "the container and lost. Use --log-file instead.");
+    }
   }
 
   /**
