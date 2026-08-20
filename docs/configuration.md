@@ -149,6 +149,31 @@ lifting a noisy dependency along with it buries the output you asked for.
 A library never applies this: the group is applied by whichever program owns the process,
 because a library reconfiguring its host's logging is a rude surprise.
 
+## Paths named in the config file are mounted
+
+`spice` runs in Docker by default, and the wrapper mounts the paths it can see. Until now
+that meant the paths named on the *command line*: reading a TOML file from a shell script
+would mean shipping a parser in bash, or guessing which values are paths — and guessing is
+how a run ends up writing its output inside a container that is about to be discarded.
+
+So the CLI reads them, in the same round-trip that produces the path manifest:
+
+```
+docker run --rm -v <config>:<config> <image> path-manifest --config <config>
+```
+
+One call answers both questions, because the round-trip is ~0.36s and almost all of it is
+container and JVM startup — asking twice would double the cost of something one call can
+carry. The result is cached against the image ID *and* a digest of the config file, so an
+unchanged config costs nothing at all and an edited one costs one round-trip.
+
+Which values are paths is **declared, not inferred**: a plugin lists them through
+`SpiceCommandPlugin.configurationPathKeys()`, so nobody maintains a second copy of a schema
+they do not own and no value is mounted because it merely looks like a path.
+
+A path that has to be relocated — because mounting it where it sits would hide part of the
+image — is reported, since a setting naming it may not resolve inside the container.
+
 ## Precedence
 
     defaults  <  [group]  <  [command.group]  <  environment  <  command line

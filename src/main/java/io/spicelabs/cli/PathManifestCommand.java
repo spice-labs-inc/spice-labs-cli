@@ -29,6 +29,12 @@ import picocli.CommandLine.Spec;
  * hardcoded list. Resolving the command tree through {@link CommandSpec#root()} is what
  * makes the manifest complete: by the time this command executes, {@link PluginLoader} has
  * already mounted every plugin onto the root.
+ *
+ * <p>Given {@code --config}, it also prints the paths that configuration file names, so the
+ * wrapper can mount those too. One invocation answers both questions, because the cost here
+ * is almost entirely container and JVM startup — measured at ~0.36s, of which the manifest
+ * itself is ~30ms — so a second round-trip would double the price of an answer the first
+ * one could have carried.
  */
 @Command(
     name = "path-manifest",
@@ -39,11 +45,21 @@ public class PathManifestCommand implements Callable<Integer> {
   @Spec
   CommandSpec spec;
 
+  @picocli.CommandLine.Option(
+      names = "--config",
+      paramLabel = "FILE",
+      description = "Also print the paths named by this configuration file.")
+  java.nio.file.Path configFile;
+
   @Override
   public Integer call() {
     // Written straight to stdout, not through the logger: the wrapper parses this and any
     // log decoration would corrupt it.
-    System.out.print(PathManifest.render(spec.root().commandLine()));
+    StringBuilder out = new StringBuilder(PathManifest.render(spec.root().commandLine()));
+    if (configFile != null) {
+      out.append(ConfigurationPaths.render(configFile));
+    }
+    System.out.print(out);
     System.out.flush();
     return 0;
   }
