@@ -320,6 +320,15 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
           .withTempDir(tmpDir.toString())
           .withExtraArgs(goatRodeoArgs);
 
+      // Settings from the config file's [survey.inventory.analysis] table. Applied before
+      // the flags below so an explicit flag still wins, and handed over without spice
+      // knowing what is in it — the analysis engine owns that schema.
+      Map<String, Object> analysis =
+          RunConfiguration.current().tableFor("survey", "inventory", "analysis");
+      if (!analysis.isEmpty()) {
+        builder.withConfiguration(analysis, "survey.inventory.analysis");
+      }
+
       if (tagJson != null && !tagJson.isBlank()) {
         builder.withTagJson(tagJson);
       }
