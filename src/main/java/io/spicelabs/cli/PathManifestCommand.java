@@ -15,6 +15,7 @@ limitations under the License. */
 
 package io.spicelabs.cli;
 
+import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
 import picocli.CommandLine.Command;
@@ -49,7 +50,7 @@ public class PathManifestCommand implements Callable<Integer> {
       names = "--config",
       paramLabel = "FILE",
       description = "Also print the paths named by this configuration file.")
-  java.nio.file.Path configFile;
+  Path configFile;
 
   @Override
   public Integer call() {

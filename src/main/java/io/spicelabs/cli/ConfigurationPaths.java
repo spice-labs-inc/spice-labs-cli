@@ -22,6 +22,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import io.spicelabs.cli.spi.SpiceCommandPlugin;
+import io.spicelabs.config.TomlFile;
+
 /**
  * The paths a configuration file names, for the wrapper to bind-mount.
  *
@@ -33,7 +36,7 @@ import java.util.Set;
  * <p>So the parsing happens here, where a TOML parser already exists and where each
  * component's own declaration of its path-valued keys is available: built-in commands state
  * theirs below, and plugins state theirs through
- * {@link io.spicelabs.cli.spi.SpiceCommandPlugin#configurationPathKeys()}. Nothing is
+ * {@link SpiceCommandPlugin#configurationPathKeys()}. Nothing is
  * inferred from a value's shape.
  *
  * <p>Printed as part of the path manifest, so one container round-trip answers both
@@ -67,7 +70,7 @@ final class ConfigurationPaths {
   static String render(Path configFile) {
     StringBuilder out = new StringBuilder("\n").append(HEADER).append('\n');
     try {
-      Map<String, Object> root = io.spicelabs.config.TomlFile.parse(configFile);
+      Map<String, Object> root = TomlFile.parse(configFile);
       for (String path : resolve(root, pathKeys())) {
         out.append("P ").append(path).append('\n');
       }

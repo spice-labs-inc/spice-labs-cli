@@ -154,12 +154,12 @@ public final class PluginLoader {
   private static final Set<String> MOUNTED_COMMANDS =
       ConcurrentHashMap.newKeySet();
 
-  private static final java.util.Set<String> CONFIG_PATH_KEYS =
-      java.util.concurrent.ConcurrentHashMap.newKeySet();
+  private static final Set<String> CONFIG_PATH_KEYS =
+      ConcurrentHashMap.newKeySet();
 
   /** Path-valued configuration keys declared by the plugins mounted in this run. */
-  static java.util.List<String> configurationPathKeys() {
-    return java.util.List.copyOf(CONFIG_PATH_KEYS);
+  static List<String> configurationPathKeys() {
+    return List.copyOf(CONFIG_PATH_KEYS);
   }
 
   /** Groups claimed by the plugins mounted in this run. */
@@ -193,16 +193,16 @@ public final class PluginLoader {
   }
 
   /** The path keys a plugin declares, or none if it cannot say. See {@link #safeGroups}. */
-  private static java.util.List<String> safePathKeys(SpiceCommandPlugin plugin, String id) {
+  private static List<String> safePathKeys(SpiceCommandPlugin plugin, String id) {
     try {
-      java.util.List<String> keys = plugin.configurationPathKeys();
+      List<String> keys = plugin.configurationPathKeys();
       if (keys != null) {
         return keys;
       }
     } catch (Throwable e) {
       log.warn("Plugin '{}' could not name its path settings: {}", id, e.toString());
     }
-    return java.util.List.of();
+    return List.of();
   }
 
   private static String safeId(SpiceCommandPlugin plugin) {
