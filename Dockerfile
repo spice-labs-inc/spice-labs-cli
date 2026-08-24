@@ -148,7 +148,7 @@ WORKDIR /opt/spice-labs-cli
 # builds default to "unknown").
 ENV SPICE_VERSION=${VERSION}
 
-COPY --from=anchore/syft:v1.30.0 /syft /usr/bin/syft
+COPY --from=anchore/syft:v1.51.0 /syft /usr/bin/syft
 COPY --from=builder /workspace/target/*-fat.jar ./spice-labs-cli.jar
 COPY --from=builder /workspace/target/ancho.jar ./ancho.jar
 # Plugin jars (empty in a public build); placed on the classpath alongside the CLI.
