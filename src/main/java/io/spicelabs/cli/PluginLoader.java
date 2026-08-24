@@ -15,7 +15,10 @@ limitations under the License. */
 
 package io.spicelabs.cli;
 
+import java.util.List;
 import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,7 +82,7 @@ public final class PluginLoader {
         // cannot reach settings meant for another command. The command path is not known
         // until the command has been built and named, so it is bound just below — before
         // anything executes, which is when a plugin reads its configuration.
-        java.util.List<String> claimed = safeGroups(plugin, id);
+        List<String> claimed = safeGroups(plugin, id);
         CLAIMED_GROUPS.addAll(claimed);
         PluginContext pluginContext = new PluginContext(context, runConfiguration, claimed);
         Object command = plugin.command(pluginContext);
@@ -144,20 +147,20 @@ public final class PluginLoader {
    * {@code spice config explain} needs both to tell a misspelt group from one belonging to
    * a plugin that is simply not installed here.
    */
-  private static final java.util.Set<String> CLAIMED_GROUPS =
-      java.util.concurrent.ConcurrentHashMap.newKeySet();
+  private static final Set<String> CLAIMED_GROUPS =
+      ConcurrentHashMap.newKeySet();
 
-  private static final java.util.Set<String> MOUNTED_COMMANDS =
-      java.util.concurrent.ConcurrentHashMap.newKeySet();
+  private static final Set<String> MOUNTED_COMMANDS =
+      ConcurrentHashMap.newKeySet();
 
   /** Groups claimed by the plugins mounted in this run. */
-  static java.util.List<String> claimedGroups() {
-    return java.util.List.copyOf(CLAIMED_GROUPS);
+  static List<String> claimedGroups() {
+    return List.copyOf(CLAIMED_GROUPS);
   }
 
   /** Top-level command names contributed by plugins in this run. */
-  static java.util.List<String> mountedCommands() {
-    return java.util.List.copyOf(MOUNTED_COMMANDS);
+  static List<String> mountedCommands() {
+    return List.copyOf(MOUNTED_COMMANDS);
   }
 
   /**
@@ -168,16 +171,16 @@ public final class PluginLoader {
    * Claiming nothing is the safe failure — the plugin gets no settings, instead of another
    * command's.
    */
-  private static java.util.List<String> safeGroups(SpiceCommandPlugin plugin, String id) {
+  private static List<String> safeGroups(SpiceCommandPlugin plugin, String id) {
     try {
-      java.util.List<String> groups = plugin.configurationGroups();
+      List<String> groups = plugin.configurationGroups();
       if (groups != null) {
         return groups;
       }
     } catch (Throwable e) {
       log.warn("Plugin '{}' could not name its configuration groups: {}", id, e.toString());
     }
-    return java.util.List.of();
+    return List.of();
   }
 
   private static String safeId(SpiceCommandPlugin plugin) {

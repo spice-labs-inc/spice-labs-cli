@@ -29,6 +29,7 @@ public interface SpiceCommandPlugin {
   String id();                          // stable id, for ordering and diagnostics
   default int apiVersion() { return SpiceContext.API_VERSION; }
   default String parent() { return ""; } // parent command to mount under, or "" for top-level
+  default java.util.List<String> configurationGroups() { return List.of(); } // see below
   default String powershellCompletion() { return ""; } // see "Tab completion" below
 }
 
@@ -47,6 +48,24 @@ behaves consistently (version reporting, `SPICE_PASS` resolution, configuration)
 `spice` mounts a plugin only when its `apiVersion()` **equals** `API_VERSION` exactly. A
 mismatch is a plugin that does not appear, logged as such — not a build failure — so rebuild
 plugins against the `spice-plugin-api` the CLI ships.
+
+## Reading configuration
+
+`context.configuration()` hands over the config-file groups this plugin claimed through
+`configurationGroups()`, already resolved. Defaults, the shared `[group]`, the command-scoped
+`[command.group]`, environment variables and flags have all been applied by the time a plugin
+sees them, so it reads one settled value per key instead of re-implementing precedence — and
+gets the same answer the built-in commands get from the same file.
+
+Values arrive as plain nested `java.*` maps, so the SPI stays dependency-free and a plugin
+needs no TOML parser of its own.
+
+Claim the groups you read. A group that no plugin and no built-in command claims is reported
+as a probable typo, which only works if claims are honest — an unclaimed group is
+indistinguishable from a misspelt one.
+
+See [configuration.md](configuration.md) for the layering rules, and `spice config explain`
+for the resolved values with an origin per key.
 
 ## Reading the Spice Pass
 
