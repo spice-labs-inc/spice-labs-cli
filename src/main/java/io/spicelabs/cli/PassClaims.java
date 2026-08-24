@@ -48,6 +48,18 @@ import io.spicelabs.cli.spi.SpicePassClaims;
  * exception: the claims are a convenience here, and no command should fail to start because
  * of them. Commands that genuinely require the pass report that themselves.
  *
+ * <p>The pass is parsed here, in the CLI, rather than in ginger-j, which parsed it first and
+ * still parses the claims it needs to upload ({@code x-public-key}, {@code x-upload-server},
+ * {@code x-uuid-project}, {@code x-challenge}, {@code exp}). Those it reads to do its own job.
+ * Claim semantics for everyone else belong here: the SPI is a CLI contract that ginger-j knows
+ * nothing about, plugins mount into {@code spice} rather than into the uploader, and the other
+ * consumers — GoatRodeo's cutoff, {@code pass decode}, the Allspice plugin — do not go through
+ * ginger-j at all. Owning it in the uploader would point the dependency the wrong way.
+ *
+ * <p>The two overlap today on the claims both happen to read, which is worth converging, but
+ * they cannot contradict each other about scope: nothing outside ginger-j consults ginger-j's
+ * copy.
+ *
  * <p>Claims reach in-process plugins through
  * {@link io.spicelabs.cli.spi.SpiceContext#passClaims()} and through nothing else. They are
  * deliberately not republished as system properties, which is otherwise the obvious way to hand
