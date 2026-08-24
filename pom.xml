@@ -61,8 +61,7 @@
              the one place a TOML table is converted to and from the plain maps the plugin
              SPI carries. Pinning the goatrodeo version here instead would put a SNAPSHOT
              in the fat jar and make the same commit build against different bytes, so the
-             version comes from the BOM like every other. Until goatrodeo 0.18.0 and this
-             BOM are released, this does not resolve and the build fails on TomlTables. -->
+             version comes from the BOM like every other. -->
         <spice-bom.version>1.0.11</spice-bom.version>
         <ancho.version>0.0.8</ancho.version>
         <!--        Use this version for local dev-->
