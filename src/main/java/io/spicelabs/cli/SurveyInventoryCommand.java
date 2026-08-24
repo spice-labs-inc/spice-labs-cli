@@ -328,11 +328,17 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       // Artifacts published after the pass's cutoff are out of scope: GoatRodeo drops any entry
       // modified after this instant, along with everything that transitively contains it.
       //
+      // This is one of the two analyses the cutoff constrains. Discovery -- the Allspice
+      // registry plugin -- is the other, and was the use case the cutoff was minted for; it
+      // reads the same claim through SpiceContext.passClaims(). Scoping only one of them would
+      // leave a run whose halves disagreed about which artifacts exist, so they land together.
+      //
       // This is new behaviour, and it is visible to whoever reads the inventory. The CLI has
       // never honoured `x-cutoff` before, so a pass that carries one now yields a smaller
       // inventory than the same pass did yesterday, with no flag involved. Hence the INFO line:
       // a survey that silently covered less than the caller expected would be very hard to
-      // account for after the fact.
+      // account for after the fact. It is documented for users in README.md and FAQ.md, and for
+      // plugin authors in docs/PLUGINS.md.
       passCutoff().ifPresent(cutoff -> {
         log.info("Ignoring artifacts published after {}", cutoff);
         builder.withCutoff(cutoff);

@@ -8,6 +8,15 @@
 not the core CLI. It appears only when that plugin is on the classpath — i.e. in a build/image
 that bundles it. The public CLI ships without it. See [Plugins](README.md#-plugins).
 
+**Q: My survey covered fewer artifacts than I expected.**
+
+Your Spice Pass may carry an **artifact cutoff**, which puts anything published after a given
+instant out of scope, along with anything that transitively contains it. It follows the pass
+rather than any flag, and applies to both the inventory analysis and the `registry` discovery
+analysis. Run `spice pass decode` and look for **Artifact Cutoff**; when one is in force, each
+run logs `Ignoring artifacts published after …`. See
+[Artifact cutoff](README.md#artifact-cutoff).
+
 **Q: How do I add my own command to `spice`?**
 
 Write a plugin — `spice` discovers commands at runtime via `ServiceLoader`, so you don't modify

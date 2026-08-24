@@ -118,10 +118,16 @@ final class PassClaims implements SpicePassClaims {
    * claims — which, thanks to {@link DefaultSpiceContext}, every caller does — can ask for the
    * cutoff without decoding the pass a second time to get it.
    *
+   * <p>The cutoff constrains two analyses, not one: the built-in inventory survey here, and
+   * discovery in the Allspice registry plugin, which is what it was minted for. A run whose
+   * two halves disagreed about which artifacts exist would be worse than either bound alone,
+   * so both honour it. The contract is written down for plugin authors in
+   * {@code docs/PLUGINS.md} and for users in {@code README.md}.
+   *
    * <p><strong>This is the reference reading of {@code x-cutoff}, and it is deliberately not
    * the only one.</strong> Plugins reach claims through the SPI, which hands over
-   * {@code additionalClaims()} and no interpretation, so a plugin that wants the cutoff — the
-   * Allspice registry is the first — reads the claim itself. Promoting this to a default method
+   * {@code additionalClaims()} and no interpretation, so the Allspice plugin reads the claim
+   * itself. Promoting this to a default method
    * on {@code SpicePassClaims} would make it shared, but costs a release across plugin-api,
    * spice-bom and every plugin; two small implementations are the cheaper trade for now. Any
    * other implementation must agree on all three of these, because each way of getting them

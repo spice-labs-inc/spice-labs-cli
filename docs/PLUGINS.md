@@ -33,14 +33,60 @@ public interface SpiceCommandPlugin {
 }
 
 public interface SpiceContext {
-  int API_VERSION = 1;
-  String version();                 // the running spice CLI version
-  java.util.Optional<String> spicePass(); // resolved SPICE_PASS, for plugins that upload
+  int API_VERSION = 5;
+  String version();                            // the running spice CLI version
+  java.util.Optional<String> spicePass();      // resolved SPICE_PASS, for plugins that upload
+  default SpicePassClaims passClaims();        // that pass, decoded once (see below)
+  default java.util.Map<String, Object> configuration();
 }
 ```
 
 `SpiceContext` gives plugins the same shared services the built-in commands use, so a plugin
-behaves consistently (version reporting, `SPICE_PASS` resolution).
+behaves consistently (version reporting, `SPICE_PASS` resolution, configuration).
+
+`spice` mounts a plugin only when its `apiVersion()` **equals** `API_VERSION` exactly. A
+mismatch is a plugin that does not appear, logged as such — not a build failure — so rebuild
+plugins against the `spice-plugin-api` the CLI ships.
+
+## Reading the Spice Pass
+
+`context.passClaims()` hands over the claims of the pass in force. The CLI decodes it once at
+startup and shares that one value with every plugin and every built-in command, so nothing can
+disagree about what the pass says. Registered JWT claims (`iss`, `sub`, `exp`, …) come out
+through typed accessors; everything Spice-specific lands in `additionalClaims()` verbatim as
+plain `java.*` values, with integral numbers normalised to `Long`.
+
+Decoding the pass yourself works but re-derives what you already have, and claims never arrive
+as system properties: a `-D` property can be set on the command line, which would let a caller
+widen a scope the pass had deliberately narrowed.
+
+### The `x-cutoff` claim
+
+A pass may carry an **artifact cutoff** — artifacts published after that instant are out of
+scope for the whole run, along with anything that transitively contains them. It already
+constrains the built-in inventory analysis; a plugin that analyses or discovers artifacts is
+expected to honour it too, so that one pass scopes the run consistently.
+
+The SPI hands over the raw claim rather than an interpretation, so read it like this:
+
+```java
+Object value = context.passClaims().additionalClaims().get("x-cutoff");
+Optional<Instant> cutoff = (value instanceof Long seconds)
+    ? Optional.of(Instant.ofEpochSecond(seconds))
+    : Optional.empty();
+```
+
+Three rules matter, because each way of getting them wrong yields a run that silently covers
+almost nothing while exiting successfully:
+
+- **Epoch seconds, not milliseconds.** Read as millis, a 2026 cutoff lands in January 1970 and
+  excludes the entire estate.
+- **An absent claim means no cutoff**, never `Instant.EPOCH`. Defaulting to the epoch turns
+  "this pass does not narrow scope" into "exclude everything".
+- **A non-numeric value is ignored** — warn and carry on with no cutoff. A malformed claim must
+  not be read as a bound of zero.
+
+`PassClaims.cutoff()` in the CLI is the reference implementation; keep the two in step.
 
 ## Authoring a plugin
 
