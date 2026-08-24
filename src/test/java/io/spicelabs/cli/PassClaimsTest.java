@@ -104,9 +104,15 @@ class PassClaimsTest {
 
   /**
    * The cutoff constrains what the platform will accept, so it must come from the pass and
-   * nowhere else. It used to be republished as {@code -Dspice.cutoff} for in-process
-   * plugins, which meant anyone could set it on the command line. This guards against that
-   * returning.
+   * nowhere else — never from a system property, which {@code -D} would let any caller set,
+   * turning a bound the platform imposed into one the caller chooses.
+   *
+   * <p>Nothing has ever read such a property here. This pins that, so the tempting fix for
+   * "the in-process plugin cannot see the cutoff" — publish it as a property before dispatch —
+   * fails a test rather than passing review.
+   *
+   * <p>Scope: this covers {@link PassClaims} only, which reads the JWT and nothing else. It
+   * does not exercise the path that consumes the cutoff.
    */
   @Test
   void noSystemPropertyCanSupplyACutoff() {
