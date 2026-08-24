@@ -52,8 +52,9 @@
              specification; it is imported below and supplies the versions for the
              runtime classpath + coordinates. It lives in its own repo
              (spice-labs-inc/spice-bom) and is resolved from GitHub Packages.
-             spice-plugin-api is a transitive dependency of the BOM, so the CLI
-             inherits it. ancho is versioned here (NOT in the BOM): it is injected
+             spice-plugin-api's version comes from here too, so the SPI the CLI
+             compiles against and the one it ships cannot drift apart. ancho is
+             versioned here (NOT in the BOM): it is injected
              via -javaagent, never on the CLI's own classpath. -->
         <spice-bom.version>1.0.10</spice-bom.version>
         <ancho.version>0.0.8</ancho.version>
@@ -81,11 +82,12 @@
     <dependencies>
         <!-- The spice runtime classpath, declared directly with versions from the
              imported BOM. The shade plugin bundles these compile deps into the fat jar. -->
-        <!-- Pinned ahead of the BOM, to the SNAPSHOT channel rather than the 1.0.2
-             release the imported BOM manages. The SPI's pom version does not track its
-             contract: SpiceContext.API_VERSION does, and `spice` mounts a plugin only
-             when that plugin's apiVersion() equals its own exactly. Drop these
-             <version>s once spice-bom catches up. -->
+        <!-- Version from the BOM, like everything else here. Note that the SPI's pom
+             version is not what decides compatibility: SpiceContext.API_VERSION is, and
+             `spice` mounts a plugin only when that plugin's apiVersion() equals its own
+             exactly. A pom version can therefore move without the contract moving, or
+             the reverse, so a plugin built against a different API_VERSION fails to mount
+             at runtime rather than failing to compile. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>
