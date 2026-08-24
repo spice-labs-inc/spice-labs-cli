@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ch.qos.logback.classic.Level;
+import io.spicelabs.cli.spi.SpicePassClaims;
 import io.spicelabs.ginger.Ginger;
 import io.spicelabs.goatrodeo.GoatRodeo;
 import io.spicelabs.goatrodeo.GoatRodeoBuilder;
@@ -323,6 +325,25 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         builder.withTagJson(tagJson);
       }
 
+      // Artifacts published after the pass's cutoff are out of scope: GoatRodeo drops any entry
+      // modified after this instant, along with everything that transitively contains it.
+      //
+      // This is one of the two analyses the cutoff constrains. Discovery -- the Allspice
+      // registry plugin -- is the other, and was the use case the cutoff was minted for; it
+      // reads the same claim through SpiceContext.passClaims(). Scoping only one of them would
+      // leave a run whose halves disagreed about which artifacts exist, so they land together.
+      //
+      // This is new behaviour, and it is visible to whoever reads the inventory. The CLI has
+      // never honoured `x-cutoff` before, so a pass that carries one now yields a smaller
+      // inventory than the same pass did yesterday, with no flag involved. Hence the INFO line:
+      // a survey that silently covered less than the caller expected would be very hard to
+      // account for after the fact. It is documented for users in README.md and FAQ.md, and for
+      // plugin authors in docs/PLUGINS.md.
+      passCutoff().ifPresent(cutoff -> {
+        log.info("Ignoring artifacts published after {}", cutoff);
+        builder.withCutoff(cutoff);
+      });
+
       if (survey != null) {
         builder.withTagDate(survey.submissionTimestamp().toString());
       }
@@ -397,7 +418,40 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     if (spicePassOverride != null && !spicePassOverride.isBlank()) {
       return spicePassOverride;
     }
-    return System.getenv("SPICE_PASS");
+    return DefaultSpiceContext.current().spicePass().orElse(null);
+  }
+
+  /**
+   * The artifact cutoff in force for this survey, read from the claims of the pass actually in
+   * use. Taking it from {@link #resolveSpicePass()} rather than from the environment means a
+   * {@code --spice-pass} override carries its own cutoff instead of silently inheriting the
+   * ambient pass's.
+   *
+   * <p>Package-private so a test can exercise the path that consumes the cutoff, rather than
+   * only the claims it is consumed from.
+   */
+  Optional<Instant> passCutoff() {
+    return PassClaims.cutoff(passClaims());
+  }
+
+  /**
+   * The claims of the pass this survey will actually use.
+   *
+   * <p>In the usual case that is the ambient pass, and these are the claims
+   * {@link DefaultSpiceContext} decoded once at startup — nothing decodes it again here. A
+   * {@code --spice-pass} override is decoded, because by definition the context holds the
+   * claims of a different credential; that is one decode of a pass the context never saw, not
+   * a second decode of the same one.
+   */
+  private SpicePassClaims passClaims() {
+    String pass = resolveSpicePass();
+    if (pass == null || pass.isBlank()) {
+      return SpicePassClaims.EMPTY;
+    }
+    DefaultSpiceContext context = DefaultSpiceContext.current();
+    return pass.equals(context.spicePass().orElse(null))
+        ? context.passClaims()
+        : PassClaims.of(pass);
   }
 
   private void logProjectInfo(String spicePass) {

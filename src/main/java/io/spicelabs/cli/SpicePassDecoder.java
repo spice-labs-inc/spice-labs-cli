@@ -56,6 +56,7 @@ public class SpicePassDecoder {
     CLAIM_NAMES.put("x-upload-server", "Upload Server");
     CLAIM_NAMES.put("x-public-key", "Public Key");
     CLAIM_NAMES.put("x-challenge", "Challenge");
+    CLAIM_NAMES.put("x-cutoff", "Artifact Cutoff");
   }
 
   public SpicePassDecoder(String spicePass) {
@@ -152,7 +153,7 @@ public class SpicePassDecoder {
   }
 
   private String formatClaimValue(String key, Claim claim) {
-    if (key.equals("iat") || key.equals("exp") || key.equals("nbf")) {
+    if (key.equals("iat") || key.equals("exp") || key.equals("nbf") || key.equals("x-cutoff")) {
       try {
         long epoch = claim.asLong();
         Instant instant = Instant.ofEpochSecond(epoch);

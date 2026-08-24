@@ -31,9 +31,15 @@ public class RuntimeCollect {
     private static final Logger log = LoggerFactory.getLogger(RuntimeCollect.class);
 
     public static void main(String[] args) throws Exception {
+        // This is an entry point in its own right, so it builds the run's context rather than
+        // letting the first `current()` call create one as a side effect. Same result either
+        // way; doing it here means "one context, built at startup" holds for every way into
+        // the CLI, instead of holding for `SpiceLabsCLI` and happening to work here.
+        DefaultSpiceContext context = DefaultSpiceContext.create();
+
         // Probe config download mode: streams JSON to stdout, no file written
         if (args.length >= 1 && "--download-probes".equals(args[0])) {
-            String spicePass = System.getenv("SPICE_PASS");
+            String spicePass = context.spicePass().orElse(null);
             if (spicePass == null || spicePass.isBlank()) {
                 System.exit(1);
             }
@@ -130,7 +136,7 @@ public class RuntimeCollect {
         AnalyzeProgressPublisher analyzeProgress = null;
         String spicePass = null;
         if (!noUpload) {
-            spicePass = System.getenv("SPICE_PASS");
+            spicePass = context.spicePass().orElse(null);
             if (spicePass == null || spicePass.isBlank()) {
                 log.error("SPICE_PASS not set");
                 System.exit(1);
