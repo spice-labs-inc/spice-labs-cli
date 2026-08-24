@@ -40,6 +40,12 @@ COPY pom.xml ./
 # which needs auth even for public reads. Write a settings.xml from GH_TOKEN so
 # the resolve can reach them; the || true lets the bulk of the Maven cache
 # (picocli, slf4j, logback, junit, okhttp, etc.) be fetched regardless.
+#
+# -U because this layer is pushed to a registry cache and restored by later runs.
+# Without it, a version that was missing when the layer was built stays missing:
+# Maven records the failure in the local repo and honours that record instead of
+# asking again. A dependency released after a failed build would then never
+# resolve, however many times CI was re-run.
 ARG GH_TOKEN=""
 RUN mkdir -p ~/.m2 && cat > ~/.m2/settings.xml <<SXML
 <settings>
@@ -65,7 +71,7 @@ RUN mkdir -p ~/.m2 && cat > ~/.m2/settings.xml <<SXML
   <activeProfiles><activeProfile>github</activeProfile></activeProfiles>
 </settings>
 SXML
-RUN mvn -B -ntp dependency:resolve || true
+RUN mvn -B -ntp -U dependency:resolve || true
 
 # ---- builder ----------------------------------------------------------------
 # Compiles spice-labs-cli and assembles the fat JAR. Built FROM deps so the
@@ -120,7 +126,7 @@ SXML
 # (0.0.1-SNAPSHOT).
 ARG VERSION=""
 RUN if [ -n "${VERSION}" ]; then mvn -B -ntp versions:set -DnewVersion="${VERSION}" -DgenerateBackupPoms=false; fi && \
-    mvn -B -ntp -DskipTests package
+    mvn -B -ntp -U -DskipTests package
 
 # ---- test ------------------------------------------------------------------
 # The test target reuses the deps cache and runs `mvn verify`. Used by CI
