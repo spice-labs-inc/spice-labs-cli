@@ -102,35 +102,29 @@ class PassClaimsTest {
     assertSame(SpicePassClaims.EMPTY, PassClaims.of("not-a-jwt"));
   }
 
-  /**
-   * The cutoff constrains what the platform will accept, so it must come from the pass and
-   * nowhere else — never from a system property, which {@code -D} would let any caller set,
-   * turning a bound the platform imposed into one the caller chooses.
-   *
-   * <p>Nothing has ever read such a property here. This pins that, so the tempting fix for
-   * "the in-process plugin cannot see the cutoff" — publish it as a property before dispatch —
-   * fails a test rather than passing review.
-   *
-   * <p>Scope: this covers {@link PassClaims} only, which reads the JWT and nothing else. It
-   * does not exercise the path that consumes the cutoff.
-   */
   @Test
-  void noSystemPropertyCanSupplyACutoff() {
-    String saved = System.getProperty("spice.cutoff");
-    try {
-      System.setProperty("spice.cutoff", "2026-01-01T00:00:00Z");
-      assertFalse(PassClaims.of(null).additionalClaims().containsKey("x-cutoff"));
-      assertFalse(
-          PassClaims.of(pass("{\"x-uuid-project\":\"p\"}"))
-              .additionalClaims()
-              .containsKey("x-cutoff"));
-    } finally {
-      if (saved == null) {
-        System.clearProperty("spice.cutoff");
-      } else {
-        System.setProperty("spice.cutoff", saved);
-      }
-    }
+  void cutoffReadsEpochSecondsFromTheClaim() {
+    assertEquals(
+        Optional.of(Instant.ofEpochSecond(1767225600L)),
+        PassClaims.cutoff(PassClaims.of(pass("{\"x-cutoff\":1767225600}"))));
+  }
+
+  @Test
+  void noCutoffClaimMeansNoCutoff() {
+    // Absent means "no cutoff", not "cutoff at the epoch".
+    assertEquals(
+        Optional.empty(), PassClaims.cutoff(PassClaims.of(pass("{\"x-uuid-project\":\"p\"}"))));
+  }
+
+  @Test
+  void aNonNumericCutoffIsIgnoredRatherThanGuessedAt() {
+    assertEquals(
+        Optional.empty(), PassClaims.cutoff(PassClaims.of(pass("{\"x-cutoff\":\"yesterday\"}"))));
+  }
+
+  @Test
+  void emptyClaimsCarryNoCutoff() {
+    assertEquals(Optional.empty(), PassClaims.cutoff(SpicePassClaims.EMPTY));
   }
 
   private static String pass(String claimsJson) {

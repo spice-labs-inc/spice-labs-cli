@@ -99,6 +99,28 @@ final class PassClaims implements SpicePassClaims {
   }
 
   /**
+   * The artifact cutoff these claims carry: artifacts published after this instant are out of
+   * scope for a survey. It travels as {@code x-cutoff} in epoch seconds, and its absence means
+   * "no cutoff" rather than "cutoff at the epoch".
+   *
+   * <p>This takes claims rather than a pass deliberately. A caller that already holds decoded
+   * claims — which, thanks to {@link DefaultSpiceContext}, every caller does — can ask for the
+   * cutoff without decoding the pass a second time to get it. It is also the one place the
+   * {@code x-cutoff} claim is interpreted.
+   */
+  static Optional<Instant> cutoff(SpicePassClaims claims) {
+    Object value = claims.additionalClaims().get("x-cutoff");
+    if (value == null) {
+      return Optional.empty();
+    }
+    if (value instanceof Long seconds) {
+      return Optional.of(Instant.ofEpochSecond(seconds));
+    }
+    log.warn("Ignoring x-cutoff claim: expected epoch seconds, got {}", value);
+    return Optional.empty();
+  }
+
+  /**
    * Normalise a Jackson-decoded JSON value to the SPI's promised types: integral numbers are
    * always {@link Long} (Jackson hands back {@link Integer} for small ones), fractional ones
    * {@link Double}, and lists and maps are converted recursively.

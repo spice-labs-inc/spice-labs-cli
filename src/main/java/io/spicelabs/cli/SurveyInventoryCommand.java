@@ -37,6 +37,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ch.qos.logback.classic.Level;
+import io.spicelabs.cli.spi.SpicePassClaims;
 import io.spicelabs.ginger.Ginger;
 import io.spicelabs.goatrodeo.GoatRodeo;
 import io.spicelabs.goatrodeo.GoatRodeoBuilder;
@@ -415,22 +416,36 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   }
 
   /**
-   * The artifact cutoff in force for this survey, derived from the pass actually in use.
-   * Deriving it from {@link #resolveSpicePass()} rather than from the environment means a
-   * {@code --spice-pass} override carries its own cutoff, instead of silently inheriting the
-   * ambient pass's. {@link SpicePassDecoder#getCutoff()} owns the interpretation of the
-   * {@code x-cutoff} claim, so it is written down exactly once.
+   * The artifact cutoff in force for this survey, read from the claims of the pass actually in
+   * use. Taking it from {@link #resolveSpicePass()} rather than from the environment means a
+   * {@code --spice-pass} override carries its own cutoff instead of silently inheriting the
+   * ambient pass's.
+   *
+   * <p>Package-private so a test can exercise the path that consumes the cutoff, rather than
+   * only the claims it is consumed from.
    */
-  private Optional<Instant> passCutoff() {
+  Optional<Instant> passCutoff() {
+    return PassClaims.cutoff(passClaims());
+  }
+
+  /**
+   * The claims of the pass this survey will actually use.
+   *
+   * <p>In the usual case that is the ambient pass, and these are the claims
+   * {@link DefaultSpiceContext} decoded once at startup — nothing decodes it again here. A
+   * {@code --spice-pass} override is decoded, because by definition the context holds the
+   * claims of a different credential; that is one decode of a pass the context never saw, not
+   * a second decode of the same one.
+   */
+  private SpicePassClaims passClaims() {
     String pass = resolveSpicePass();
     if (pass == null || pass.isBlank()) {
-      return Optional.empty();
+      return SpicePassClaims.EMPTY;
     }
-    try {
-      return Optional.ofNullable(new SpicePassDecoder(pass).getCutoff());
-    } catch (RuntimeException e) {
-      return Optional.empty();
-    }
+    DefaultSpiceContext context = DefaultSpiceContext.current();
+    return pass.equals(context.spicePass().orElse(null))
+        ? context.passClaims()
+        : PassClaims.of(pass);
   }
 
   private void logProjectInfo(String spicePass) {
