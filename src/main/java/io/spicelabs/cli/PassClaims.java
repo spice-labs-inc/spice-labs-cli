@@ -48,10 +48,12 @@ import io.spicelabs.cli.spi.SpicePassClaims;
  * exception: the claims are a convenience here, and no command should fail to start because
  * of them. Commands that genuinely require the pass report that themselves.
  *
- * <p>These values were previously republished as system properties (notably
- * {@code -Dspice.cutoff}) so that in-process plugins could reach them. That channel is gone:
- * claims now travel through {@link io.spicelabs.cli.spi.SpiceContext#passClaims()}, which
- * makes them discoverable and impossible to forge from the command line.
+ * <p>Claims reach in-process plugins through
+ * {@link io.spicelabs.cli.spi.SpiceContext#passClaims()} and through nothing else. They are
+ * deliberately not republished as system properties, which is otherwise the obvious way to hand
+ * a value to code that {@code ServiceLoader} has loaded into this same JVM: a property can be
+ * set with {@code -D} on the command line, so a claim like {@code x-cutoff} would become
+ * something the caller can widen rather than something the pass fixes.
  */
 final class PassClaims implements SpicePassClaims {
 
