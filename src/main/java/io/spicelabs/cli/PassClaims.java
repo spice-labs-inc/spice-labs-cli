@@ -112,13 +112,29 @@ final class PassClaims implements SpicePassClaims {
 
   /**
    * The artifact cutoff these claims carry: artifacts published after this instant are out of
-   * scope for a survey. It travels as {@code x-cutoff} in epoch seconds, and its absence means
-   * "no cutoff" rather than "cutoff at the epoch".
+   * scope for a survey.
    *
    * <p>This takes claims rather than a pass deliberately. A caller that already holds decoded
    * claims — which, thanks to {@link DefaultSpiceContext}, every caller does — can ask for the
-   * cutoff without decoding the pass a second time to get it. It is also the one place the
-   * {@code x-cutoff} claim is interpreted.
+   * cutoff without decoding the pass a second time to get it.
+   *
+   * <p><strong>This is the reference reading of {@code x-cutoff}, and it is deliberately not
+   * the only one.</strong> Plugins reach claims through the SPI, which hands over
+   * {@code additionalClaims()} and no interpretation, so a plugin that wants the cutoff — the
+   * Allspice registry is the first — reads the claim itself. Promoting this to a default method
+   * on {@code SpicePassClaims} would make it shared, but costs a release across plugin-api,
+   * spice-bom and every plugin; two small implementations are the cheaper trade for now. Any
+   * other implementation must agree on all three of these, because each way of getting them
+   * wrong yields a survey that silently covers almost nothing while exiting successfully:
+   *
+   * <ul>
+   *   <li><strong>Epoch seconds, not milliseconds.</strong> Read as millis, a 2026 cutoff lands
+   *       in January 1970 and drops the entire estate.
+   *   <li><strong>Absent means no cutoff</strong>, never {@link Instant#EPOCH}. Defaulting to
+   *       the epoch turns "this pass does not narrow scope" into "exclude everything".
+   *   <li><strong>A non-numeric value is ignored</strong>, with a warning, and again means no
+   *       cutoff. A malformed claim must not be read as a bound of zero.
+   * </ul>
    */
   static Optional<Instant> cutoff(SpicePassClaims claims) {
     Object value = claims.additionalClaims().get("x-cutoff");
