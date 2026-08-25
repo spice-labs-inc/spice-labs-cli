@@ -495,6 +495,7 @@ R /sys
 R /usr
 R /var
 C spice
+O spice --config value path create=parent
 O spice -h flag
 O spice --help flag
 O spice -V flag
@@ -900,6 +901,41 @@ if ($isRuntimeSurvey) {
 # translation) and nothing needs rewriting — except a path under a reserved
 # directory, which is remapped and recorded in SPICE_PATH_MAP for the CLI to
 # reverse in its messages.
+
+# ── Configuration file ───────────────────────────────────────────────────────
+#
+# Discovery runs HERE, on the host, not in the container: the container is given
+# neither HOME nor XDG_*, so `spice` running inside it would look in the
+# container's home rather than the user's. Resolving here and passing the result
+# as --config also means the file is bind-mounted like any other path argument.
+#
+# Windows-native locations, not XDG: %APPDATA% (per-user, roaming) then
+# %PROGRAMDATA% (machine-wide). Roaming rather than %LOCALAPPDATA% because
+# configuration is user intent and should follow the user between machines,
+# unlike the manifest cache above. First match wins.
+function Get-SpiceConfigFile {
+  foreach ($root in @($env:APPDATA, $env:PROGRAMDATA)) {
+    if ($root) {
+      $candidate = Join-Path (Join-Path $root 'spice') 'config.toml'
+      if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+  }
+  return $null
+}
+
+# Only when the user did not name one themselves.
+$hasConfigArg = $false
+foreach ($a in $args) {
+  if ($a -eq '--config' -or ($a -is [string] -and $a.StartsWith('--config='))) {
+    $hasConfigArg = $true
+    break
+  }
+}
+if (-not $hasConfigArg) {
+  $spiceConfigFile = Get-SpiceConfigFile
+  # Before the subcommand: --config is spice's own option, not inherited.
+  if ($spiceConfigFile) { $args = @('--config', $spiceConfigFile) + @($args) }
+}
 
 Walk-Args $args
 

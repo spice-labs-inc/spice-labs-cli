@@ -532,6 +532,7 @@ R /sys
 R /usr
 R /var
 C spice
+O spice --config value path create=parent
 O spice -h flag
 O spice --help flag
 O spice -V flag
@@ -980,6 +981,46 @@ fi
 # the container sees it where the user typed it and nothing needs rewriting —
 # except a path under a reserved directory, which is remapped and recorded in
 # SPICE_PATH_MAP for the CLI to reverse in its messages.
+
+# ── Configuration file ───────────────────────────────────────────────────────
+#
+# Discovery runs HERE, on the host, not in the container: the container is given
+# neither HOME nor XDG_*, so `spice` running inside it would look in the
+# container's home rather than the user's. Resolving here and passing the result
+# as --config also means the file is bind-mounted like any other path argument,
+# with no special handling — the manifest already lists --config as a path.
+#
+# XDG on Unix; %APPDATA% then %PROGRAMDATA% on Windows (see spice.ps1). First
+# match wins; the rest are not consulted.
+spice_config_file() {
+  local candidate
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    candidate="$XDG_CONFIG_HOME/spice/config.toml"
+    [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  elif [ -n "${HOME:-}" ]; then
+    candidate="$HOME/.config/spice/config.toml"
+    [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  fi
+  local dirs="${XDG_CONFIG_DIRS:-/etc/xdg}" dir
+  local IFS=':'
+  for dir in $dirs; do
+    [ -n "$dir" ] || continue
+    candidate="$dir/spice/config.toml"
+    [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  done
+  return 1
+}
+
+# Only when the user did not name one themselves.
+case " $* " in
+  *" --config "*|*" --config="*) ;;
+  *)
+    if SPICE_CONFIG_FILE="$(spice_config_file)"; then
+      # Before the subcommand: --config is spice's own option, not inherited.
+      set -- --config "$SPICE_CONFIG_FILE" "$@"
+    fi
+    ;;
+esac
 
 walk_args "$@"
 

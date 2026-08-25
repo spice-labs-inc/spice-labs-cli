@@ -44,11 +44,26 @@ public final class PluginLoader {
 
   /** Discover plugins via {@link ServiceLoader} and register them on {@code cmd}. */
   public static void registerPlugins(CommandLine cmd, SpiceContext context) {
-    registerPlugins(cmd, context, ServiceLoader.load(SpiceCommandPlugin.class));
+    registerPlugins(cmd, context, RunConfiguration.EMPTY,
+        ServiceLoader.load(SpiceCommandPlugin.class));
+  }
+
+  /** Register every plugin on the classpath, each seeing its own slice of the config file. */
+  public static void registerPlugins(CommandLine cmd, SpiceContext context,
+                                     RunConfiguration runConfiguration) {
+    registerPlugins(cmd, context, runConfiguration,
+        ServiceLoader.load(SpiceCommandPlugin.class));
   }
 
   /** Register the supplied plugins on {@code cmd}. Visible for testing. */
   static void registerPlugins(CommandLine cmd, SpiceContext context,
+                              Iterable<SpiceCommandPlugin> plugins) {
+    registerPlugins(cmd, context, RunConfiguration.EMPTY, plugins);
+  }
+
+  /** Register the supplied plugins on {@code cmd}. Visible for testing. */
+  static void registerPlugins(CommandLine cmd, SpiceContext context,
+                              RunConfiguration runConfiguration,
                               Iterable<SpiceCommandPlugin> plugins) {
     for (SpiceCommandPlugin plugin : plugins) {
       String id = safeId(plugin);
@@ -60,7 +75,11 @@ public final class PluginLoader {
           continue;
         }
 
-        Object command = plugin.command(context);
+        // Each plugin gets its own context so it sees only its own table. The command
+        // path is not known until the command has been built and named, so it is bound
+        // just below — before anything executes, which is when a plugin reads it.
+        PluginContext pluginContext = new PluginContext(context, runConfiguration);
+        Object command = plugin.command(pluginContext);
         if (command == null) {
           log.warn("Skipping plugin '{}': command() returned null", id);
           continue;
@@ -81,6 +100,7 @@ public final class PluginLoader {
             continue;
           }
           parentCmd.addSubcommand(name, sub);
+          pluginContext.bindCommandPath(parent, name);
           log.debug("Registered plugin '{}' as '{} {}'", id, parent, name);
           continue;
         }
@@ -90,6 +110,7 @@ public final class PluginLoader {
         }
 
         cmd.addSubcommand(name, sub);
+        pluginContext.bindCommandPath(name);
         log.debug("Registered plugin '{}' as subcommand '{}'", id, name);
       } catch (Throwable t) {
         // Error isolation: one misbehaving plugin must never break the CLI.

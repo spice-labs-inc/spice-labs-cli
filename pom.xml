@@ -55,8 +55,14 @@
              spice-plugin-api's version comes from here too, so the SPI the CLI
              compiles against and the one it ships cannot drift apart. ancho is
              versioned here (NOT in the BOM): it is injected
-             via -javaagent, never on the CLI's own classpath. -->
-        <spice-bom.version>1.0.10</spice-bom.version>
+             via -javaagent, never on the CLI's own classpath.
+
+             1.0.11 is the BOM that carries goatrodeo 0.18.0, which supplies TomlTables:
+             the one place a TOML table is converted to and from the plain maps the plugin
+             SPI carries. Pinning the goatrodeo version here instead would put a SNAPSHOT
+             in the fat jar and make the same commit build against different bytes, so the
+             version comes from the BOM like every other. -->
+        <spice-bom.version>1.0.11</spice-bom.version>
         <ancho.version>0.0.8</ancho.version>
         <!--        Use this version for local dev-->
         <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->

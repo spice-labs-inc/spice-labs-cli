@@ -110,7 +110,33 @@ spice pass decode
 
 ---
 
+## 📄 Configuration
+
+Settings can come from a TOML config file as well as from flags, so a value used on every run
+does not have to be typed on every run.
+
+```bash
+spice --config /path/to/config.toml survey inventory my-app ./build/output
+```
+
+Without `--config`, the file is discovered where each platform expects it — `$XDG_CONFIG_HOME`
+or `~/.config` on macOS and Linux, `%APPDATA%` then `%PROGRAMDATA%` on Windows. The first match
+wins; files are not merged, so "where did this value come from" has one answer.
+
+Discovery runs on the host rather than inside the container, which has neither `HOME` nor
+`XDG_*` set. The wrapper resolves the path and passes it in as `--config`, bind-mounting it like
+any other path argument.
+
+A flag always beats the file. See **[docs/configuration.md](docs/configuration.md)** for the
+settings themselves, how they group, and the full precedence order.
+
 ## ⚙️ Options
+
+### Global
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--config` | Path to a TOML config file | discovered per platform (see [Configuration](#-configuration)) |
 
 ### Inventory Survey
 
