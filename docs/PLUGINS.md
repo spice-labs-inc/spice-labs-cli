@@ -30,6 +30,7 @@ public interface SpiceCommandPlugin {
   default int apiVersion() { return SpiceContext.API_VERSION; }
   default String parent() { return ""; } // parent command to mount under, or "" for top-level
   default java.util.List<String> configurationGroups() { return List.of(); } // see below
+  default java.util.List<String> configurationPathKeys() { return List.of(); } // see below
   default String powershellCompletion() { return ""; } // see "Tab completion" below
 }
 
@@ -66,6 +67,27 @@ indistinguishable from a misspelt one.
 
 See [configuration.md](configuration.md) for the layering rules, and `spice config explain`
 for the resolved values with an origin per key.
+
+### Settings that name a path
+
+`spice` runs in Docker by default, and the wrapper mounts the paths it can see. It can see the
+command line; it cannot read a TOML file without shipping a parser in bash. So a setting that
+names a path — an output directory, a staging area — would resolve inside the container to
+somewhere that vanishes when the run ends.
+
+List those keys in `configurationPathKeys()` and the wrapper mounts them:
+
+```java
+@Override public List<String> configurationPathKeys() {
+  return List.of("pipeline.staging_dir", "pipeline.adg_out_dir");
+}
+```
+
+Declared, not inferred: nothing is mounted because it merely looks like a path, and nobody
+maintains a second copy of a schema they do not own. The paths go through the same machinery a
+path argument does — the same dedup, identity mounts, and relocation when a mount would hide
+part of the image. A relocated path is reported, because a setting naming it may not resolve
+inside the container.
 
 ## Reading the Spice Pass
 
