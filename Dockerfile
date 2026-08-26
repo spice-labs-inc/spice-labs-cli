@@ -35,8 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # does not.
 COPY pom.xml ./
 
-# Pre-fetch all resolvable dependencies. spice-bom + spice-plugin-api resolve
-# from GitHub Packages (spice-labs-inc/spice-bom, spice-labs-inc/spice-plugin-api),
+# Pre-fetch all resolvable dependencies. spice-plugin-api, goatrodeo and
+# ginger-j resolve from GitHub Packages (one repo each under spice-labs-inc),
 # which needs auth even for public reads. Write a settings.xml from GH_TOKEN so
 # the resolve can reach them; the || true lets the bulk of the Maven cache
 # (picocli, slf4j, logback, junit, okhttp, etc.) be fetched regardless.
@@ -56,7 +56,6 @@ RUN mkdir -p ~/.m2 && cat > ~/.m2/settings.xml <<SXML
       <repositories>
         <repository><id>github-spice-labs-goatrodeo</id><url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url></repository>
         <repository><id>github-spice-labs-ginger</id><url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url></repository>
-        <repository><id>github-spice-labs-bom</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url><snapshots><enabled>true</enabled></snapshots></repository>
         <repository><id>github-spice-labs-plugin-api</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url><snapshots><enabled>true</enabled></snapshots></repository>
         <repository><id>github-spice-labs-ancho</id><url>https://maven.pkg.github.com/spice-labs-inc/ancho</url></repository>
       </repositories>
@@ -96,7 +95,6 @@ RUN mkdir -p ~/.m2 && cat > ~/.m2/settings.xml <<SXML
       <repositories>
         <repository><id>github-spice-labs-goatrodeo</id><url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url></repository>
         <repository><id>github-spice-labs-ginger</id><url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url></repository>
-        <repository><id>github-spice-labs-bom</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url><snapshots><enabled>true</enabled></snapshots></repository>
         <repository><id>github-spice-labs-plugin-api</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url><snapshots><enabled>true</enabled></snapshots></repository>
         <repository><id>github-spice-labs-ancho</id><url>https://maven.pkg.github.com/spice-labs-inc/ancho</url></repository>
       </repositories>
@@ -107,8 +105,8 @@ RUN mkdir -p ~/.m2 && cat > ~/.m2/settings.xml <<SXML
 SXML
 
 # spice-plugin-api is published from spice-labs-inc/spice-plugin-api and
-# resolved remotely via the settings.xml above (a transitive dependency of
-# the spice-bom the CLI imports).
+# resolved remotely via the settings.xml above; its version is pinned
+# directly in pom.xml.
 
 # The fat JAR + ancho agent are assembled by the shade + dependency-plugin
 # bindings in pom.xml. `package` produces:
@@ -131,7 +129,7 @@ RUN if [ -n "${VERSION}" ]; then mvn -B -ntp versions:set -DnewVersion="${VERSIO
 FROM deps AS test
 WORKDIR /workspace
 COPY . .
-# spice-bom + spice-plugin-api are resolved remotely (see builder settings.xml).
+# spice-plugin-api is resolved remotely (see builder settings.xml).
 ENTRYPOINT ["mvn", "-B", "-ntp"]
 CMD ["verify"]
 

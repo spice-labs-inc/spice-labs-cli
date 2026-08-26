@@ -48,21 +48,29 @@
         <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
         <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
 
-        <!-- The BOM (io.spicelabs:spice-bom) is the single fixed dependency
-             specification; it is imported below and supplies the versions for the
-             runtime classpath + coordinates. It lives in its own repo
-             (spice-labs-inc/spice-bom) and is resolved from GitHub Packages.
-             spice-plugin-api's version comes from here too, so the SPI the CLI
-             compiles against and the one it ships cannot drift apart. ancho is
-             versioned here (NOT in the BOM): it is injected
-             via -javaagent, never on the CLI's own classpath.
+        <!-- Dependency versions. Previously supplied by the imported spice-bom;
+             inlined here from spice-bom 1.0.11, the BOM this build already used,
+             so no version changes. ancho is not among them: it is injected via
+             -javaagent and never on the CLI's own classpath. -->
+        <commons-lang3.version>3.19.0</commons-lang3.version>
+        <coordinates.version>1.1.0</coordinates.version>
+        <ginger-j.version>0.4.0</ginger-j.version>
+        <goatrodeo.version>0.18.0</goatrodeo.version>
+        <java-jwt.version>4.4.0</java-jwt.version>
+        <logback.version>1.5.18</logback.version>
+        <picocli.version>4.7.6</picocli.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <spice-plugin-api.version>2.0.0</spice-plugin-api.version>
 
-             1.0.11 is the BOM that carries goatrodeo 0.18.0, which supplies TomlTables:
-             the one place a TOML table is converted to and from the plain maps the plugin
-             SPI carries. Pinning the goatrodeo version here instead would put a SNAPSHOT
-             in the fat jar and make the same commit build against different bytes, so the
-             version comes from the BOM like every other. -->
-        <spice-bom.version>1.0.11</spice-bom.version>
+        <!-- Transitive convergence pins (see the dependencyManagement block below).
+             spice-bom constrained these even though nothing here declares them
+             directly; goatrodeo and ginger-j pull them in. -->
+        <saffron.version>0.2.3</saffron.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
+        <jackson.version>2.18.9</jackson.version>
+        <snakeyaml.version>2.3</snakeyaml.version>
+        <xz.version>1.12</xz.version>
+        <byte-buddy.version>1.18.12</byte-buddy.version>
         <ancho.version>0.0.8</ancho.version>
         <!--        Use this version for local dev-->
         <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->
@@ -71,16 +79,61 @@
         <mockito.version>5.3.1</mockito.version>
     </properties>
 
+    <!-- Transitive convergence pins. spice-bom's dependencyManagement applied to the
+         whole resolved graph, not just the dependencies declared below, so dropping
+         the import would silently move these. Pinned to the values spice-bom 1.0.11
+         produced, so the fat jar's contents do not change. -->
     <dependencyManagement>
         <dependencies>
-            <!-- Single fixed dependency specification. Supplies versions for
-                 everything below. -->
             <dependency>
                 <groupId>io.spicelabs</groupId>
-                <artifactId>spice-bom</artifactId>
-                <version>${spice-bom.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
+                <artifactId>saffron</artifactId>
+                <version>${saffron.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcutil-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpg-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.datatype</groupId>
+                <artifactId>jackson-datatype-jsr310</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.yaml</groupId>
+                <artifactId>snakeyaml</artifactId>
+                <version>${snakeyaml.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.tukaani</groupId>
+                <artifactId>xz</artifactId>
+                <version>${xz.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy</artifactId>
+                <version>${byte-buddy.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -97,38 +150,47 @@
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>
+            <version>${spice-plugin-api.version}</version>
         </dependency>
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
+            <version>${picocli.version}</version>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>goatrodeo_3</artifactId>
+            <version>${goatrodeo.version}</version>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>ginger-j</artifactId>
+            <version>${ginger-j.version}</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
         </dependency>
         <dependency>
             <groupId>com.auth0</groupId>
             <artifactId>java-jwt</artifactId>
+            <version>${java-jwt.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
+            <version>${commons-lang3.version}</version>
         </dependency>
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>coordinates</artifactId>
+            <version>${coordinates.version}</version>
         </dependency>
         <!-- JFR agent for runtime surveys — extracted to temp at runtime, not shaded.
              Kept separate (not on the CLI runtime classpath): it is injected into the
@@ -375,11 +437,6 @@
                 <repository>
                     <id>github-spice-labs-ginger</id>
                     <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-                </repository>
-                <repository>
-                    <id>github-spice-labs-bom</id>
-                    <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
-                    <snapshots><enabled>true</enabled></snapshots>
                 </repository>
                 <repository>
                     <id>github-spice-labs-plugin-api</id>

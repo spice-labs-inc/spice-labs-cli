@@ -19,8 +19,8 @@ From the `spice` repo root:
 
 ```bash
 # 1. Build the plugin (needs spice-plugin-api resolved from GitHub Packages,
-#    or in ~/.m2). The sample pom imports spice-bom, which depends on
-#    spice-plugin-api transitively.
+#    or in ~/.m2). The sample pom declares spice-plugin-api and picocli
+#    directly, with explicit versions.
 mvn -f sample/hello-plugin package          # → sample/hello-plugin/dist/hello-plugin.jar
 
 # 2. Symlink it into plugins/ (any name; the build looks in <name>/dist/).
