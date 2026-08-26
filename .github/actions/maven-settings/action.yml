@@ -93,11 +93,6 @@ runs:
                   <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
                 </repository>
                 <repository>
-                  <id>github-spice-labs-bom</id>
-                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
-                  <snapshots><enabled>true</enabled></snapshots>
-                </repository>
-                <repository>
                   <id>github-spice-labs-plugin-api</id>
                   <url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url>
                   <snapshots><enabled>true</enabled></snapshots>
@@ -115,11 +110,6 @@ runs:
                 <repository>
                   <id>github-spice-labs-ginger</id>
                   <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
-                </repository>
-                <repository>
-                  <id>github-spice-labs-bom</id>
-                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
-                  <snapshots><enabled>true</enabled></snapshots>
                 </repository>
                 <repository>
                   <id>github-spice-labs-plugin-api</id>
@@ -141,11 +131,6 @@ runs:
                   <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
                 </repository>
                 <repository>
-                  <id>github-spice-labs-bom</id>
-                  <url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url>
-                  <snapshots><enabled>true</enabled></snapshots>
-                </repository>
-                <repository>
                   <id>github-spice-labs-plugin-api</id>
                   <url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url>
                   <snapshots><enabled>true</enabled></snapshots>
@@ -164,7 +149,7 @@ runs:
                   <id>github-spice-labs-ginger</id>
                   <url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url>
                 </repository>
-                <!-- spice-bom + spice-plugin-api resolve from Maven Central by default;
+                <!-- spice-plugin-api resolves from Maven Central by default;
                      CI builds that need GHP (e.g. before Central propagation) activate
                      the `github` or `maven-central` profile instead. -->
               </repositories>
