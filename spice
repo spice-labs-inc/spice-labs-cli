@@ -574,6 +574,23 @@ O spice/survey/runtime --help flag
 O spice/survey/runtime -V flag
 O spice/survey/runtime --version flag
 P spice/survey/runtime 0 value
+C spice/survey/image
+O spice/survey/image --subject value
+O spice/survey/image --output value path create=self
+O spice/survey/image --no-upload flag
+O spice/survey/image --tag-json value
+O spice/survey/image --threads value
+O spice/survey/image --max-records value
+O spice/survey/image --chunk-size value
+O spice/survey/image --log-level value
+O spice/survey/image --log-file value hostonly
+O spice/survey/image --analysis-args value
+O spice/survey/image --upload-args value
+O spice/survey/image -h flag
+O spice/survey/image --help flag
+O spice/survey/image -V flag
+O spice/survey/image --version flag
+P spice/survey/image 0 value
 C spice/pass
 O spice/pass -h flag
 O spice/pass --help flag
@@ -748,6 +765,39 @@ IS_RUNTIME_SURVEY=0
     [ "$arg" = "survey" ] && saw_survey=1 || saw_survey=0
   done
 }
+
+# ── Image survey detection (must happen before general arg parsing) ────────
+# `survey image` pulls the image with oras inside the container; oras reads the
+# Docker credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json)
+# for registry auth, so the host's credentials must ride into the container.
+
+IS_IMAGE_SURVEY=0
+{
+  saw_survey=0
+  for arg in "$@"; do
+    if [ "$saw_survey" = "1" ] && [ "$arg" = "image" ]; then
+      IS_IMAGE_SURVEY=1
+      break
+    fi
+    [ "$arg" = "survey" ] && saw_survey=1 || saw_survey=0
+  done
+}
+
+# Resolve the host's docker config dir (DOCKER_CONFIG, else ~/.docker) and mount
+# it read-only when it exists. Skip silently when absent — public registries need
+# nothing; private ones then fail inside oras with a clear auth error instead of
+# a missing-mount one.
+DOCKER_CONFIG_HOST=""
+DOCKER_AUTH_ARGS=()
+if [ "$IS_IMAGE_SURVEY" = "1" ]; then
+  DOCKER_CONFIG_HOST="${DOCKER_CONFIG:-${HOME:-}/.docker}"
+  if [ -f "${DOCKER_CONFIG_HOST}/config.json" ]; then
+    DOCKER_AUTH_ARGS=(
+      "-v" "${DOCKER_CONFIG_HOST}:/mnt/spice/docker-config:ro"
+      "-e" "DOCKER_CONFIG=/mnt/spice/docker-config"
+    )
+  fi
+fi
 
 if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   # Parse runtime survey args ourselves — split at "--" into CLI flags + user command.
@@ -1043,6 +1093,7 @@ exec docker run --rm \
   --network host \
   ${PULL_FLAG:+$PULL_FLAG} \
   ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
+  ${DOCKER_AUTH_ARGS[@]+"${DOCKER_AUTH_ARGS[@]}"} \
   ${MF_VOLUMES[@]+"${MF_VOLUMES[@]}"} \
   ${WORKDIR_FLAG[@]+"${WORKDIR_FLAG[@]}"} \
   -e SPICE_PASS \
