@@ -537,6 +537,23 @@ O spice/survey/runtime --help flag
 O spice/survey/runtime -V flag
 O spice/survey/runtime --version flag
 P spice/survey/runtime 0 value
+C spice/survey/image
+O spice/survey/image --subject value
+O spice/survey/image --output value path create=self
+O spice/survey/image --no-upload flag
+O spice/survey/image --tag-json value
+O spice/survey/image --threads value
+O spice/survey/image --max-records value
+O spice/survey/image --chunk-size value
+O spice/survey/image --log-level value
+O spice/survey/image --log-file value hostonly
+O spice/survey/image --analysis-args value
+O spice/survey/image --upload-args value
+O spice/survey/image -h flag
+O spice/survey/image --help flag
+O spice/survey/image -V flag
+O spice/survey/image --version flag
+P spice/survey/image 0 value
 C spice/pass
 O spice/pass -h flag
 O spice/pass --help flag
@@ -688,6 +705,30 @@ for ($i = 0; $i -lt $args.Count - 1; $i++) {
   if ($args[$i] -eq 'survey' -and $args[$i + 1] -eq 'runtime') {
     $isRuntimeSurvey = $true
     break
+  }
+}
+
+# ── Image survey detection + docker-config mount ────────────────────────────
+# `survey image` pulls the image with oras inside the container; oras reads the
+# Docker credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json)
+# for registry auth, so the host's credentials must ride into the container.
+$isImageSurvey = $false
+for ($i = 0; $i -lt $args.Count - 1; $i++) {
+  if ($args[$i] -eq 'survey' -and $args[$i + 1] -eq 'image') {
+    $isImageSurvey = $true
+    break
+  }
+}
+
+# Mount the host's docker config dir read-only when it exists. Skip silently when
+# absent — public registries need nothing; private ones then fail inside oras
+# with a clear auth error instead of a missing-mount one.
+$dockerAuthArgs = @()
+if ($isImageSurvey) {
+  $dockerConfigHost = if ($env:DOCKER_CONFIG) { $env:DOCKER_CONFIG } else { Join-Path $HOME '.docker' }
+  if (Test-Path (Join-Path $dockerConfigHost 'config.json')) {
+    $dockerAuthArgs += "-v"; $dockerAuthArgs += "$dockerConfigHost`:/mnt/spice/docker-config:ro"
+    $dockerAuthArgs += "-e"; $dockerAuthArgs += "DOCKER_CONFIG=/mnt/spice/docker-config"
   }
 }
 
@@ -972,6 +1013,7 @@ docker run --rm `
   @userFlag `
   @pullFlag @dockerFlags `
   --network host `
+  @dockerAuthArgs `
   @volumes `
   @workdirFlag `
   -e "SPICE_PASS=$spicePass" `

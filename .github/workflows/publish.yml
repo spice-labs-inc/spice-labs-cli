@@ -180,8 +180,9 @@ jobs:
           provenance: mode=max
           sbom: true
           build-args: |
-            GH_TOKEN=${{ secrets.GH_TOKEN }}
             VERSION=${{ needs.publish_jars.outputs.version }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 

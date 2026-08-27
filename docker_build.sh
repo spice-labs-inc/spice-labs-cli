@@ -23,8 +23,9 @@
 #   export GH_TOKEN=ghp_...
 #   ./docker_build.sh
 #
-# The builder stage writes a settings.xml from $GH_TOKEN at build time. If
-# GH_TOKEN is unset, the build will fail resolving those dependencies.
+# The builder stage reads the token from a BuildKit secret mount
+# (--secret id=gh_token,env=GH_TOKEN). If GH_TOKEN is unset, the build will
+# fail resolving those dependencies.
 
 set -euo pipefail
 
@@ -64,12 +65,19 @@ if [ -z "${GH_TOKEN:-}" ]; then
   echo ""
 fi
 
+# Hand the token to the build as a BuildKit secret mount, never a build-arg,
+# so it cannot end up in image history or a layer.
+SECRET_FLAGS=()
+if [ -n "${GH_TOKEN:-}" ]; then
+  SECRET_FLAGS=(--secret id=gh_token,env=GH_TOKEN)
+fi
+
 # --- build helpers ------------------------------------------------------------
 
 build_oss() {
   echo "📦 Building OSS image: ${OSS_IMAGE}:${TAG}"
   docker build \
-    --build-arg GH_TOKEN="${GH_TOKEN:-}" \
+    ${SECRET_FLAGS[@]+${SECRET_FLAGS[@]}} \
     -t "${OSS_IMAGE}:${TAG}" \
     --target spice \
     .
@@ -118,7 +126,7 @@ case "${TARGET}" in
   spice|deps|builder|test)
     # Raw Dockerfile targets (no enterprise/federal layering)
     docker build \
-      --build-arg GH_TOKEN="${GH_TOKEN:-}" \
+      ${SECRET_FLAGS[@]+${SECRET_FLAGS[@]}} \
       -t "${OSS_IMAGE}:${TAG}" \
       --target "${TARGET}" \
       . && echo "Successfully built ${OSS_IMAGE}:${TAG} (target: ${TARGET})"

@@ -191,7 +191,7 @@ public class SpiceLabsCLI implements Runnable {
 
   /** Known survey type names, including those only available in enterprise/federal. */
   private static final java.util.Set<String> KNOWN_SURVEY_TYPES =
-      java.util.Set.of("inventory", "runtime", "static");
+      java.util.Set.of("inventory", "runtime", "static", "image");
 
   private static boolean isKnownSurveyType(String arg) {
     return KNOWN_SURVEY_TYPES.contains(arg);
