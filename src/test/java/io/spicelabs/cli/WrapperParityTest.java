@@ -202,6 +202,39 @@ class WrapperParityTest {
     assertParityOrBashOnly("pass", "decode");
   }
 
+  // ── survey image (oras pull) ────────────────────────────────────────────────
+
+  /**
+   * `survey image` mounts the host docker config so oras inside the container can
+   * authenticate to private registries (e.g. GHCR). The binned image ref is a bare
+   * String positional; the docker-config mount is wrapper logic, not a manifest path.
+   */
+  @Test
+  void surveyImageMountsDockerConfig() throws Exception {
+    Path cfgDir = Files.createTempDirectory("parity-dockercfg");
+    Files.writeString(cfgDir.resolve("config.json"), "{\"auths\":{\"ghcr.io\":{}}}");
+
+    String args = assertParityOrBashOnly(Map.of("DOCKER_CONFIG", cfgDir.toString()),
+        "survey", "image", "ghcr.io/spice-labs-inc/grinder:0.1.0", "--no-upload");
+
+    assertTrue(args.contains(cfgDir.toAbsolutePath() + ":/mnt/spice/docker-config:ro"),
+        "docker config must be mounted read-only: " + args);
+  }
+
+  /** Without a config.json, the mount is omitted and the ref passes through untouched. */
+  @Test
+  void surveyImageWithoutDockerConfig() throws Exception {
+    Path emptyCfg = Files.createTempDirectory("parity-dockercfg-empty");
+
+    String args = assertParityOrBashOnly(Map.of("DOCKER_CONFIG", emptyCfg.toString()),
+        "survey", "image", "alpine:latest", "--no-upload");
+
+    assertFalse(args.contains("/mnt/spice/docker-config"),
+        "no config.json means no mount: " + args);
+    assertTrue(args.contains("survey image alpine:latest"),
+        "the bare ref must pass through untouched: " + args);
+  }
+
   @Test
   void version() throws Exception {
     assertParityOrBashOnly("--version");
@@ -321,10 +354,15 @@ class WrapperParityTest {
    * If pwsh is not available, only test bash.
    */
   private String assertParityOrBashOnly(String... cliArgs) throws Exception {
-    String bashDockerArgs = normalizeDockerArgs(runWrapper("bash", cliArgs));
+    return assertParityOrBashOnly(Map.of(), cliArgs);
+  }
+
+  private String assertParityOrBashOnly(Map<String, String> extraEnv, String... cliArgs)
+      throws Exception {
+    String bashDockerArgs = normalizeDockerArgs(runWrapper("bash", extraEnv, cliArgs));
 
     if (hasPwsh) {
-      String pwshDockerArgs = normalizeDockerArgs(runWrapper("pwsh", cliArgs));
+      String pwshDockerArgs = normalizeDockerArgs(runWrapper("pwsh", extraEnv, cliArgs));
       assertEquals(bashDockerArgs, pwshDockerArgs,
           "Bash and PowerShell wrappers produced different docker args for: " +
               String.join(" ", cliArgs));
@@ -369,6 +407,11 @@ class WrapperParityTest {
    * Returns the captured docker arguments as a single string.
    */
   private String runWrapper(String shell, String... cliArgs) throws Exception {
+    return runWrapper(shell, Map.of(), cliArgs);
+  }
+
+  private String runWrapper(String shell, Map<String, String> extraEnv, String... cliArgs)
+      throws Exception {
     Path mockBin = Files.createTempDirectory("mock-docker-" + shell);
     Path argsFile = Files.createTempFile("docker-args-" + shell, ".txt");
 
@@ -411,6 +454,9 @@ class WrapperParityTest {
     // the captured args and make the result depend on whatever image is on the machine.
     // Tests supply their manifest explicitly instead.
     pb.environment().put("SPICE_SKIP_MANIFEST_REFRESH", "1");
+    for (Map.Entry<String, String> e : extraEnv.entrySet()) {
+      pb.environment().put(e.getKey(), e.getValue());
+    }
     if (manifestFile != null) {
       pb.environment().put("SPICE_PATH_MANIFEST", manifestFile.toString());
     }

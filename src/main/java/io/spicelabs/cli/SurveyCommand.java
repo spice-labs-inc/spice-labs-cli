@@ -32,11 +32,13 @@ import picocli.CommandLine.UnmatchedArgumentException;
     subcommands = {
         SurveyInventoryCommand.class,
         SurveyRuntimeCommand.class,
+        SurveyImageCommand.class,
     },
     footer = {
         "",
         "Examples:",
         "  spice survey inventory my-app ./build/libs",
+        "  spice survey image my-app nginx",
         "  spice survey runtime my-app --jfr -- java -jar app.jar",
         "",
         "Run 'spice survey <type> --help' for per-subcommand details.",

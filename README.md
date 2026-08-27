@@ -65,6 +65,32 @@ Ignoring artifacts published after 2026-01-01T00:00:00Z
 
 A pass with no cutoff surveys everything.
 
+### Image Survey
+
+Scan an OCI or Docker container image pulled by name — no need to export it to disk first.
+The image is pulled with [`oras`](https://oras.land) (baked into the container image) into an
+OCI image layout, then surveyed with the same engine as inventory:
+
+```bash
+spice survey image <image> [--subject <label>]
+```
+
+- **`image`** — OCI or Docker image reference (`name[:tag][@digest]`)
+- **`--subject <label>`** — label identifying the system being surveyed. Defaults to the
+  image reference itself, so `spice survey image nginx` tags the run as
+  `docker.io/library/nginx:latest`.
+
+Bare names are expanded to their fully-qualified form: `nginx` becomes
+`docker.io/library/nginx:latest`, and a missing tag defaults to `latest`. A host is preserved
+(`ghcr.io/spice-labs-inc/grinder:0.1.0` stays as given). The artifact cutoff applies the same
+way it does to an inventory survey.
+
+Registry credentials come from the host's Docker config: when pulling a private image, the
+wrapper mounts `$DOCKER_CONFIG` (or `~/.docker`) read-only into the container and oras reads
+it from there. If you've `docker login`ed to the registry on this machine, no extra setup is
+needed. Set `DOCKER_CONFIG` to point at an alternate config file location if your credentials
+live elsewhere.
+
 ### Runtime Survey
 
 Instrument a running JVM to detect cryptographic operations executed at runtime:
@@ -85,6 +111,12 @@ spice survey runtime <subject> --jfr -- <command>
 spice survey inventory my-app ./build/output
 spice survey inventory my-app ./artifacts/my-app.tar
 spice survey inventory my-app ./build/output --no-upload
+
+# Image survey — pull and scan an image by name
+spice survey image nginx
+spice survey image ghcr.io/spice-labs-inc/grinder:0.1.0 --no-upload
+spice survey image ubuntu@sha256:<digest> --no-upload --output ./out
+spice survey image nginx --subject my-nginx
 
 # Runtime survey — instrument a Java application
 spice survey runtime my-app --jfr -- java -jar app.jar
@@ -110,7 +142,33 @@ spice pass decode
 
 ---
 
+## 📄 Configuration
+
+Settings can come from a TOML config file as well as from flags, so a value used on every run
+does not have to be typed on every run.
+
+```bash
+spice --config /path/to/config.toml survey inventory my-app ./build/output
+```
+
+Without `--config`, the file is discovered where each platform expects it — `$XDG_CONFIG_HOME`
+or `~/.config` on macOS and Linux, `%APPDATA%` then `%PROGRAMDATA%` on Windows. The first match
+wins; files are not merged, so "where did this value come from" has one answer.
+
+Discovery runs on the host rather than inside the container, which has neither `HOME` nor
+`XDG_*` set. The wrapper resolves the path and passes it in as `--config`, bind-mounting it like
+any other path argument.
+
+A flag always beats the file. See **[docs/configuration.md](docs/configuration.md)** for the
+settings themselves, how they group, and the full precedence order.
+
 ## ⚙️ Options
+
+### Global
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--config` | Path to a TOML config file | discovered per platform (see [Configuration](#-configuration)) |
 
 ### Inventory Survey
 
@@ -119,6 +177,22 @@ spice pass decode
 | `--no-upload` | Survey only, skip upload | `false` |
 | `--upload-only` | Upload previously-generated ADGs (skip survey) | `false` |
 | `--output` | Output directory for survey results | `~/.spicelabs/surveyor/` |
+| `--tag-json` | Additional JSON metadata for tags | _(none)_ |
+| `--log-level` | `debug` \| `info` \| `warn` \| `error` | `info` |
+| `--log-file` | Path to log file (output appended to both console and file) | _(none)_ |
+| `--threads` | Number of threads to use | half of available CPU cores |
+| `--max-records` | Max records to process per batch | `5000` |
+| `--chunk-size` | Target chunk size in MB for uploads | `64` |
+| `--analysis-args` | Additional analysis args in key=value format | _(none)_ |
+| `--upload-args` | Additional upload args in key=value format | _(none)_ |
+
+### Image Survey
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--subject` | Label identifying the system being surveyed | the image reference |
+| `--no-upload` | Survey only, skip upload | `false` |
+| `--output` | Output directory for the pulled layout | system temp |
 | `--tag-json` | Additional JSON metadata for tags | _(none)_ |
 | `--log-level` | `debug` \| `info` \| `warn` \| `error` | `info` |
 | `--log-file` | Path to log file (output appended to both console and file) | _(none)_ |

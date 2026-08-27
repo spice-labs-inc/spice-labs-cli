@@ -98,10 +98,10 @@ into a top-level **`dist/`** directory:
 - **any runtime dependencies the CLI does not already provide.** Declare the libraries the CLI
   already ships — `goatrodeo`, `ginger-j`, the Scala library, SLF4J/Logback, picocli and
   `spice-plugin-api` — as **`provided`** so they are available at compile time but excluded from
-  `dist/`; a single copy of each then lives on the runtime classpath. Import the shared BOM,
-  `io.spicelabs:spice-bom` (`<type>pom</type>`, `<scope>import</scope>`), and declare those
-  dependencies **without versions** so the whole ecosystem — the CLI and every plugin — converges
-  on one governed set of versions.
+  `dist/`; a single copy of each then lives on the runtime classpath. Give each an explicit
+  version matching the one the CLI ships: the CLI's `pom.xml` `<properties>` block is the
+  reference. (These were previously versioned by importing `io.spicelabs:spice-bom`; that BOM
+  is being retired in favour of explicit versions per module.)
 
 See [`sample/hello-plugin/pom.xml`](../sample/hello-plugin/pom.xml) for the smallest possible
 build, and `allspice`'s `spicePlugin` module for one that bundles real dependencies.
@@ -142,7 +142,7 @@ install time, so completion always reflects whatever plugins that image ships.
 |---|---|
 | SPI artifact | `io.spicelabs:spice-plugin-api` (`provided`) |
 | Provider registration | `META-INF/services/io.spicelabs.cli.spi.SpiceCommandPlugin` |
-| Shared runtime libs | declare CLI-provided libs (`goatrodeo`, `ginger-j`, …) as `provided`, versions from the imported `io.spicelabs:spice-bom` — do not re-bundle |
+| Shared runtime libs | declare CLI-provided libs (`goatrodeo`, `ginger-j`, …) as `provided` with explicit versions matching the CLI's `pom.xml` — do not re-bundle |
 | Plugin output | a top-level `dist/` directory of jars |
 | Inclusion | `ln -s /path/to/plugin spice/plugins/<name>` → build collects `<name>/dist/*.jar` |
 | Runtime | `-cp "spice-labs-cli.jar:plugins/*"` |

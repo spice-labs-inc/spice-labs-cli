@@ -532,6 +532,7 @@ R /sys
 R /usr
 R /var
 C spice
+O spice --config value path create=parent
 O spice -h flag
 O spice --help flag
 O spice -V flag
@@ -573,6 +574,23 @@ O spice/survey/runtime --help flag
 O spice/survey/runtime -V flag
 O spice/survey/runtime --version flag
 P spice/survey/runtime 0 value
+C spice/survey/image
+O spice/survey/image --subject value
+O spice/survey/image --output value path create=self
+O spice/survey/image --no-upload flag
+O spice/survey/image --tag-json value
+O spice/survey/image --threads value
+O spice/survey/image --max-records value
+O spice/survey/image --chunk-size value
+O spice/survey/image --log-level value
+O spice/survey/image --log-file value hostonly
+O spice/survey/image --analysis-args value
+O spice/survey/image --upload-args value
+O spice/survey/image -h flag
+O spice/survey/image --help flag
+O spice/survey/image -V flag
+O spice/survey/image --version flag
+P spice/survey/image 0 value
 C spice/pass
 O spice/pass -h flag
 O spice/pass --help flag
@@ -747,6 +765,39 @@ IS_RUNTIME_SURVEY=0
     [ "$arg" = "survey" ] && saw_survey=1 || saw_survey=0
   done
 }
+
+# ── Image survey detection (must happen before general arg parsing) ────────
+# `survey image` pulls the image with oras inside the container; oras reads the
+# Docker credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json)
+# for registry auth, so the host's credentials must ride into the container.
+
+IS_IMAGE_SURVEY=0
+{
+  saw_survey=0
+  for arg in "$@"; do
+    if [ "$saw_survey" = "1" ] && [ "$arg" = "image" ]; then
+      IS_IMAGE_SURVEY=1
+      break
+    fi
+    [ "$arg" = "survey" ] && saw_survey=1 || saw_survey=0
+  done
+}
+
+# Resolve the host's docker config dir (DOCKER_CONFIG, else ~/.docker) and mount
+# it read-only when it exists. Skip silently when absent — public registries need
+# nothing; private ones then fail inside oras with a clear auth error instead of
+# a missing-mount one.
+DOCKER_CONFIG_HOST=""
+DOCKER_AUTH_ARGS=()
+if [ "$IS_IMAGE_SURVEY" = "1" ]; then
+  DOCKER_CONFIG_HOST="${DOCKER_CONFIG:-${HOME:-}/.docker}"
+  if [ -f "${DOCKER_CONFIG_HOST}/config.json" ]; then
+    DOCKER_AUTH_ARGS=(
+      "-v" "${DOCKER_CONFIG_HOST}:/mnt/spice/docker-config:ro"
+      "-e" "DOCKER_CONFIG=/mnt/spice/docker-config"
+    )
+  fi
+fi
 
 if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   # Parse runtime survey args ourselves — split at "--" into CLI flags + user command.
@@ -981,6 +1032,46 @@ fi
 # except a path under a reserved directory, which is remapped and recorded in
 # SPICE_PATH_MAP for the CLI to reverse in its messages.
 
+# ── Configuration file ───────────────────────────────────────────────────────
+#
+# Discovery runs HERE, on the host, not in the container: the container is given
+# neither HOME nor XDG_*, so `spice` running inside it would look in the
+# container's home rather than the user's. Resolving here and passing the result
+# as --config also means the file is bind-mounted like any other path argument,
+# with no special handling — the manifest already lists --config as a path.
+#
+# XDG on Unix; %APPDATA% then %PROGRAMDATA% on Windows (see spice.ps1). First
+# match wins; the rest are not consulted.
+spice_config_file() {
+  local candidate
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    candidate="$XDG_CONFIG_HOME/spice/config.toml"
+    [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  elif [ -n "${HOME:-}" ]; then
+    candidate="$HOME/.config/spice/config.toml"
+    [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  fi
+  local dirs="${XDG_CONFIG_DIRS:-/etc/xdg}" dir
+  local IFS=':'
+  for dir in $dirs; do
+    [ -n "$dir" ] || continue
+    candidate="$dir/spice/config.toml"
+    [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  done
+  return 1
+}
+
+# Only when the user did not name one themselves.
+case " $* " in
+  *" --config "*|*" --config="*) ;;
+  *)
+    if SPICE_CONFIG_FILE="$(spice_config_file)"; then
+      # Before the subcommand: --config is spice's own option, not inherited.
+      set -- --config "$SPICE_CONFIG_FILE" "$@"
+    fi
+    ;;
+esac
+
 walk_args "$@"
 
 # Always make the working directory visible, so relative paths the CLI resolves
@@ -1002,6 +1093,7 @@ exec docker run --rm \
   --network host \
   ${PULL_FLAG:+$PULL_FLAG} \
   ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
+  ${DOCKER_AUTH_ARGS[@]+"${DOCKER_AUTH_ARGS[@]}"} \
   ${MF_VOLUMES[@]+"${MF_VOLUMES[@]}"} \
   ${WORKDIR_FLAG[@]+"${WORKDIR_FLAG[@]}"} \
   -e SPICE_PASS \

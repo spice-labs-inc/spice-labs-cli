@@ -15,34 +15,25 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- The shared BOM supplies the versions for spice-plugin-api, picocli and the rest
-             of the CLI runtime classpath, so plugins never hard-code them. -->
-        <spice-bom.version>1.0.3</spice-bom.version>
+        <!-- Versions for the CLI runtime classpath a plugin compiles against.
+             Previously supplied by the imported spice-bom; inlined from 1.0.11. -->
+        <picocli.version>4.7.6</picocli.version>
+        <spice-plugin-api.version>2.0.0</spice-plugin-api.version>
     </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>io.spicelabs</groupId>
-                <artifactId>spice-bom</artifactId>
-                <version>${spice-bom.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <!-- Both are provided by the spice CLI at runtime, so they are compile-only here
-             (versions from the imported spice-bom) and are NOT bundled into dist/. -->
+             (versions in the <properties> block above) and are NOT bundled into dist/. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>
+            <version>${spice-plugin-api.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
+            <version>${picocli.version}</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>

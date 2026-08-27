@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Multi-target Dockerfile for spice-labs-cli.
 #
 # Targets:
@@ -35,10 +36,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # does not.
 COPY pom.xml ./
 
-# Pre-fetch all resolvable dependencies. spice-bom + spice-plugin-api resolve
-# from GitHub Packages (spice-labs-inc/spice-bom, spice-labs-inc/spice-plugin-api),
-# which needs auth even for public reads. Write a settings.xml from GH_TOKEN so
-# the resolve can reach them; the || true lets the bulk of the Maven cache
+# Pre-fetch all resolvable dependencies. spice-plugin-api, goatrodeo and
+# ginger-j resolve from GitHub Packages (one repo each under spice-labs-inc),
+# which needs auth even for public reads. The token is a BuildKit secret mount
+# (never a build-arg): a throwaway settings.xml carries it into the resolve and
+# is deleted before the layer commits, so it cannot land in the pushed cache
+# image or in layer history. The || true lets the bulk of the Maven cache
 # (picocli, slf4j, logback, junit, okhttp, etc.) be fetched regardless.
 #
 # -U because this layer is pushed to a registry cache and restored by later runs.
@@ -46,75 +49,46 @@ COPY pom.xml ./
 # Maven records the failure in the local repo and honours that record instead of
 # asking again. A dependency released after a failed build would then never
 # resolve, however many times CI was re-run.
-ARG GH_TOKEN=""
-RUN mkdir -p ~/.m2 && cat > ~/.m2/settings.xml <<SXML
-<settings>
-  <servers>
-    <server><id>github-spice-labs-goatrodeo</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github-spice-labs-ginger</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github-spice-labs-bom</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github-spice-labs-plugin-api</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github-spice-labs-ancho</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-  </servers>
-  <profiles>
-    <profile>
-      <id>github</id>
-      <repositories>
-        <repository><id>github-spice-labs-goatrodeo</id><url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url></repository>
-        <repository><id>github-spice-labs-ginger</id><url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url></repository>
-        <repository><id>github-spice-labs-bom</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url><snapshots><enabled>true</enabled></snapshots></repository>
-        <repository><id>github-spice-labs-plugin-api</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url><snapshots><enabled>true</enabled></snapshots></repository>
-        <repository><id>github-spice-labs-ancho</id><url>https://maven.pkg.github.com/spice-labs-inc/ancho</url></repository>
-      </repositories>
-    </profile>
-  </profiles>
-  <activeProfiles><activeProfile>github</activeProfile></activeProfiles>
-</settings>
-SXML
-RUN mvn -B -ntp -U dependency:resolve || true
+RUN --mount=type=secret,id=gh_token <<'SCRIPT'
+set -eu
+TOKEN=""
+if [ -f /run/secrets/gh_token ]; then
+  TOKEN="$(cat /run/secrets/gh_token)"
+fi
+mkdir -p ~/.m2
+{
+  echo "<settings>"
+  echo "  <servers>"
+  for id in github-spice-labs-goatrodeo github-spice-labs-ginger github-spice-labs-plugin-api github-spice-labs-ancho; do
+    printf "    <server><id>%s</id><username>SpicyGrzl</username><password>%s</password></server>\n" "$id" "$TOKEN"
+  done
+  echo "  </servers>"
+  echo "  <profiles>"
+  echo "    <profile>"
+  echo "      <id>github</id>"
+  echo "      <repositories>"
+  echo "        <repository><id>github-spice-labs-goatrodeo</id><url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url></repository>"
+  echo "        <repository><id>github-spice-labs-ginger</id><url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url></repository>"
+  echo "        <repository><id>github-spice-labs-plugin-api</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url><snapshots><enabled>true</enabled></snapshots></repository>"
+  echo "        <repository><id>github-spice-labs-ancho</id><url>https://maven.pkg.github.com/spice-labs-inc/ancho</url></repository>"
+  echo "      </repositories>"
+  echo "    </profile>"
+  echo "  </profiles>"
+  echo "  <activeProfiles><activeProfile>github</activeProfile></activeProfiles>"
+  echo "</settings>"
+} > ~/.m2/settings.xml
+mvn -B -ntp -U dependency:resolve || true
+rm -f ~/.m2/settings.xml
+SCRIPT
 
 # ---- builder ----------------------------------------------------------------
 # Compiles spice-labs-cli and assembles the fat JAR. Built FROM deps so the
-# Maven cache is already warm. The settings.xml providing GitHub Packages auth
-# for goatrodeo_3 / ginger-j / ancho is supplied at build time via the
-# GITHUB_TOKEN env; CI writes it before invoking mvn.
+# Maven cache is already warm. GitHub Packages auth (goatrodeo_3, ginger-j,
+# ancho) is supplied by the same BuildKit secret mount as the deps stage.
 FROM deps AS builder
 
 WORKDIR /workspace
 COPY . .
-
-# Write a settings.xml for GitHub Packages auth (goatrodeo_3, ginger-j, ancho).
-# GH_TOKEN is passed as a build arg from CI or docker_build.sh.
-ARG GH_TOKEN=""
-RUN mkdir -p ~/.m2 && cat > ~/.m2/settings.xml <<SXML
-<settings>
-  <servers>
-    <server><id>github-spice-labs-goatrodeo</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github-spice-labs-ginger</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github-spice-labs-bom</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github-spice-labs-plugin-api</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github-spice-labs-ancho</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-    <server><id>github</id><username>SpicyGrzl</username><password>${GH_TOKEN}</password></server>
-  </servers>
-  <profiles>
-    <profile>
-      <id>github</id>
-      <repositories>
-        <repository><id>github-spice-labs-goatrodeo</id><url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url></repository>
-        <repository><id>github-spice-labs-ginger</id><url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url></repository>
-        <repository><id>github-spice-labs-bom</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-bom</url><snapshots><enabled>true</enabled></snapshots></repository>
-        <repository><id>github-spice-labs-plugin-api</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url><snapshots><enabled>true</enabled></snapshots></repository>
-        <repository><id>github-spice-labs-ancho</id><url>https://maven.pkg.github.com/spice-labs-inc/ancho</url></repository>
-      </repositories>
-    </profile>
-  </profiles>
-  <activeProfiles><activeProfile>github</activeProfile></activeProfiles>
-</settings>
-SXML
-
-# spice-plugin-api is published from spice-labs-inc/spice-plugin-api and
-# resolved remotely via the settings.xml above (a transitive dependency of
-# the spice-bom the CLI imports).
 
 # The fat JAR + ancho agent are assembled by the shade + dependency-plugin
 # bindings in pom.xml. `package` produces:
@@ -124,9 +98,44 @@ SXML
 # VERSION is set by the release workflow (publish.yml) so the JARs carry the
 # release version; PR builds leave it unset and ship the pom's default
 # (0.0.1-SNAPSHOT).
+#
+# The settings.xml is written for this RUN only from the mounted secret and
+# deleted afterwards, so the token never reaches the image.
 ARG VERSION=""
-RUN if [ -n "${VERSION}" ]; then mvn -B -ntp versions:set -DnewVersion="${VERSION}" -DgenerateBackupPoms=false; fi && \
-    mvn -B -ntp -U -DskipTests package
+RUN --mount=type=secret,id=gh_token <<'SCRIPT'
+set -eu
+TOKEN=""
+if [ -f /run/secrets/gh_token ]; then
+  TOKEN="$(cat /run/secrets/gh_token)"
+fi
+mkdir -p ~/.m2
+{
+  echo "<settings>"
+  echo "  <servers>"
+  for id in github-spice-labs-goatrodeo github-spice-labs-ginger github-spice-labs-plugin-api github-spice-labs-ancho github; do
+    printf "    <server><id>%s</id><username>SpicyGrzl</username><password>%s</password></server>\n" "$id" "$TOKEN"
+  done
+  echo "  </servers>"
+  echo "  <profiles>"
+  echo "    <profile>"
+  echo "      <id>github</id>"
+  echo "      <repositories>"
+  echo "        <repository><id>github-spice-labs-goatrodeo</id><url>https://maven.pkg.github.com/spice-labs-inc/goatrodeo</url></repository>"
+  echo "        <repository><id>github-spice-labs-ginger</id><url>https://maven.pkg.github.com/spice-labs-inc/ginger-j</url></repository>"
+  echo "        <repository><id>github-spice-labs-plugin-api</id><url>https://maven.pkg.github.com/spice-labs-inc/spice-plugin-api</url><snapshots><enabled>true</enabled></snapshots></repository>"
+  echo "        <repository><id>github-spice-labs-ancho</id><url>https://maven.pkg.github.com/spice-labs-inc/ancho</url></repository>"
+  echo "      </repositories>"
+  echo "    </profile>"
+  echo "  </profiles>"
+  echo "  <activeProfiles><activeProfile>github</activeProfile></activeProfiles>"
+  echo "</settings>"
+} > ~/.m2/settings.xml
+if [ -n "${VERSION}" ]; then
+  mvn -B -ntp versions:set -DnewVersion="${VERSION}" -DgenerateBackupPoms=false
+fi
+mvn -B -ntp -U -DskipTests package
+rm -f ~/.m2/settings.xml
+SCRIPT
 
 # ---- test ------------------------------------------------------------------
 # The test target reuses the deps cache and runs `mvn verify`. Used by CI
@@ -137,7 +146,7 @@ RUN if [ -n "${VERSION}" ]; then mvn -B -ntp versions:set -DnewVersion="${VERSIO
 FROM deps AS test
 WORKDIR /workspace
 COPY . .
-# spice-bom + spice-plugin-api are resolved remotely (see builder settings.xml).
+# spice-plugin-api is resolved remotely (see builder settings.xml).
 ENTRYPOINT ["mvn", "-B", "-ntp"]
 CMD ["verify"]
 
@@ -146,7 +155,22 @@ CMD ["verify"]
 # the JFR config and wrapper scripts mirror what the install/release flow ships.
 FROM eclipse-temurin:21-jre AS spice
 ARG VERSION="unknown"
+# oras pulls OCI/Docker images by name for `spice survey image`. Baked in so no
+# host-side oras (or docker daemon) is needed. TARGETARCH selects the matching
+# release binary for multi-arch builds (linux/amd64, linux/arm64).
+ARG ORAS_VERSION=1.3.3
+ARG TARGETARCH
 WORKDIR /opt/spice-labs-cli
+
+# Install oras for image pulls. Needs a shell + download tool in the JRE image.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates tar \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL -o /tmp/oras.tar.gz \
+        "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_${TARGETARCH}.tar.gz" \
+    && tar -xzf /tmp/oras.tar.gz -C /usr/local/bin oras \
+    && chmod +x /usr/local/bin/oras \
+    && rm -f /tmp/oras.tar.gz
 
 # Expose the release version to the running process (set by publish.yml; PR
 # builds default to "unknown").
