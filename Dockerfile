@@ -43,6 +43,12 @@ COPY pom.xml ./
 # is deleted before the layer commits, so it cannot land in the pushed cache
 # image or in layer history. The || true lets the bulk of the Maven cache
 # (picocli, slf4j, logback, junit, okhttp, etc.) be fetched regardless.
+#
+# -U because this layer is pushed to a registry cache and restored by later runs.
+# Without it, a version that was missing when the layer was built stays missing:
+# Maven records the failure in the local repo and honours that record instead of
+# asking again. A dependency released after a failed build would then never
+# resolve, however many times CI was re-run.
 RUN --mount=type=secret,id=gh_token <<'SCRIPT'
 set -eu
 TOKEN=""
@@ -71,7 +77,7 @@ mkdir -p ~/.m2
   echo "  <activeProfiles><activeProfile>github</activeProfile></activeProfiles>"
   echo "</settings>"
 } > ~/.m2/settings.xml
-mvn -B -ntp dependency:resolve || true
+mvn -B -ntp -U dependency:resolve || true
 rm -f ~/.m2/settings.xml
 SCRIPT
 
@@ -127,7 +133,7 @@ mkdir -p ~/.m2
 if [ -n "${VERSION}" ]; then
   mvn -B -ntp versions:set -DnewVersion="${VERSION}" -DgenerateBackupPoms=false
 fi
-mvn -B -ntp -DskipTests package
+mvn -B -ntp -U -DskipTests package
 rm -f ~/.m2/settings.xml
 SCRIPT
 

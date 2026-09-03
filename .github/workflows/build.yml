@@ -149,7 +149,9 @@ jobs:
             <activeProfiles><activeProfile>ci</activeProfile></activeProfiles>
           </settings>
           SXML
-              mvn -B -ntp verify
+              # -U so a resolution failure cached in the restored deps layer is
+              # retried here rather than trusted; see the Dockerfile deps stage.
+              mvn -B -ntp -U verify
             '
 
   build-image-spice:
