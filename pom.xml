@@ -77,6 +77,14 @@
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <mockito.version>5.3.1</mockito.version>
+            <!-- Whether a Maven Central deployment publishes itself once validated.
+             `true` is the normal path. The publish workflow overrides this to
+             `false` when the release tag is not a natural successor to the
+             previous release, which leaves the deployment sitting in the
+             Central Portal for a human to publish or drop. A published Central
+             version can never be deleted or overwritten, so that is the one
+             channel worth stopping at. -->
+        <central.autoPublish>true</central.autoPublish>
     </properties>
 
     <!-- Transitive convergence pins. spice-bom's dependencyManagement applied to the
@@ -493,7 +501,7 @@
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
-                            <autoPublish>true</autoPublish>
+                            <autoPublish>${central.autoPublish}</autoPublish>
                             <checksums>all</checksums>
                         </configuration>
                     </plugin>

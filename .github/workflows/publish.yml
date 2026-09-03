@@ -28,6 +28,9 @@ jobs:
       id-token: write
     outputs:
       version: ${{ steps.validate.outputs.VERSION }}
+      successor-ok: ${{ steps.validate.outputs.successor_ok }}
+      previous: ${{ steps.validate.outputs.previous }}
+      expected: ${{ steps.validate.outputs.expected }}
       thread-ts: ${{ steps.release-notification.outputs.thread-ts }}
       channel-id: ${{ steps.release-notification.outputs.channel-id }}
     steps:
@@ -45,21 +48,20 @@ jobs:
         with:
           lfs: true
           ref: ${{ github.event.release.tag_name }}
+          # Full history and tags: the successor check compares this release
+          # tag against every previously released version.
+          fetch-depth: 0
 
-      - name: Validate and extract version from tag
+      - name: Validate the release tag
         id: validate
         env:
           # tag_name is "vX.Y.Z" (no refs/tags/ prefix) for the release event.
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          if [[ "${TAG_NAME}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          else
-            echo "Tag does not match semantic version pattern v*.*.* (got: ${TAG_NAME})" >&2
-            exit 1
-          fi
+          git tag --list > /tmp/all-tags.txt
+          python3 .github/scripts/check-release-tag.py \
+            "${TAG_NAME}" /tmp/all-tags.txt >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 21 and GitHub Maven auth
         uses: actions/setup-java@v4
@@ -96,7 +98,9 @@ jobs:
 
       - name: Build and publish all jars to Maven Central
         id: build-jars-maven-central
-        run: mvn --batch-mode clean deploy -P maven-central
+        run: |
+          mvn --batch-mode clean deploy -P maven-central \
+            -Dcentral.autoPublish=${{ steps.validate.outputs.auto_publish }}
         env:
           GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -275,9 +279,49 @@ jobs:
             ${{ env.FEDERAL_IMAGE }}:${{ github.event.release.tag_name }}
             ${{ env.FEDERAL_IMAGE }}:latest
 
+  # Its own job rather than a step inside publish_jars: failing inside
+  # publish_jars would block docker_image and the enterprise/federal images,
+  # which do not depend on Maven Central and are freely retaggable. Those should
+  # still ship while the Central deployment waits for a decision. This job
+  # exists to turn the run red -- `mvn deploy` succeeds even when the
+  # deployment is only staged, so without it the run would go green with
+  # nothing on Maven Central.
+  confirm_central_release:
+    name: Maven Central release awaiting confirmation
+    needs: [publish_jars]
+    if: always() && needs.publish_jars.outputs.successor-ok == 'false'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Flag release awaiting manual confirmation
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          PREVIOUS: ${{ needs.publish_jars.outputs.previous }}
+          EXPECTED: ${{ needs.publish_jars.outputs.expected }}
+        run: |
+          {
+            echo "## :warning: Maven Central release awaiting manual confirmation"
+            echo
+            if [ -n "${PREVIOUS}" ]; then
+              echo "\`${TAG_NAME}\` is not a natural successor to \`${PREVIOUS}\`."
+              echo "Expected one of: ${EXPECTED}."
+            else
+              echo "\`${TAG_NAME}\` is lower than every existing release."
+            fi
+            echo
+            echo "The deployment was uploaded and validated, but **has not been published**."
+            echo "It is waiting in the [Central Portal](https://central.sonatype.com/publishing/deployments):"
+            echo
+            echo "- **Publish** it if this version number is deliberate."
+            echo "- **Drop** it otherwise, then delete the \`${TAG_NAME}\` release and tag and cut the correct version."
+            echo
+            echo "GitHub Packages and the Docker images already carry \`${TAG_NAME}\`; clean those up too if you drop this."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Maven Central release awaiting confirmation::${TAG_NAME} was not published automatically${PREVIOUS:+ (does not follow ${PREVIOUS})}. The deployment is parked in the Central Portal and must be published or dropped by hand."
+          exit 1
+
   notify:
     name: Notify deployment result
-    needs: [publish_jars, docker_image, build_enterprise, build_federal]
+    needs: [publish_jars, docker_image, build_enterprise, build_federal, confirm_central_release]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -288,10 +332,20 @@ jobs:
           JAR_STATUS="${{ needs.publish_jars.result }}"
           DOCKER_STATUS="${{ needs.docker_image.result }}"
           ENT_STATUS="${{ needs.build_enterprise.result }}"
+          SUCCESSOR_OK="${{ needs.publish_jars.outputs.successor-ok }}"
 
-          if [ "$JAR_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ] && [ "$ENT_STATUS" == "success" ]; then
+          # Staged, not failed: the jars are uploaded and validated but parked in
+          # the Central Portal pending a human decision. Reported as a failure
+          # because nothing is on Maven Central yet, but named distinctly so it
+          # is not mistaken for a broken build.
+          if [ "$SUCCESSOR_OK" == "false" ]; then
+            echo "overall_status=failure" >> "$GITHUB_OUTPUT"
+            echo "message=⚠️ Awaiting manual confirmation in the Maven Central Portal." >> "$GITHUB_OUTPUT"
+            echo "workflow_name=${{ github.workflow }} — AWAITING MANUAL CONFIRMATION in the Maven Central Portal" >> "$GITHUB_OUTPUT"
+          elif [ "$JAR_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ] && [ "$ENT_STATUS" == "success" ]; then
             echo "overall_status=success" >> "$GITHUB_OUTPUT"
             echo "message=✅ All components deployed successfully!" >> "$GITHUB_OUTPUT"
+            echo "workflow_name=${{ github.workflow }}" >> "$GITHUB_OUTPUT"
           else
             echo "overall_status=failure" >> "$GITHUB_OUTPUT"
             MESSAGE="❌ Deployment failed:"
@@ -299,6 +353,7 @@ jobs:
             [ "$DOCKER_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ Docker build/push failed." || MESSAGE="$MESSAGE ✅ Docker build/push succeeded."
             [ "$ENT_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ Enterprise image build failed." || MESSAGE="$MESSAGE ✅ Enterprise image build succeeded."
             echo "message=$MESSAGE" >> "$GITHUB_OUTPUT"
+            echo "workflow_name=${{ github.workflow }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Notify deployment result
@@ -308,6 +363,7 @@ jobs:
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           username-mapping: ${{ vars.GH_SLACK_USERNAME_MAPPING }}
           github-token: ${{ github.token }}
+          workflow-name: ${{ steps.deployment-status.outputs.workflow_name }}
           environment: production
           thread-ts: ${{ needs.publish_jars.outputs.thread-ts }}
           channel-id: ${{ needs.publish_jars.outputs.channel-id }}
