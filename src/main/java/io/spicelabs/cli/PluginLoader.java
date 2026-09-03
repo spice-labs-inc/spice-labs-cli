@@ -15,7 +15,10 @@ limitations under the License. */
 
 package io.spicelabs.cli;
 
+import java.util.List;
 import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,10 +78,13 @@ public final class PluginLoader {
           continue;
         }
 
-        // Each plugin gets its own context so it sees only its own table. The command
-        // path is not known until the command has been built and named, so it is bound
-        // just below — before anything executes, which is when a plugin reads it.
-        PluginContext pluginContext = new PluginContext(context, runConfiguration);
+        // Each plugin gets its own context, carrying only the groups it claimed, so it
+        // cannot reach settings meant for another command. The command path is not known
+        // until the command has been built and named, so it is bound just below — before
+        // anything executes, which is when a plugin reads its configuration.
+        List<String> claimed = safeGroups(plugin, id);
+        CLAIMED_GROUPS.addAll(claimed);
+        PluginContext pluginContext = new PluginContext(context, runConfiguration, claimed);
         Object command = plugin.command(pluginContext);
         if (command == null) {
           log.warn("Skipping plugin '{}': command() returned null", id);
@@ -101,6 +107,7 @@ public final class PluginLoader {
           }
           parentCmd.addSubcommand(name, sub);
           pluginContext.bindCommandPath(parent, name);
+          MOUNTED_COMMANDS.add(parent);
           log.debug("Registered plugin '{}' as '{} {}'", id, parent, name);
           continue;
         }
@@ -111,6 +118,7 @@ public final class PluginLoader {
 
         cmd.addSubcommand(name, sub);
         pluginContext.bindCommandPath(name);
+        MOUNTED_COMMANDS.add(name);
         log.debug("Registered plugin '{}' as subcommand '{}'", id, name);
       } catch (Throwable t) {
         // Error isolation: one misbehaving plugin must never break the CLI.
@@ -129,6 +137,50 @@ public final class PluginLoader {
       return new CommandLine((CommandSpec) command);
     }
     return new CommandLine(command);
+  }
+
+  /**
+   * Every group claimed by a mounted plugin, and every command a plugin mounted.
+   *
+   * <p>Recorded as plugins are registered because the alternative — asking the plugins
+   * again later — would re-run third-party code to answer a question already answered.
+   * {@code spice config explain} needs both to tell a misspelt group from one belonging to
+   * a plugin that is simply not installed here.
+   */
+  private static final Set<String> CLAIMED_GROUPS =
+      ConcurrentHashMap.newKeySet();
+
+  private static final Set<String> MOUNTED_COMMANDS =
+      ConcurrentHashMap.newKeySet();
+
+  /** Groups claimed by the plugins mounted in this run. */
+  static List<String> claimedGroups() {
+    return List.copyOf(CLAIMED_GROUPS);
+  }
+
+  /** Top-level command names contributed by plugins in this run. */
+  static List<String> mountedCommands() {
+    return List.copyOf(MOUNTED_COMMANDS);
+  }
+
+  /**
+   * The groups a plugin claims, or none if it cannot say.
+   *
+   * <p>Defensive in the same way as {@link #safeId}: a plugin is third-party code, and a
+   * throwing accessor should cost that plugin its configuration rather than the whole run.
+   * Claiming nothing is the safe failure — the plugin gets no settings, instead of another
+   * command's.
+   */
+  private static List<String> safeGroups(SpiceCommandPlugin plugin, String id) {
+    try {
+      List<String> groups = plugin.configurationGroups();
+      if (groups != null) {
+        return groups;
+      }
+    } catch (Throwable e) {
+      log.warn("Plugin '{}' could not name its configuration groups: {}", id, e.toString());
+    }
+    return List.of();
   }
 
   private static String safeId(SpiceCommandPlugin plugin) {

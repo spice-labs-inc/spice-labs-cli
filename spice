@@ -608,6 +608,18 @@ O spice/generate-completion -V flag
 O spice/generate-completion --version flag
 C spice/generate-powershell-completion
 C spice/path-manifest
+C spice/config
+O spice/config -h flag
+O spice/config --help flag
+O spice/config -V flag
+O spice/config --version flag
+C spice/config/explain
+O spice/config/explain --group value
+O spice/config/explain -h flag
+O spice/config/explain --help flag
+O spice/config/explain -V flag
+O spice/config/explain --version flag
+P spice/config/explain 0 value
 SPICE_EMBEDDED_MANIFEST
 }
 # ── END GENERATED PATH MANIFEST ──

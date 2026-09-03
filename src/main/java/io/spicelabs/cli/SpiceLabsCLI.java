@@ -47,6 +47,8 @@ import picocli.CommandLine.Command;
         // Tells the host wrapper which arguments are paths to bind-mount, derived from
         // the live command model (plugins included) rather than a hardcoded list.
         PathManifestCommand.class,
+        // Answers "why is it doing that?": every setting, and where its value came from.
+        ConfigCommand.class,
     },
     footer = {
         "",

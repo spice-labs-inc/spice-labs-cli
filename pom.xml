@@ -144,13 +144,22 @@
         <!-- Version from the BOM, like everything else here. Note that the SPI's pom
              version is not what decides compatibility: SpiceContext.API_VERSION is, and
              `spice` mounts a plugin only when that plugin's apiVersion() equals its own
-             exactly. A pom version can therefore move without the contract moving, or
-             the reverse, so a plugin built against a different API_VERSION fails to mount
-             at runtime rather than failing to compile. -->
+             exactly (passClaims() carries the pass's claims; configuration() carries the
+             groups a plugin claimed). A pom version can therefore move without the
+             contract moving, or the reverse, so a plugin built against a different
+             API_VERSION fails to mount at runtime rather than failing to compile. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>
             <version>${spice-plugin-api.version}</version>
+        </dependency>
+        <!-- The naming, layering and precedence rules, in the one implementation every
+             component shares. A released artifact on Maven Central, so unlike goatrodeo
+             below it needs no repository declaration and no credentials. -->
+        <dependency>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>spice-config</artifactId>
+            <version>1.0.0</version>
         </dependency>
         <dependency>
             <groupId>info.picocli</groupId>
