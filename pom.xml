@@ -343,6 +343,10 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <!-- Publish the thin jar with its full POM. The default would deploy a
+                                 dependency-reduced POM, which strips every shaded dependency and
+                                 leaves consumers of the thin jar with nothing to resolve. -->
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
                             <finalName>${project.build.finalName}-fat</finalName>
                             <artifactSet>
                                 <excludes>
