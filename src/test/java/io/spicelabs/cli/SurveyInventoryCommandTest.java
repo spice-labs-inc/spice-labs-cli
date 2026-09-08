@@ -9,13 +9,21 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import io.spicelabs.config.Logging;
+import io.spicelabs.config.Origin;
+import io.spicelabs.config.Resolution;
+import io.spicelabs.config.Resolver;
 import io.spicelabs.ginger.Ginger;
 
 /**
@@ -114,9 +122,9 @@ class SurveyInventoryCommandTest {
             IllegalArgumentException.class,
             () -> command.applyUploadSettings(
                 Ginger.builder(),
-                io.spicelabs.config.Resolution.of(
+                Resolution.of(
                     Map.of("upload", Map.of("chunk_size_mb", 64L)),
-                    io.spicelabs.config.Origin.defaultValue())));
+                    Origin.defaultValue())));
 
     assertTrue(thrown.getMessage().contains("chunk_size_mb"), thrown.getMessage());
   }
@@ -133,22 +141,20 @@ class SurveyInventoryCommandTest {
               IllegalArgumentException.class,
               () -> command.applyUploadSettings(
                   Ginger.builder(),
-                  io.spicelabs.config.Resolution.of(
+                  Resolution.of(
                       Map.of("upload", Map.of(credential, "forged")),
-                      io.spicelabs.config.Origin.defaultValue())),
+                      Origin.defaultValue())),
               credential + " must not be settable in [upload]");
       assertTrue(thrown.getMessage().contains(credential), thrown.getMessage());
     }
   }
 
   @Test
-  void aLogFileInAConfigFileIsRefused(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
-      throws Exception {
+  void aLogFileInAConfigFileIsRefused(@TempDir Path dir) throws Exception {
     // The wrapper mounts what it can see on the command line and does not parse TOML, so a
     // path written here would be written inside the container and lost. `--log-file` works.
-    java.nio.file.Path config =
-        java.nio.file.Files.writeString(
-            dir.resolve("config.toml"), "[logging]\nfile = \"/tmp/spice.log\"\n");
+    Path config =
+        Files.writeString(dir.resolve("config.toml"), "[logging]\nfile = \"/tmp/spice.log\"\n");
     RunConfiguration.load(config);
     try {
       SurveyInventoryCommand command = new SurveyInventoryCommand();
@@ -157,6 +163,67 @@ class SurveyInventoryCommandTest {
           assertThrows(IllegalArgumentException.class, command::configureLogging);
 
       assertTrue(thrown.getMessage().contains("--log-file"), thrown.getMessage());
+      assertTrue(thrown.getMessage().contains("[logging]"), thrown.getMessage());
+    } finally {
+      RunConfiguration.load(null);
+    }
+  }
+
+  @Test
+  void aLogFileInACommandScopedTableIsRefused(@TempDir Path dir) throws Exception {
+    // The command-scoped table is as invisible to the wrapper as the shared one, so a check
+    // that only read `[logging]` would let this straight through.
+    Path config =
+        Files.writeString(
+            dir.resolve("config.toml"),
+            "[survey.inventory.logging]\nfile = \"/tmp/spice.log\"\n");
+    RunConfiguration.load(config);
+    try {
+      SurveyInventoryCommand command = new SurveyInventoryCommand();
+
+      IllegalArgumentException thrown =
+          assertThrows(IllegalArgumentException.class, command::configureLogging);
+
+      assertTrue(
+          thrown.getMessage().contains("[survey.inventory.logging]"), thrown.getMessage());
+    } finally {
+      RunConfiguration.load(null);
+    }
+  }
+
+  @Test
+  void aLogFileFromTheEnvironmentIsRefused() {
+    // A third name for the same setting, and the wrapper cannot see through it either. The
+    // resolver is built here rather than through `RunConfiguration`, which reads the real
+    // environment.
+    Resolution settings =
+        new Resolver("SPICE", Set.of(Logging.GROUP), message -> {})
+            .withEnvironment(Map.of("SPICE_LOGGING_FILE", "/tmp/spice.log"))
+            .resolve();
+
+    IllegalArgumentException thrown =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new SurveyInventoryCommand().rejectUnmountableLogFile(settings));
+
+    assertTrue(thrown.getMessage().contains("SPICE_LOGGING_FILE"), thrown.getMessage());
+  }
+
+  @Test
+  void theFlagWinsOverAConfiguredLogFileRatherThanFailing(@TempDir Path dir) throws Exception {
+    // Precedence says the flag wins, so the path in hand is one the wrapper can mount and the
+    // run is well formed. Refusing on the mere presence of the configured value would fail it.
+    Path config =
+        Files.writeString(dir.resolve("config.toml"), "[logging]\nfile = \"/tmp/inside.log\"\n");
+    RunConfiguration.load(config);
+    try {
+      SurveyInventoryCommand command = new SurveyInventoryCommand();
+      command.logFile = "/host/spice.log";
+
+      Resolution settings = command.resolveSettings();
+      command.rejectUnmountableLogFile(settings);
+
+      assertEquals("/host/spice.log", Logging.file(settings).orElseThrow());
     } finally {
       RunConfiguration.load(null);
     }
@@ -170,12 +237,10 @@ class SurveyInventoryCommandTest {
     command.logFile = "/tmp/spice-test.log";
     command.logLevel = "debug";
 
-    io.spicelabs.config.Resolution settings = command.resolveSettings();
+    Resolution settings = command.resolveSettings();
 
-    assertEquals(
-        "/tmp/spice-test.log",
-        io.spicelabs.config.Logging.file(settings).orElseThrow());
-    assertEquals("DEBUG", io.spicelabs.config.Logging.level(settings));
+    assertEquals("/tmp/spice-test.log", Logging.file(settings).orElseThrow());
+    assertEquals("DEBUG", Logging.level(settings));
   }
 
   @Test
@@ -183,6 +248,6 @@ class SurveyInventoryCommandTest {
     // So `[logging] level` and SPICE_LOGGING_LEVEL work, not only the flag.
     SurveyInventoryCommand command = new SurveyInventoryCommand();
 
-    assertEquals("INFO", io.spicelabs.config.Logging.level(command.resolveSettings()));
+    assertEquals("INFO", Logging.level(command.resolveSettings()));
   }
 }

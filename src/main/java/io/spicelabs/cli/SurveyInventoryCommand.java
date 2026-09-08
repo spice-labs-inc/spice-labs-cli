@@ -30,6 +30,7 @@ import java.util.List;
 import io.spicelabs.config.LogbackLogging;
 import io.spicelabs.config.Logging;
 import io.spicelabs.config.Names;
+import io.spicelabs.config.Origin;
 import io.spicelabs.config.Resolution;
 import io.spicelabs.config.Setting;
 import java.util.Map;
@@ -599,9 +600,10 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     // direct `java -jar` run, where there is no wrapper to do it. The two therefore
     // cannot both write: whichever is running is the only one that sees the flag.
     //
-    // A path from the *config file* is refused, in `rejectConfiguredLogFile`, because the
-    // wrapper cannot see inside a TOML table to mount it.
-    rejectConfiguredLogFile();
+    // A path from anywhere but the command line is refused, in `rejectUnmountableLogFile`,
+    // because the wrapper cannot see inside a TOML table or an environment variable to mount
+    // what it names.
+    rejectUnmountableLogFile(settings);
     LogbackLogging.apply(settings, Logger.ROOT_LOGGER_NAME);
 
     // An *output*, not an input: the Scala components read this property, and it is
@@ -611,30 +613,36 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   }
 
   /**
-   * Refuse {@code [logging] file} written in a configuration file.
+   * Refuse a {@code logging.file} that reached us from anywhere but the command line.
    *
    * <p>The wrapper mounts the paths it can see on the command line — that is what the path
-   * manifest is for — and it deliberately does not parse TOML, so a path written in a config
-   * file is invisible to it. Under Docker such a file would be written inside the container
-   * and lost when it exits, which is the silent-configuration failure this whole arrangement
-   * exists to prevent.
+   * manifest is for — and it deliberately does not parse TOML or scan the environment for
+   * paths. Under Docker a path it never saw would be written inside the container and lost
+   * when it exits, which is the silent-configuration failure this whole arrangement exists
+   * to prevent. That is as true of {@code [survey.inventory.logging] file} and of
+   * {@code SPICE_LOGGING_FILE} as it is of {@code [logging] file}, so the test is on the
+   * <em>origin of the value that won</em> rather than on the text of any one source.
    *
-   * <p>Refused rather than warned: a log nobody can read is not a partial success, and the
-   * flag that does work is one word away.
+   * <p>Which is also why a configured path that {@code --log-file} displaced is not an error:
+   * precedence says the flag wins, the path in hand is one the wrapper can mount, and the
+   * resolver has already reported the override. Refusing there would fail a run that is
+   * perfectly well formed.
+   *
+   * <p>Refused rather than warned, when it does happen: a log nobody can read is not a partial
+   * success, and the flag that does work is one word away.
    */
-  private void rejectConfiguredLogFile() {
-    boolean fromConfigFile =
-        RunConfiguration.current()
-            .root()
-            .containsKey(Logging.GROUP)
-            && RunConfiguration.current().root().get(Logging.GROUP) instanceof Map<?, ?> group
-            && group.containsKey("file");
-    if (fromConfigFile) {
-      throw new IllegalArgumentException(
-          "[logging] file cannot be set in a configuration file — the wrapper mounts only the "
-              + "paths named on the command line, so a file named here would be written inside "
-              + "the container and lost. Use --log-file instead.");
-    }
+  void rejectUnmountableLogFile(Resolution settings) {
+    settings
+        .setting(Logging.GROUP, "file")
+        .filter(setting -> setting.origin().layer() != Origin.Layer.FLAG)
+        .ifPresent(
+            setting -> {
+              throw new IllegalArgumentException(
+                  "[logging] file was set in " + setting.origin().describe()
+                      + ", but it can only be given as --log-file: the wrapper mounts only the "
+                      + "paths named on the command line, so a file named anywhere else would be "
+                      + "written inside the container and lost.");
+            });
   }
 
   /**

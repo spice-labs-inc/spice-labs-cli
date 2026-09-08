@@ -132,13 +132,20 @@ level = "debug"          # error, warn, info, debug, trace
 
 `--log-level` sets the same key, and so does `SPICE_LOGGING_LEVEL`.
 
-**`file` is not settable here.** `--log-file` is the wrapper's: it tees the whole run to
-that path on the *host*, which catches output from subprocesses a logging appender inside
-the container would never see. The wrapper mounts the paths it can see on the command line
-and deliberately does not parse TOML, so a path written in this file would be written
-inside the container and lost when it exits. Writing one is an error that says so. Every Spice tool reads this group, with the same keys and the same
-precedence, so a level means one thing wherever it is set and two runs' logs can be read
-side by side.
+**`file` may only be given as `--log-file`.** That flag is the wrapper's: it tees the whole
+run to that path on the *host*, which catches output from subprocesses a logging appender
+inside the container would never see. The wrapper mounts the paths it can see on the command
+line and deliberately does not parse TOML or read the environment for paths, so a path that
+reached it any other way would be written inside the container and lost when it exits. A
+`file` that wins from `[logging]`, from `[survey.inventory.logging]` or from
+`SPICE_LOGGING_FILE` is therefore refused, with a message naming which of them it came from.
+
+Precedence is not suspended for it. `--log-file` given alongside a configured `file` simply
+wins, as any flag does, and the run proceeds with the path the wrapper can mount — the
+override is reported like every other.
+
+Every Spice tool reads this group, with the same keys and the same precedence, so a level
+means one thing wherever it is set and two runs' logs can be read side by side.
 
 Standalone components differ only in the prefix: `GOATRODEO_LOGGING_LEVEL`,
 `ALLSPICE_LOGGING_LEVEL`, `SASSAFRAS_LOGGING_LEVEL`, `GINGER_LOGGING_LEVEL`.
