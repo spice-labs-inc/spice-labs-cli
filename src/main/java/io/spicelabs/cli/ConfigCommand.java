@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-/* Copyright 2025 Spice Labs, Inc. & Contributors
+/* Copyright 2025-26 Spice Labs, Inc. & Contributors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -78,7 +78,12 @@ public class ConfigCommand implements Runnable {
                       "# No configuration file; showing defaults and the environment\n"));
 
       List<String> groups = group == null ? knownGroups() : List.of(group);
-      Resolution resolved = configuration.explain(commandPath, groups);
+      // Built-in defaults are a layer here, so a value nobody set is shown and attributed
+      // rather than missing. A plugin's defaults are its own: it receives its groups through
+      // PluginContext and applies whatever it falls back on there, out of sight of this
+      // command, so a plugin's untouched settings are the one thing this cannot show.
+      Resolution resolved =
+          configuration.explain(commandPath, groups, SurveyInventoryCommand.defaults());
       String explained = resolved.explain();
       System.out.print(explained.isEmpty() ? "# Nothing set\n" : explained);
 
