@@ -178,8 +178,16 @@ final class RunConfiguration {
         .ifPresent(message -> log.warn("⚠️  {}", message));
   }
 
-  /** Everything resolved for a command, with provenance, for {@code spice config explain}. */
-  Resolution explain(List<String> commandPath, Collection<String> groups) {
-    return resolverFor(commandPath, groups).resolve();
+  /**
+   * Everything resolved for a command, with provenance, for {@code spice config explain}.
+   *
+   * @param defaults the command's own defaults, as a layer beneath the file. Without them a
+   *     setting nobody touched would not appear at all, and the question {@code explain}
+   *     exists to answer — "what will it use?" — would go unanswered for exactly the settings
+   *     most runs use.
+   */
+  Resolution explain(
+      List<String> commandPath, Collection<String> groups, Map<String, Map<String, Object>> defaults) {
+    return resolverFor(commandPath, groups).withDefaults(defaults).resolve();
   }
 }
