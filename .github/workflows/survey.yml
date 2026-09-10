@@ -127,4 +127,4 @@ jobs:
         with:
           spice_pass: "${{ secrets.SPICE_PASS }}"
           input: "./artifacts"
-          tag: "${{ github.event.repository.name }}"
+          subject: "${{ github.event.repository.name }}"
