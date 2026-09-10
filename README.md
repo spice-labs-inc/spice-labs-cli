@@ -162,6 +162,15 @@ any other path argument.
 A flag always beats the file. See **[docs/configuration.md](docs/configuration.md)** for the
 settings themselves, how they group, and the full precedence order.
 
+To see what a run will actually use, and where each value came from:
+
+```bash
+spice config explain survey inventory
+```
+
+Every key is printed with its origin — the file and table it came from, the environment
+variable, or the flag — which is how to answer "why is it doing that?" without guessing.
+
 ## ⚙️ Options
 
 ### Global

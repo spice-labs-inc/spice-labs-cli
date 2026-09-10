@@ -5,15 +5,22 @@ package io.spicelabs.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+
+import io.spicelabs.config.Origin;
+import io.spicelabs.config.Resolution;
+import io.spicelabs.ginger.Ginger;
 
 /**
  * Guards the encrypt-only gate: encrypt-only runs never contact a server, so the command
@@ -98,5 +105,124 @@ class SurveyInventoryCommandTest {
     SurveyInventoryCommand cmd = new SurveyInventoryCommand();
     cmd.gingerArgs = Map.of("--encrypt-only", "false");
     assertFalse(cmd.isEncryptOnly());
+  }
+
+  @Test
+  void anUnknownUploadSettingIsAnError() {
+    // The group is a closed list applied through the uploader's typed setters. Anything
+    // else names itself, rather than being forwarded as a flag the uploader would warn
+    // about in a log nobody reads.
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+    IllegalArgumentException thrown =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> command.applyUploadSettings(
+                Ginger.builder(),
+                io.spicelabs.config.Resolution.of(
+                    Map.of("upload", Map.of("chunk_size_mb", 64L)),
+                    io.spicelabs.config.Origin.defaultValue())));
+
+    assertTrue(thrown.getMessage().contains("chunk_size_mb"), thrown.getMessage());
+  }
+
+  @Test
+  void theSpicePassCannotBeSetFromConfiguration() {
+    // The uploader applies extraArgs inside run(), where they assign its jwt and uuid
+    // fields — so anything reaching extraArgs overrides the credential the platform
+    // issued. `jwt` is not a setting, and saying so is the check that keeps it that way.
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+    for (String credential : java.util.List.of("jwt", "uuid")) {
+      IllegalArgumentException thrown =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> command.applyUploadSettings(
+                  Ginger.builder(),
+                  io.spicelabs.config.Resolution.of(
+                      Map.of("upload", Map.of(credential, "forged")),
+                      io.spicelabs.config.Origin.defaultValue())),
+              credential + " must not be settable in [upload]");
+      assertTrue(thrown.getMessage().contains(credential), thrown.getMessage());
+    }
+  }
+
+  @Test
+  void settingsAreResolvedOncePerRun() {
+    // The resolver reports every override as it decides it. Resolving on each step of the
+    // run said the same thing once per step; the survey, the upload and the encrypt-only
+    // gate must all read the one resolution.
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+    assertSame(command.settings(), command.settings());
+  }
+
+  @Test
+  void explainShowsADefaultNobodySet() {
+    // "Not shown" is a poor way to say "8": a setting the run will use must appear in
+    // `spice config explain` even when nothing in the file, environment or flags touched it.
+    String explained =
+        RunConfiguration.EMPTY
+            .explain(
+                SurveyInventoryCommand.COMMAND_PATH,
+                SurveyInventoryCommand.GROUPS,
+                SurveyInventoryCommand.defaults())
+            .explain();
+    for (String key : List.of("threads", "max_records", "level")) {
+      assertTrue(explained.contains(key), key + " missing from:\n" + explained);
+    }
+    assertTrue(explained.contains("default"), explained);
+  }
+
+  @Test
+  void theUploaderKeepsItsOwnChunkSizeDefault() {
+    // No default for target_chunk_size here: one would reach the uploader's setter on every
+    // run and its own default could never apply. With nothing set, the key is simply absent.
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+    assertTrue(command.resolveSettings().setting("upload", "target_chunk_size").isEmpty());
+  }
+
+  @Test
+  void aChunkSizeThatIsNotAPositiveIntIsRefusedByName() {
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+    for (long bad : new long[] {0L, -1L, 1L + Integer.MAX_VALUE}) {
+      IllegalArgumentException thrown =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> command.applyUploadSettings(
+                  Ginger.builder(),
+                  Resolution.of(
+                      Map.of("upload", Map.of("target_chunk_size", bad)),
+                      Origin.defaultValue())),
+              "chunk size " + bad + " must be refused");
+      assertTrue(thrown.getMessage().contains("target_chunk_size"), thrown.getMessage());
+      assertTrue(thrown.getMessage().contains(Long.toString(bad)), thrown.getMessage());
+    }
+  }
+
+  @Test
+  void aResolvedLoggingLevelReachesThisProgramsLogger() {
+    // `--log-level` is a binding onto [logging] level, so a level from the file or the
+    // environment must move spice's own logger too — not just the analysis engine's.
+    ch.qos.logback.classic.Logger root =
+        (ch.qos.logback.classic.Logger)
+            org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+    ch.qos.logback.classic.Level saved = root.getLevel();
+    String savedScala = System.getProperty("scala.logging.level");
+    try {
+      SurveyInventoryCommand command = new SurveyInventoryCommand();
+      command.logLevel = null;
+      command.settings =
+          Resolution.of(
+              Map.of("logging", Map.of("level", "debug")),
+              Origin.sharedTable(java.nio.file.Path.of("spice.toml"), "logging"));
+      command.configureLogging();
+      assertEquals(ch.qos.logback.classic.Level.DEBUG, root.getLevel());
+      assertEquals("DEBUG", System.getProperty("scala.logging.level"));
+    } finally {
+      root.setLevel(saved);
+      if (savedScala == null) {
+        System.clearProperty("scala.logging.level");
+      } else {
+        System.setProperty("scala.logging.level", savedScala);
+      }
+    }
   }
 }
