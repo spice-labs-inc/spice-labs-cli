@@ -304,14 +304,9 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
    * setting, and nothing reconciled them.
    */
   Resolution resolveSettings() {
-    int cores = Runtime.getRuntime().availableProcessors();
-    long halfTheCores = Math.max(1, Math.round(cores / 2.0f));
     return RunConfiguration.current()
         .resolverFor(COMMAND_PATH, GROUPS)
-        .withDefaults(Map.of(
-            "analysis", Map.of("threads", halfTheCores, "max_records", 5000L),
-            "upload", Map.of("target_chunk_size", 64L),
-            "logging", Map.of("level", "INFO")))
+        .withDefaults(defaults())
         .withFlag("analysis", "threads", threads, "--threads")
         .withFlag("analysis", "max_records", maxRecords, "--max-records")
         .withFlag("upload", "target_chunk_size", chunkSizeMB, "--chunk-size")
@@ -320,12 +315,46 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         .resolve();
   }
 
+  /**
+   * The settings this command falls back on when nothing else supplies a value.
+   *
+   * <p>A layer like any other, so {@code spice config explain} can show a value nobody set
+   * and say it is the default — "not shown" is a poor way to say "8". Static so that command
+   * can ask without constructing a run.
+   *
+   * <p>{@code [upload]} has no defaults here on purpose. The uploader has its own, and a
+   * default written here would displace it: every run would pass an explicit chunk size, and
+   * the uploader's own choice could never be reached.
+   */
+  static Map<String, Map<String, Object>> defaults() {
+    int cores = Runtime.getRuntime().availableProcessors();
+    long halfTheCores = Math.max(1, Math.round(cores / 2.0f));
+    Map<String, Map<String, Object>> defaults = new HashMap<>(Logging.defaults());
+    defaults.put("analysis", Map.of("threads", halfTheCores, "max_records", 5000L));
+    return defaults;
+  }
+
+  /** This run's settings, resolved once and remembered; see {@link #resolveSettings()}. */
+  Resolution settings;
+
+  /**
+   * The settings for this run.
+   *
+   * <p>Resolved on first use rather than in {@link #call()}, so a test that exercises one
+   * step of the run without going through the whole of it still gets a resolution — and
+   * resolved only once, because the resolver reports every override as it decides it, and a
+   * run that decided the same thing three times said so three times.
+   */
+  Resolution settings() {
+    if (settings == null) {
+      settings = resolveSettings();
+    }
+    return settings;
+  }
+
   protected void doSurvey(SurveyRegistration.Context survey, AnalyzeProgressPublisher analyzeProgress)
       throws Exception {
     log.info("📦 Surveying artifacts...");
-
-    String originalScalaLevel = System.getProperty("scala.logging.level");
-    String originalSlf4jLevel = System.getProperty("org.slf4j.simpleLogger.defaultLogLevel");
 
     Path surveyOutput = output.resolve("survey");
     Path tmpDir = output.resolve("tmp");
@@ -353,12 +382,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       // Every setting this command's components read, from every source, decided in one
       // place. `--threads` and `--max-records` are bindings onto [analysis] keys rather
       // than values of their own, so there is one `threads` and not one per route.
-      Resolution settings = resolveSettings();
-
-      String level = settings.setting("logging", "level").map(Setting::asString)
-          .map(String::toUpperCase).orElse("INFO");
-      System.setProperty("scala.logging.level", level);
-      System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", level);
+      Resolution settings = settings();
 
       GoatRodeoBuilder builder = GoatRodeo.builder()
           .withPayload(payloadDir.toString())
@@ -421,12 +445,6 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       if (singleFileDir != null) {
         deleteRecursively(singleFileDir);
       }
-      if (originalScalaLevel != null) {
-        System.setProperty("scala.logging.level", originalScalaLevel);
-      }
-      if (originalSlf4jLevel != null) {
-        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", originalSlf4jLevel);
-      }
       deleteRecursively(tmpDir);
     }
   }
@@ -456,7 +474,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     // `uuid` fields, so anything reaching it overrides the Spice Pass. Forwarding a
     // config-file group there wholesale would have let `[upload] jwt = "…"` replace the
     // credential the platform issued — the one thing configuration must never do.
-    applyUploadSettings(ginger, resolveSettings());
+    applyUploadSettings(ginger, settings());
 
     if (survey != null) {
       ginger.parentId(survey.parentId())
@@ -557,8 +575,17 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     }
   }
 
+  /**
+   * Apply the resolved {@code [logging]} group — level and file — to this program's own logging.
+   *
+   * <p>Resolved, not read from the flag: {@code --log-level} is a binding onto
+   * {@code [logging] level} like every other flag here, so {@code SPICE_LOGGING_LEVEL} and a
+   * {@code level} in the config file must move this level too. Before this they did not — they
+   * reached the analysis engine's logging and stopped there, and {@code spice} itself stayed at
+   * INFO however loudly it had been asked not to.
+   */
   void configureLogging() {
-    Resolution settings = resolveSettings();
+    Resolution settings = settings();
     Level level = Level.toLevel(Logging.level(settings), Level.INFO);
     String levelStr = level.toString();
 
@@ -589,7 +616,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     // - Ginger-J: upload progress/status is INFO
     // No blanket suppression needed.
 
-    if (logLevel != null) {
+    if (level != Level.INFO) {
       log.info("Logging level set to {}", level);
     }
 
@@ -606,10 +633,11 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     rejectUnmountableLogFile(settings);
     LogbackLogging.apply(settings, Logger.ROOT_LOGGER_NAME);
 
-    // An *output*, not an input: the Scala components read this property, and it is
-    // written once here from the resolved level rather than being a channel anyone
-    // configures through.
+    // An *output*, not an input: the Scala components read these properties, and they are
+    // written once here from the resolved level rather than in the survey step from a
+    // second resolution, or being a channel anyone configures through.
     System.setProperty("scala.logging.level", levelStr);
+    System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", levelStr);
   }
 
   /**
@@ -662,11 +690,11 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
             (key, value) -> {
               Setting setting = settings.setting("upload", key).orElseThrow();
               switch (key) {
-                case "target_chunk_size" -> ginger.targetChunkSizeMB((int) setting.asLong());
+                case "target_chunk_size" -> ginger.targetChunkSizeMB(positiveInt(setting));
                 case "encrypt_only" -> ginger.encryptOnly(setting.asBoolean());
                 case "skip_key" -> ginger.skipKey(setting.asBoolean());
                 case "comment" -> ginger.comment(setting.asString());
-                case "bundle_format_version" -> ginger.bundleFormatVersion((int) setting.asLong());
+                case "bundle_format_version" -> ginger.bundleFormatVersion(positiveInt(setting));
                 default -> unknown.add(key);
               }
             });
@@ -674,6 +702,24 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       throw new IllegalArgumentException(
           "[upload] has no setting called " + String.join(", ", unknown));
     }
+  }
+
+  /**
+   * A setting the uploader takes as a positive {@code int}, checked rather than cast.
+   *
+   * <p>A cast would truncate silently, and zero or a negative would reach a setter that has no
+   * meaning for it. Both are refused by name: the old flag-only path dropped a zero chunk size
+   * on the floor, which meant "use the default" to whoever typed it and nothing to anyone
+   * reading the run.
+   */
+  private static int positiveInt(Setting setting) {
+    long value = setting.asLong();
+    if (value < 1 || value > Integer.MAX_VALUE) {
+      throw new IllegalArgumentException(
+          "[" + setting.name().group() + "] " + setting.name().key()
+              + " must be a positive integer, got: " + value);
+    }
+    return (int) value;
   }
 
   private static boolean hasSpicePass(String spicePass) {
@@ -689,7 +735,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     if (gingerArgs.containsKey("--encrypt-only")) {
       return !"false".equalsIgnoreCase(gingerArgs.get("--encrypt-only"));
     }
-    return resolveSettings()
+    return settings()
         .setting("upload", "encrypt_only")
         .map(Setting::asBoolean)
         .orElse(false);

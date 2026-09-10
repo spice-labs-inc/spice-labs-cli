@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2025-26 Spice Labs, Inc. & Contributors */
+
 package io.spicelabs.cli;
 
 import static org.junit.jupiter.api.Assertions.*;
