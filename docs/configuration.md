@@ -123,6 +123,64 @@ own variables — `SPICE_IMAGE`, `SPICE_CACHE_DIR`, `SPICE_PATH_MANIFEST`, `SPIC
 never be mistaken for settings. They are read on the host before any JVM exists and are not
 part of any configuration. No group may be named `image`, `cache`, `path` or `pass`.
 
+## Logging is a group like any other
+
+```toml
+[logging]
+level = "debug"          # error, warn, info, debug, trace
+```
+
+`--log-level` sets the same key, and so does `SPICE_LOGGING_LEVEL`.
+
+**`file` may only be given as `--log-file`.** That flag is the wrapper's: it tees the whole
+run to that path on the *host*, which catches output from subprocesses a logging appender
+inside the container would never see. The wrapper mounts the paths it can see on the command
+line and deliberately does not parse TOML or read the environment for paths, so a path that
+reached it any other way would be written inside the container and lost when it exits. A
+`file` that wins from `[logging]`, from `[survey.inventory.logging]` or from
+`SPICE_LOGGING_FILE` is therefore refused, with a message naming which of them it came from.
+
+Precedence is not suspended for it. `--log-file` given alongside a configured `file` simply
+wins, as any flag does, and the run proceeds with the path the wrapper can mount — the
+override is reported like every other.
+
+Every Spice tool reads this group, with the same keys and the same precedence, so a level
+means one thing wherever it is set and two runs' logs can be read side by side.
+
+Standalone components differ only in the prefix: `GOATRODEO_LOGGING_LEVEL`,
+`ALLSPICE_LOGGING_LEVEL`, `SASSAFRAS_LOGGING_LEVEL`, `GINGER_LOGGING_LEVEL`.
+
+Each tool moves only its own loggers. A level says how much *that* program should say, and
+lifting a noisy dependency along with it buries the output you asked for.
+
+A library never applies this: the group is applied by whichever program owns the process,
+because a library reconfiguring its host's logging is a rude surprise.
+
+## Paths named in the config file are mounted
+
+`spice` runs in Docker by default, and the wrapper mounts the paths it can see. Until now
+that meant the paths named on the *command line*: reading a TOML file from a shell script
+would mean shipping a parser in bash, or guessing which values are paths — and guessing is
+how a run ends up writing its output inside a container that is about to be discarded.
+
+So the CLI reads them, in the same round-trip that produces the path manifest:
+
+```
+docker run --rm -v <config>:<config> <image> path-manifest --config <config>
+```
+
+One call answers both questions, because the round-trip is ~0.36s and almost all of it is
+container and JVM startup — asking twice would double the cost of something one call can
+carry. The result is cached against the image ID *and* a digest of the config file, so an
+unchanged config costs nothing at all and an edited one costs one round-trip.
+
+Which values are paths is **declared, not inferred**: a plugin lists them through
+`SpiceCommandPlugin.configurationPathKeys()`, so nobody maintains a second copy of a schema
+they do not own and no value is mounted because it merely looks like a path.
+
+A path that has to be relocated — because mounting it where it sits would hide part of the
+image — is reported, since a setting naming it may not resolve inside the container.
+
 ## Precedence
 
     defaults  <  [group]  <  [command.group]  <  environment  <  command line

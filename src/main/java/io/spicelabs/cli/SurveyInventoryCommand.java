@@ -27,8 +27,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
+import io.spicelabs.config.LogbackLogging;
 import io.spicelabs.config.Logging;
 import io.spicelabs.config.Names;
+import io.spicelabs.config.Origin;
 import io.spicelabs.config.Resolution;
 import io.spicelabs.config.Setting;
 import java.util.Map;
@@ -309,6 +311,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
         .withFlag("analysis", "max_records", maxRecords, "--max-records")
         .withFlag("upload", "target_chunk_size", chunkSizeMB, "--chunk-size")
         .withFlag("logging", "level", logLevel, "--log-level")
+        .withFlag("logging", "file", logFile, "--log-file")
         .resolve();
   }
 
@@ -573,7 +576,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   }
 
   /**
-   * Apply the resolved {@code [logging] level} to this program's own logging.
+   * Apply the resolved {@code [logging]} group — level and file — to this program's own logging.
    *
    * <p>Resolved, not read from the flag: {@code --log-level} is a binding onto
    * {@code [logging] level} like every other flag here, so {@code SPICE_LOGGING_LEVEL} and a
@@ -582,7 +585,8 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
    * INFO however loudly it had been asked not to.
    */
   void configureLogging() {
-    Level level = Level.toLevel(Logging.level(settings()), Level.INFO);
+    Resolution settings = settings();
+    Level level = Level.toLevel(Logging.level(settings), Level.INFO);
     String levelStr = level.toString();
 
     ch.qos.logback.classic.Logger rootLogger =
@@ -616,10 +620,57 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       log.info("Logging level set to {}", level);
     }
 
-    // The Scala components read these properties. Written here, once, from the resolved level,
-    // rather than in the survey step from a second resolution.
+    // A log file, if one was asked for.
+    //
+    // `--log-file` belongs to the wrapper, which tees the whole run to it on the *host*
+    // and strips the flag before the container ever sees it — so this only fires for a
+    // direct `java -jar` run, where there is no wrapper to do it. The two therefore
+    // cannot both write: whichever is running is the only one that sees the flag.
+    //
+    // A path from anywhere but the command line is refused, in `rejectUnmountableLogFile`,
+    // because the wrapper cannot see inside a TOML table or an environment variable to mount
+    // what it names.
+    rejectUnmountableLogFile(settings);
+    LogbackLogging.apply(settings, Logger.ROOT_LOGGER_NAME);
+
+    // An *output*, not an input: the Scala components read these properties, and they are
+    // written once here from the resolved level rather than in the survey step from a
+    // second resolution, or being a channel anyone configures through.
     System.setProperty("scala.logging.level", levelStr);
     System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", levelStr);
+  }
+
+  /**
+   * Refuse a {@code logging.file} that reached us from anywhere but the command line.
+   *
+   * <p>The wrapper mounts the paths it can see on the command line — that is what the path
+   * manifest is for — and it deliberately does not parse TOML or scan the environment for
+   * paths. Under Docker a path it never saw would be written inside the container and lost
+   * when it exits, which is the silent-configuration failure this whole arrangement exists
+   * to prevent. That is as true of {@code [survey.inventory.logging] file} and of
+   * {@code SPICE_LOGGING_FILE} as it is of {@code [logging] file}, so the test is on the
+   * <em>origin of the value that won</em> rather than on the text of any one source.
+   *
+   * <p>Which is also why a configured path that {@code --log-file} displaced is not an error:
+   * precedence says the flag wins, the path in hand is one the wrapper can mount, and the
+   * resolver has already reported the override. Refusing there would fail a run that is
+   * perfectly well formed.
+   *
+   * <p>Refused rather than warned, when it does happen: a log nobody can read is not a partial
+   * success, and the flag that does work is one word away.
+   */
+  void rejectUnmountableLogFile(Resolution settings) {
+    settings
+        .setting(Logging.GROUP, "file")
+        .filter(setting -> setting.origin().layer() != Origin.Layer.FLAG)
+        .ifPresent(
+            setting -> {
+              throw new IllegalArgumentException(
+                  "[logging] file was set in " + setting.origin().describe()
+                      + ", but it can only be given as --log-file: the wrapper mounts only the "
+                      + "paths named on the command line, so a file named anywhere else would be "
+                      + "written inside the container and lost.");
+            });
   }
 
   /**
