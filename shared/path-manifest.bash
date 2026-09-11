@@ -35,6 +35,7 @@ MF_INHERITED=""       # same, but only args marked `inherit`
 MF_FLAT=""            # \001<name>\002<attrs>\001…  — union across all commands
 MF_RESERVED_EXACT=""  # :/:/usr:…: — matched exactly, never by prefix
 MF_RESERVED_PREFIX="" # :/opt/allspice:…: — matched by prefix
+MF_CONFIG_PATHS=""    # the `# spice-config-paths` section, verbatim — see mount_config_paths
 
 # Outputs, consumed by the caller after walk_args.
 MF_ARGS=()
@@ -89,17 +90,33 @@ mf_load() {
 
 # Echo the manifest for $IMAGE_REF, using a cache keyed by the image ID so a
 # `docker pull` invalidates it automatically — no TTL, no staleness heuristics.
+#
+# When a configuration file is in play (MF_CONFIG_FILE), the same round-trip also
+# asks which paths that file names, and the key gains a digest of the file: an
+# unchanged config costs nothing, an edited one costs one `docker run`. The file
+# is mounted at a neutral path rather than its own, because one of the places it
+# is looked for is /etc/xdg, and mounting under /etc is what mf_reserved forbids.
 mf_refresh() {
   [ "${SPICE_SKIP_MANIFEST_REFRESH:-0}" = "1" ] && return 1
   command -v docker >/dev/null 2>&1 || return 1
 
-  local image_id cache_dir cache_file
+  local image_id cache_dir cache_file config="${MF_CONFIG_FILE:-}" digest=""
   image_id="$(docker image inspect --format '{{.Id}}' "$IMAGE_REF" 2>/dev/null)" || return 1
   [ -n "$image_id" ] || return 1
 
+  local config_mount=() config_args=()
+  if [ -n "$config" ] && [ -f "$config" ]; then
+    # cksum is POSIX and on every host; this is a cache key, not a signature.
+    digest="$(cksum <"$config" 2>/dev/null | cut -d' ' -f1)" || digest=""
+  fi
+  if [ -n "$digest" ]; then
+    config_mount=(-v "${config}:/mnt/spice/config.toml:ro")
+    config_args=(--config /mnt/spice/config.toml)
+  fi
+
   cache_dir="${SPICE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/spice}/path-manifest"
   # Image IDs are `sha256:<hex>`; the colon is legal in a filename but awkward.
-  cache_file="${cache_dir}/${image_id#sha256:}"
+  cache_file="${cache_dir}/${image_id#sha256:}${digest:+-$digest}"
 
   if [ -s "$cache_file" ]; then
     cat "$cache_file" 2>/dev/null
@@ -107,7 +124,9 @@ mf_refresh() {
   fi
 
   local text
-  text="$(docker run --rm ${PULL_FLAG:+$PULL_FLAG} "$IMAGE_REF" path-manifest 2>/dev/null)" || return 1
+  text="$(docker run --rm ${PULL_FLAG:+$PULL_FLAG} \
+    ${config_mount[@]+"${config_mount[@]}"} "$IMAGE_REF" \
+    path-manifest ${config_args[@]+"${config_args[@]}"} 2>/dev/null)" || return 1
   case "$text" in
     *"# spice-path-manifest "*) ;;
     *) return 1 ;;  # an image too old to know the command, or log noise only
@@ -116,8 +135,9 @@ mf_refresh() {
   if mkdir -p "$cache_dir" 2>/dev/null; then
     printf '%s\n' "$text" >"$cache_file" 2>/dev/null || true
     # Keep the cache from growing without bound as images come and go.
-    # Cache entries are named after image IDs, so they are always plain hex —
-    # `ls` parsing is safe here in a way it would not be for arbitrary names.
+    # Cache entries are named after image IDs and digests, so they are always
+    # plain hex and digits — `ls` parsing is safe here in a way it would not be
+    # for arbitrary names.
     # shellcheck disable=SC2012
     {
       ls -1t "$cache_dir" 2>/dev/null | tail -n +11 | while read -r stale; do
@@ -132,15 +152,26 @@ mf_refresh() {
 # rather than rejected, so log output that leaks onto stdout inside the
 # container cannot corrupt the tables.
 mf_parse() {
-  local kind a b rest key attrs first_cmd=""
+  local kind a b rest key attrs first_cmd="" text="$1"
   MF_CMDS=""; MF_ATTRS=""; MF_INHERITED=""; MF_FLAT=""
   MF_RESERVED_EXACT=":"; MF_RESERVED_PREFIX=":"
+  MF_CONFIG_PATHS=""
 
   # Matched anywhere rather than at the start: a warning logged to stdout inside
   # the container would otherwise be enough to reject an otherwise good manifest.
-  case "$1" in
+  case "$text" in
     *"# spice-path-manifest 1"$'\n'*) ;;
     *) return 1 ;;  # unknown schema version — leave the tables empty
+  esac
+
+  # The config-paths section is split off whole for mount_config_paths rather than
+  # read here: its `P <path>` lines look like the positional records above them,
+  # and a path may contain spaces where a record never does.
+  case "$text" in
+    *"# spice-config-paths 1"$'\n'*)
+      MF_CONFIG_PATHS="${text#*"# spice-config-paths 1"$'\n'}"
+      text="${text%%"# spice-config-paths 1"$'\n'*}"
+      ;;
   esac
 
   while read -r kind a b rest; do
@@ -167,7 +198,7 @@ mf_parse() {
       RP) [ -n "$a" ] && MF_RESERVED_PREFIX="${MF_RESERVED_PREFIX}${a}:" ;;
     esac
   done <<EOF
-$1
+$text
 EOF
 
   MF_CMDS="${MF_CMDS}${MF_REC}"
@@ -367,14 +398,15 @@ mf_under_identity_mount() {
 # from a shell script would mean shipping a parser in bash, or guessing which values are
 # paths, and guessing is how a run ends up writing its output inside a container that is
 # about to be discarded. So the CLI reads them, in the same round-trip that produces the
-# manifest, and lists them here as `P <path>` lines.
+# manifest, as a `# spice-config-paths 1` section of `P <path>` lines, which mf_parse
+# hands over verbatim as MF_CONFIG_PATHS, read here.
 #
 # They go through `mount_path`, exactly as an argument would: the same deduplication, the
 # same identity mounts, and the same relocation when a path would otherwise hide part of
 # the image. Nothing is rewritten afterwards, though — the value stays inside the config
 # file, where the CLI reads it, so it has to be reachable at the path the user wrote.
 mount_config_paths() {
-  local text="$1" line value
+  local line value
   while IFS= read -r line; do
     case "$line" in
       "P "*) value="${line#P }" ;;
@@ -390,7 +422,7 @@ mount_config_paths() {
       echo "WARN  ⚠️  $value is mounted at $MF_RESULT inside the container; a setting that names it may not resolve." >&2
     fi
   done <<EOF
-$text
+$MF_CONFIG_PATHS
 EOF
   return 0
 }

@@ -368,6 +368,25 @@ O spice/registry/cbom --output value path create=self
     return $path
   }
 
+  # Write a manifest carrying a config-paths section naming the given paths — what
+  # the image reports when asked about a config file. Mirrors
+  # use_config_paths_manifest in spice.bats; keep the two in step.
+  function New-ConfigPathsManifest([string[]]$Paths) {
+    $path = Join-Path $script:TestDir 'config.path-manifest'
+    $lines = @(
+      '# spice-path-manifest 1', 'V 1', 'G test-fixture',
+      'R /', 'R /etc', 'R /opt', 'R /usr', 'R /var',
+      'C spice', 'C spice/survey', 'C spice/survey/inventory',
+      'O spice --config value path create=parent',
+      'P spice/survey/inventory 0 value',
+      'P spice/survey/inventory 1 value path exists',
+      '', '# spice-config-paths 1'
+    )
+    foreach ($p in $Paths) { $lines += "P $p" }
+    ($lines -join "`n") | Set-Content -LiteralPath $path -Encoding ascii
+    return $path
+  }
+
   # ── Helper: run the wrapper with mock docker and parse output ────────────
   function Invoke-SpiceWrapper {
     [CmdletBinding()]
@@ -415,7 +434,7 @@ O spice/registry/cbom --output value path create=self
     try {
       # Reset LASTEXITCODE by running a trivial native command that exits 0
       if ($IsWindows -or -not (Test-Path variable:IsWindows)) { cmd /c "exit /b 0" } else { true }
-      $rawLines = @(& $script:WrapperScript @Arguments 2>&1 | ForEach-Object { "$_" })
+      $rawLines = @(& $script:WrapperScript @Arguments *>&1 | ForEach-Object { "$_" })
       $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
 
     } catch {
@@ -1074,6 +1093,59 @@ if (`$jto -match 'settings=([^,]+)') {
       } finally {
         Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
       }
+    }
+  }
+
+  # ── Configuration-file paths ─────────────────────────────────────────────
+
+  Context 'Configuration-file paths' {
+    It 'a path the configuration file names is mounted' {
+      $out = Join-Path $script:TestDir 'out'
+      $manifest = New-ConfigPathsManifest @((Join-Path $out 'staging'))
+      $r = Invoke-SpiceWrapper -PathManifest $manifest -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      # create=parent, like a path option: the directory above the value is created
+      # and mounted at its own path, so the CLI can create the value inside it.
+      $out | Should -Exist
+      $r.DockerRunArgs | Should -Contain "${out}:$(Convert-TestPathToDockerPath $out)"
+    }
+
+    It 'a config path under a reserved directory is relocated, with a warning' {
+      if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        Set-ItResult -Skipped -Because 'reserved directories are image paths; the host has no /etc on Windows'
+        return
+      }
+      $manifest = New-ConfigPathsManifest @('/etc/spice-test-staging')
+      $r = Invoke-SpiceWrapper -PathManifest $manifest -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $relocated = $r.DockerRunArgs | Where-Object { $_ -match '^/etc:/mnt/spice/\d+$' }
+      $relocated | Should -Not -BeNullOrEmpty
+      # The value stays inside the config file, where the CLI will read it verbatim,
+      # so the user is told it will not resolve where they wrote it.
+      $warned = $r.RawOutput | Where-Object { $_ -match 'WARN.*/etc/spice-test-staging is mounted at /mnt/spice/' }
+      $warned | Should -Not -BeNullOrEmpty
+    }
+
+    It 'positional records are not mistaken for config paths' {
+      # Both are `P …` lines; only those below the config-paths header are paths. A
+      # manifest with positionals and no section must mount nothing extra.
+      $manifest = Join-Path $script:TestDir 'positionals.path-manifest'
+      @'
+# spice-path-manifest 1
+V 1
+C spice
+C spice/survey
+C spice/survey/inventory
+P spice/survey/inventory 0 value
+P spice/survey/inventory 1 value path exists
+'@ | Set-Content -LiteralPath $manifest -Encoding ascii
+      Push-Location $script:TestDir
+      try {
+        $r = Invoke-SpiceWrapper -PathManifest $manifest -Arguments @('survey', 'inventory', 'myapp', './input')
+        $r.ExitCode | Should -Be 0
+        (Join-Path $script:TestDir 'spice') | Should -Not -Exist
+        ($r.DockerRunArgs | Where-Object { $_ -match 'spice/survey' }) | Should -BeNullOrEmpty
+      } finally { Pop-Location }
     }
   }
 }

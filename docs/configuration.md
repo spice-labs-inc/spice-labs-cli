@@ -166,13 +166,15 @@ how a run ends up writing its output inside a container that is about to be disc
 So the CLI reads them, in the same round-trip that produces the path manifest:
 
 ```
-docker run --rm -v <config>:<config> <image> path-manifest --config <config>
+docker run --rm -v <config>:/mnt/spice/config.toml:ro <image> path-manifest --config /mnt/spice/config.toml
 ```
 
 One call answers both questions, because the round-trip is ~0.36s and almost all of it is
 container and JVM startup — asking twice would double the cost of something one call can
 carry. The result is cached against the image ID *and* a digest of the config file, so an
-unchanged config costs nothing at all and an edited one costs one round-trip.
+unchanged config costs nothing at all and an edited one costs one round-trip. The file is
+mounted at a neutral path rather than its own for this call, because one of the places it
+is looked for is `/etc/xdg`, and mounting under `/etc` would hide part of the image.
 
 Which values are paths is **declared, not inferred**: a plugin lists them through
 `SpiceCommandPlugin.configurationPathKeys()`, so nobody maintains a second copy of a schema

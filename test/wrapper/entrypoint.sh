@@ -7,12 +7,45 @@
 # entrypoint may run as a non-root user. All writes must handle
 # permission errors gracefully.
 
+# `path-manifest --config <file>`: the stand-in for the CLI's own manifest command.
+# Answered only when asked about a config file, so the no-config tests keep
+# exercising an image that does not know the command at all. Each line of the file
+# is taken as a path — the test's stand-in for the TOML parser — and the file is
+# read where the wrapper mounted it, which is what proves the mount.
+if [ "${1:-}" = "path-manifest" ] && [ "${2:-}" = "--config" ] && [ -r "${3:-}" ]; then
+  cat <<'MANIFEST'
+# spice-path-manifest 1
+V 1
+R /
+R /etc
+R /opt
+R /usr
+R /var
+C spice
+C spice/survey
+C spice/survey/inventory
+O spice --config value path create=parent
+P spice/survey/inventory 0 value
+P spice/survey/inventory 1 value path exists
+
+# spice-config-paths 1
+MANIFEST
+  while IFS= read -r line; do
+    [ -n "$line" ] && echo "P $line"
+  done < "$3"
+  exit 0
+fi
+
 echo "===SPICE_TEST_BEGIN==="
 
 # Echo each arg on its own line
 for arg in "$@"; do
   echo "ARG:${arg}"
 done
+
+# Echo every mountpoint, so a test can assert a bind mount exists rather than
+# infer it from what the container managed to write there.
+awk '{print "MOUNT:" $2}' /proc/mounts 2>/dev/null
 
 # Echo env vars the wrapper is responsible for passing
 echo "ENV:SPICE_PASS=${SPICE_PASS:-}"
