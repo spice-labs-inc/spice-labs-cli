@@ -92,9 +92,10 @@
              version is not what decides compatibility: SpiceContext.API_VERSION is, and
              `spice` mounts a plugin only when that plugin's apiVersion() equals its own
              exactly (passClaims() carries the pass's claims; configuration() carries the
-             groups a plugin claimed). A pom version can therefore move without the
-             contract moving, or the reverse, so a plugin built against a different
-             API_VERSION fails to mount at runtime rather than failing to compile. -->
+             groups a plugin claimed; configurationPathKeys() names the settings the
+             wrapper must mount). A pom version can therefore move without the contract
+             moving, or the reverse, so a plugin built against a different API_VERSION
+             fails to mount at runtime rather than failing to compile. -->
         <dependency>
             <groupId>io.spicelabs</groupId>
             <artifactId>spice-plugin-api</artifactId>

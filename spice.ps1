@@ -554,6 +554,7 @@ O spice/generate-completion -V flag
 O spice/generate-completion --version flag
 C spice/generate-powershell-completion
 C spice/path-manifest
+O spice/path-manifest --config value path create=parent
 C spice/config
 O spice/config -h flag
 O spice/config --help flag

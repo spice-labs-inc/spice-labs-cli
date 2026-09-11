@@ -84,6 +84,7 @@ public final class PluginLoader {
         // anything executes, which is when a plugin reads its configuration.
         List<String> claimed = safeGroups(plugin, id);
         CLAIMED_GROUPS.addAll(claimed);
+        CONFIG_PATH_KEYS.addAll(safePathKeys(plugin, id));
         PluginContext pluginContext = new PluginContext(context, runConfiguration, claimed);
         Object command = plugin.command(pluginContext);
         if (command == null) {
@@ -153,6 +154,14 @@ public final class PluginLoader {
   private static final Set<String> MOUNTED_COMMANDS =
       ConcurrentHashMap.newKeySet();
 
+  private static final Set<String> CONFIG_PATH_KEYS =
+      ConcurrentHashMap.newKeySet();
+
+  /** Path-valued configuration keys declared by the plugins mounted in this run. */
+  static List<String> configurationPathKeys() {
+    return List.copyOf(CONFIG_PATH_KEYS);
+  }
+
   /** Groups claimed by the plugins mounted in this run. */
   static List<String> claimedGroups() {
     return List.copyOf(CLAIMED_GROUPS);
@@ -179,6 +188,19 @@ public final class PluginLoader {
       }
     } catch (Throwable e) {
       log.warn("Plugin '{}' could not name its configuration groups: {}", id, e.toString());
+    }
+    return List.of();
+  }
+
+  /** The path keys a plugin declares, or none if it cannot say. See {@link #safeGroups}. */
+  private static List<String> safePathKeys(SpiceCommandPlugin plugin, String id) {
+    try {
+      List<String> keys = plugin.configurationPathKeys();
+      if (keys != null) {
+        return keys;
+      }
+    } catch (Throwable e) {
+      log.warn("Plugin '{}' could not name its path settings: {}", id, e.toString());
     }
     return List.of();
   }
