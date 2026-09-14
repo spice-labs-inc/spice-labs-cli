@@ -32,6 +32,12 @@ setup() {
   TEST_TMPDIR="$(mktemp -d)"
   mkdir -p "$TEST_TMPDIR/input"
   echo "test-content" > "$TEST_TMPDIR/input/file.txt"
+
+  # Config-file discovery looks in XDG locations; point both at empty directories so
+  # a config file on the developer's machine cannot leak into a test. Tests that
+  # need one create it under XDG_CONFIG_HOME.
+  export XDG_CONFIG_HOME="$TEST_TMPDIR/xdg"
+  export XDG_CONFIG_DIRS="$TEST_TMPDIR/xdg-dirs"
 }
 
 teardown() {
@@ -88,6 +94,56 @@ refute_arg() {
     echo "did not expect container arg: $1"
     return 1
   }
+}
+
+# Extract MOUNT: lines — every mountpoint the test entrypoint saw
+container_mounts() {
+  local in_block=0
+  while IFS= read -r line; do
+    case "$line" in
+      "===SPICE_TEST_BEGIN===") in_block=1 ;;
+      "===SPICE_TEST_END===")  in_block=0 ;;
+      MOUNT:*) [ "$in_block" -eq 1 ] && echo "${line#MOUNT:}" ;;
+    esac
+  done <<< "$output"
+}
+
+# Assert that a directory was bind-mounted at this container path
+assert_mount() {
+  container_mounts | grep -qxF -- "$1" || {
+    echo "expected mount at: $1"
+    echo "actual mounts:"
+    container_mounts | sed 's/^/  /'
+    return 1
+  }
+}
+
+# Point the wrapper at a manifest carrying a config-paths section naming the given
+# paths — what the image reports when asked about a config file.
+use_config_paths_manifest() {
+  export SPICE_PATH_MANIFEST="$TEST_TMPDIR/config.path-manifest"
+  {
+    cat <<'MANIFEST'
+# spice-path-manifest 1
+V 1
+G test-fixture
+R /
+R /etc
+R /opt
+R /usr
+R /var
+C spice
+C spice/survey
+C spice/survey/inventory
+O spice --config value path create=parent
+P spice/survey/inventory 0 value
+P spice/survey/inventory 1 value path exists
+
+# spice-config-paths 1
+MANIFEST
+    local p
+    for p in "$@"; do echo "P $p"; done
+  } > "$SPICE_PATH_MANIFEST"
 }
 
 # Point the wrapper at a manifest describing the `registry` plugin, standing in for
@@ -870,4 +926,113 @@ MANIFEST
     container_args | sed 's/^/  /'
     return 1
   }
+}
+
+# ── Configuration-file paths ─────────────────────────────────────────────────
+
+@test "a path the configuration file names is mounted" {
+  use_config_paths_manifest "$TEST_TMPDIR/out/staging"
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  # create=parent, like a path option: the directory above the value is created and
+  # mounted at its own path, so the CLI can create the value inside it.
+  [ -d "$TEST_TMPDIR/out" ]
+  assert_mount "$TEST_TMPDIR/out"
+}
+
+@test "a config path under a reserved directory is relocated, with a warning" {
+  use_config_paths_manifest /etc/spice-test-staging
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  container_mounts | grep -q '^/mnt/spice/' || {
+    echo "expected a relocated mountpoint; actual mounts:"
+    container_mounts | sed 's/^/  /'
+    return 1
+  }
+  # The value stays inside the config file, where the CLI will read it verbatim, so
+  # the user is told it will not resolve where they wrote it.
+  [[ "$output" == *"WARN"*"/etc/spice-test-staging is mounted at /mnt/spice/"* ]]
+}
+
+@test "positional records are not mistaken for config paths" {
+  # Both are `P …` lines; only those below the config-paths header are paths. A
+  # manifest with positionals and no section must mount nothing extra.
+  export SPICE_PATH_MANIFEST="$TEST_TMPDIR/positionals.path-manifest"
+  cat > "$SPICE_PATH_MANIFEST" <<'MANIFEST'
+# spice-path-manifest 1
+V 1
+C spice
+C spice/survey
+C spice/survey/inventory
+P spice/survey/inventory 0 value
+P spice/survey/inventory 1 value path exists
+MANIFEST
+  pushd "$TEST_TMPDIR" > /dev/null
+  run "$WRAPPER" survey inventory myapp ./input
+  popd > /dev/null
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEST_TMPDIR/spice" ]
+  ! container_mounts | grep -q 'spice/survey'
+}
+
+@test "the config file is read in the manifest round-trip and its paths mounted" {
+  unset SPICE_SKIP_MANIFEST_REFRESH
+  export SPICE_CACHE_DIR="$TEST_TMPDIR/cache"
+  # The test image answers path-manifest --config by listing each line of the file
+  # as a path — read at the neutral path the wrapper mounts it at.
+  mkdir -p "$XDG_CONFIG_HOME/spice"
+  echo "$TEST_TMPDIR/out/staging" > "$XDG_CONFIG_HOME/spice/config.toml"
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_arg "--config"
+  assert_arg "$XDG_CONFIG_HOME/spice/config.toml"
+  assert_mount "$TEST_TMPDIR/out"
+  # Cached against the image id and a digest of the file, so an unchanged config
+  # costs nothing next time.
+  local image_id crc
+  image_id="$(docker image inspect --format '{{.Id}}' "$TEST_IMAGE")"
+  crc="$(cksum < "$XDG_CONFIG_HOME/spice/config.toml" | cut -d' ' -f1)"
+  [ -s "$SPICE_CACHE_DIR/path-manifest/${image_id#sha256:}-${crc}" ]
+  grep -q "^P $TEST_TMPDIR/out/staging\$" "$SPICE_CACHE_DIR/path-manifest/${image_id#sha256:}-${crc}"
+}
+
+@test "the manifest cache is keyed by the config file's digest, not the image alone" {
+  unset SPICE_SKIP_MANIFEST_REFRESH
+  export SPICE_CACHE_DIR="$TEST_TMPDIR/cache"
+  mkdir -p "$SPICE_CACHE_DIR/path-manifest" "$XDG_CONFIG_HOME/spice"
+  echo "$TEST_TMPDIR/out/staging" > "$XDG_CONFIG_HOME/spice/config.toml"
+  local image_id crc
+  image_id="$(docker image inspect --format '{{.Id}}' "$TEST_IMAGE")"
+  crc="$(cksum < "$XDG_CONFIG_HOME/spice/config.toml" | cut -d' ' -f1)"
+  # An entry keyed by the image alone knows nothing of this config file and must
+  # be ignored once one is in play …
+  cat > "$SPICE_CACHE_DIR/path-manifest/${image_id#sha256:}" <<'MANIFEST'
+# spice-path-manifest 1
+V 1
+C spice
+C spice/survey
+C spice/survey/inventory
+O spice --config value path create=parent
+P spice/survey/inventory 0 value
+P spice/survey/inventory 1 value path exists
+MANIFEST
+  # … while the one keyed by image and digest is consulted: it names a different
+  # path from the file, which is how the test tells the two apart.
+  cat > "$SPICE_CACHE_DIR/path-manifest/${image_id#sha256:}-${crc}" <<MANIFEST
+# spice-path-manifest 1
+V 1
+C spice
+C spice/survey
+C spice/survey/inventory
+O spice --config value path create=parent
+P spice/survey/inventory 0 value
+P spice/survey/inventory 1 value path exists
+
+# spice-config-paths 1
+P $TEST_TMPDIR/cached/staging
+MANIFEST
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  assert_mount "$TEST_TMPDIR/cached"
+  ! container_mounts | grep -qxF "$TEST_TMPDIR/out"
 }

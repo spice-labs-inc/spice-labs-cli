@@ -112,6 +112,8 @@ $script:MfInherited = @{}
 $script:MfFlat = @{}
 $script:MfReservedExact = @{}
 $script:MfReservedPrefix = @()
+$script:MfConfigPaths = ""   # the `# spice-config-paths` section, verbatim — see Mount-ConfigPaths
+$script:MfConfigFile = ""    # set by the wrapper before Mf-Load; read by Mf-Refresh
 
 $script:MfArgs = @()
 $script:MfVolumes = @()
@@ -161,6 +163,12 @@ function Mf-DataDir {
 
 # Return the manifest for $imageRef, cached by image ID so a `docker pull`
 # invalidates it automatically. Returns "" on any failure.
+#
+# When a configuration file is in play ($script:MfConfigFile), the same round-trip
+# also asks which paths that file names, and the key gains a digest of the file: an
+# unchanged config costs nothing, an edited one costs one `docker run`. The file is
+# mounted at a neutral path rather than its own, because one of the places it is
+# looked for on Unix is /etc/xdg, and mounting under /etc is what Mf-Reserved forbids.
 function Mf-Refresh {
   if ($env:SPICE_SKIP_MANIFEST_REFRESH -eq '1') { return "" }
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return "" }
@@ -169,13 +177,27 @@ function Mf-Refresh {
   $imageId = (docker image inspect --format '{{.Id}}' "$imageRef" 2>$null | Select-Object -First 1)
   if (-not $imageId) { return "" }
 
+  $config = $script:MfConfigFile
+  $digest = ""
+  $configMount = @()
+  $configArgs = @()
+  if ($config -and (Test-Path -LiteralPath $config -PathType Leaf)) {
+    try { $digest = (Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash.ToLower() } catch { $digest = "" }
+  }
+  if ($digest) {
+    $configMount = @('-v', "${config}:/mnt/spice/config.toml:ro")
+    $configArgs = @('--config', '/mnt/spice/config.toml')
+  }
+
   $cacheDir = Mf-CacheDir
-  $cacheFile = Join-Path $cacheDir ($imageId -replace '^sha256:', '')
+  $cacheName = ($imageId -replace '^sha256:', '')
+  if ($digest) { $cacheName += "-$digest" }
+  $cacheFile = Join-Path $cacheDir $cacheName
   if (Test-Path -LiteralPath $cacheFile) {
     try { return (Get-Content -LiteralPath $cacheFile -Raw) } catch { return "" }
   }
 
-  $text = (docker run --rm @pullFlag "$imageRef" path-manifest 2>$null) -join "`n"
+  $text = (docker run --rm @pullFlag @configMount "$imageRef" path-manifest @configArgs 2>$null) -join "`n"
   if (-not $text -or -not ($text -match '(?m)^# spice-path-manifest ')) { return "" }
 
   try {
@@ -203,6 +225,7 @@ function Mf-Parse($text) {
   $script:MfFlat = @{}
   $script:MfReservedExact = @{}
   $script:MfReservedPrefix = @()
+  $script:MfConfigPaths = ""
 
   # Matched anywhere rather than at the start: a warning logged to stdout inside
   # the container would otherwise be enough to reject an otherwise good manifest.
@@ -210,6 +233,15 @@ function Mf-Parse($text) {
   # endings git checked it out with — CRLF on Windows — and `$` in a .NET regex
   # matches before the `\n`, i.e. after the `\r`.
   if (-not $text -or -not ($text -match '(?m)^# spice-path-manifest 1\r?$')) { return }
+
+  # The config-paths section is split off whole for Mount-ConfigPaths rather than
+  # read here: its `P <path>` lines look like the positional records above them,
+  # and a path may contain spaces where a record never does.
+  $sectionAt = $text.IndexOf('# spice-config-paths 1')
+  if ($sectionAt -ge 0) {
+    $script:MfConfigPaths = $text.Substring($sectionAt + '# spice-config-paths 1'.Length)
+    $text = $text.Substring(0, $sectionAt)
+  }
 
   $firstCmd = ""
   foreach ($rawLine in ($text -split "`r?`n")) {
@@ -388,6 +420,38 @@ function Mount-Path($value, $create, $mustExist) {
 
   if ($abs -eq $dirAbs) { return $target }
   return ($target.TrimEnd('/') + '/' + (Split-Path -Leaf $value))
+}
+
+# ── Configuration-file paths ─────────────────────────────────────────────────
+
+# Mount the paths a configuration file names.
+#
+# The wrapper mounts what it can see, and it cannot see inside a TOML file. So the
+# CLI reads them, in the same round-trip that produces the manifest, as a
+# `# spice-config-paths 1` section of `P <path>` lines, which Mf-Parse hands over
+# verbatim as $script:MfConfigPaths.
+#
+# They go through Mount-Path, exactly as an argument would: the same deduplication,
+# the same identity mounts, and the same relocation when a path would otherwise
+# hide part of the image. Nothing is rewritten afterwards, though — the value stays
+# inside the config file, where the CLI reads it, so it has to be reachable at the
+# path the user wrote.
+function Mount-ConfigPaths($text) {
+  if (-not $text) { return }
+  foreach ($rawLine in ($text -split "`r?`n")) {
+    $line = $rawLine.TrimEnd()
+    if (-not $line.StartsWith('P ')) { continue }
+    $value = $line.Substring(2)
+    if (-not $value) { continue }
+    $result = Mount-Path $value 'parent' $false
+    # A relocated path is one the container cannot see where the config file says
+    # it is. Warn rather than fail: the CLI will report it properly, in its own
+    # words, and a wrapper that refuses a run over a mount detail it cannot fix is
+    # worse than one that says what it did.
+    if ($result -ne (Convert-ToDockerPath $value)) {
+      Write-Host "WARN  ⚠️  $value is mounted at $result inside the container; a setting that names it may not resolve."
+    }
+  }
 }
 
 # ── Argument walking ─────────────────────────────────────────────────────────
@@ -703,6 +767,53 @@ if (-not $IsWindows) {
   } catch {}
 }
 
+# ── Configuration file ───────────────────────────────────────────────────────
+#
+# Discovery runs HERE, on the host, not in the container: the container is given
+# neither HOME nor XDG_*, so `spice` running inside it would look in the
+# container's home rather than the user's. Resolving here and passing the result
+# as --config also means the file is bind-mounted like any other path argument.
+#
+# Windows-native locations, not XDG: %APPDATA% (per-user, roaming) then
+# %PROGRAMDATA% (machine-wide). Roaming rather than %LOCALAPPDATA% because
+# configuration is user intent and should follow the user between machines,
+# unlike the manifest cache above. First match wins.
+function Get-SpiceConfigFile {
+  foreach ($root in @($env:APPDATA, $env:PROGRAMDATA)) {
+    if ($root) {
+      $candidate = Join-Path (Join-Path $root 'spice') 'config.toml'
+      if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+  }
+  return $null
+}
+
+# The file this run will read — named by the user, or discovered — is also what
+# the manifest round-trip reads, to learn which paths it names. Resolved before
+# Mf-Load for that reason; it joins the arguments further down, once the runtime
+# survey branch, which parses its own, is out of the way.
+$hasConfigArg = $false
+$script:MfConfigFile = ""
+$prev = ""
+foreach ($a in $args) {
+  if ($a -is [string] -and $a.StartsWith('--config=')) {
+    $hasConfigArg = $true
+    $script:MfConfigFile = $a.Substring('--config='.Length)
+    break
+  }
+  if ($prev -eq '--config') {
+    $hasConfigArg = $true
+    $script:MfConfigFile = "$a"
+    break
+  }
+  if ($a -eq '--config') { $hasConfigArg = $true }
+  $prev = "$a"
+}
+if (-not $script:MfConfigFile) {
+  $discovered = Get-SpiceConfigFile
+  if ($discovered) { $script:MfConfigFile = $discovered }
+}
+
 # ── Path manifest ────────────────────────────────────────────────────────────
 # Load before any argument walking: everything below asks the manifest which
 # arguments are paths rather than deciding for itself.
@@ -956,40 +1067,17 @@ if ($isRuntimeSurvey) {
 # directory, which is remapped and recorded in SPICE_PATH_MAP for the CLI to
 # reverse in its messages.
 
-# ── Configuration file ───────────────────────────────────────────────────────
-#
-# Discovery runs HERE, on the host, not in the container: the container is given
-# neither HOME nor XDG_*, so `spice` running inside it would look in the
-# container's home rather than the user's. Resolving here and passing the result
-# as --config also means the file is bind-mounted like any other path argument.
-#
-# Windows-native locations, not XDG: %APPDATA% (per-user, roaming) then
-# %PROGRAMDATA% (machine-wide). Roaming rather than %LOCALAPPDATA% because
-# configuration is user intent and should follow the user between machines,
-# unlike the manifest cache above. First match wins.
-function Get-SpiceConfigFile {
-  foreach ($root in @($env:APPDATA, $env:PROGRAMDATA)) {
-    if ($root) {
-      $candidate = Join-Path (Join-Path $root 'spice') 'config.toml'
-      if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
-    }
-  }
-  return $null
+# The discovered configuration file, only when the user did not name one themselves.
+if (-not $hasConfigArg -and $script:MfConfigFile) {
+  # Before the subcommand: --config is spice's own option, not inherited.
+  $args = @('--config', $script:MfConfigFile) + @($args)
 }
 
-# Only when the user did not name one themselves.
-$hasConfigArg = $false
-foreach ($a in $args) {
-  if ($a -eq '--config' -or ($a -is [string] -and $a.StartsWith('--config='))) {
-    $hasConfigArg = $true
-    break
-  }
-}
-if (-not $hasConfigArg) {
-  $spiceConfigFile = Get-SpiceConfigFile
-  # Before the subcommand: --config is spice's own option, not inherited.
-  if ($spiceConfigFile) { $args = @('--config', $spiceConfigFile) + @($args) }
-}
+# Mount whatever the configuration file names. Any tier of Mf-Load may carry the
+# section — the image does, and so may an override — and one that does not simply
+# mounts nothing extra: degraded in the same way, and for the same reason, as a
+# stale manifest.
+Mount-ConfigPaths $script:MfConfigPaths
 
 Walk-Args $args
 
