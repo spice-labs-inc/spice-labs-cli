@@ -64,7 +64,7 @@ jobs:
             "${TAG_NAME}" /tmp/all-tags.txt >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 21 and GitHub Maven auth
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "21"
@@ -109,7 +109,7 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
       - name: Upload wrapper scripts and completions to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             spice
@@ -128,7 +128,7 @@ jobs:
       id-token: write
     steps:
       - name: Set Up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         with:
           platforms: ${{ env.PLATFORMS }}
 
@@ -147,7 +147,7 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker Hub + GHCR
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: |
             ${{ env.PUBLIC_DOCKER_IMAGE }}
@@ -159,13 +159,13 @@ jobs:
             type=raw,value=latest,enable=${{ steps.prerelease.outputs.is_prerelease == 'false' }}
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -175,7 +175,7 @@ jobs:
         # Build from source so the entire image carries the release version
         # (the Dockerfile runs `mvn versions:set -DnewVersion=${VERSION}` before
         # `mvn package`). Multi-arch; pushes to both registries in one build.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           platforms: ${{ env.PLATFORMS }}
           context: .
@@ -206,10 +206,10 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -219,7 +219,7 @@ jobs:
         # FROM the just-released OSS image (SPICE_TAG=vX.Y.Z), which already
         # carries the released fat JAR. Layers allspice's plugins on top.
         # The allspice base image is pinned by digest in Dockerfile.enterprise.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.enterprise
@@ -250,10 +250,10 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -264,7 +264,7 @@ jobs:
         # carries the released fat JAR. Extends the enterprise image with
         # report_cli and rogues_gallery for CBOM generation. The allspice base
         # image is pinned by digest in Dockerfile.federal.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.federal
