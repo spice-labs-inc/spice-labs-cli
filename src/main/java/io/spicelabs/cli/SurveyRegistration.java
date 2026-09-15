@@ -29,6 +29,13 @@ final class SurveyRegistration {
 
   static Context register(String spicePass, String jobType, String subject, Map<String, Object> jsonTags)
       throws Exception {
+    // Belt and braces: the commands already imply --no-upload when airgapped, so reaching
+    // here would be a bug; refuse rather than open a connection.
+    Edition edition = Edition.current();
+    if (edition.airgapped()) {
+      throw new IllegalStateException(
+          "survey registration is disabled in the " + edition.displayName() + " edition: it never uploads");
+    }
     String uploadServer = new SpicePassDecoder(spicePass).getUploadServer();
     if (uploadServer == null || uploadServer.isBlank()) {
       throw new IllegalArgumentException("SPICE_PASS is missing the x-upload-server claim");

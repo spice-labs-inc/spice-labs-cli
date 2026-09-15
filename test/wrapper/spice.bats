@@ -262,6 +262,78 @@ MANIFEST
   assert_arg "myapp"
 }
 
+@test "--features ot switches to ot image and strips flag" {
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest"
+
+  run "$WRAPPER" --features ot registry discover
+  [ "$status" -eq 0 ]
+  assert_arg "registry"
+  assert_arg "discover"
+  refute_arg "--features"
+  refute_arg "ot"
+}
+
+@test "--features=ot switches to ot image and strips flag" {
+  unset SPICE_IMAGE
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest"
+
+  run "$WRAPPER" --features=ot registry discover
+  [ "$status" -eq 0 ]
+  assert_arg "registry"
+  assert_arg "discover"
+  refute_arg "--features"
+  refute_arg "ot"
+}
+
+@test "runtime survey: refused when the image manifest has no survey runtime" {
+  # An edition without runtime surveys (the manifest describing the image lists none), so
+  # the wrapper must refuse before copying the agent and JFR settings out of the image.
+  export SPICE_PATH_MANIFEST="$TEST_TMPDIR/no-runtime.path-manifest"
+  cat > "$SPICE_PATH_MANIFEST" <<'MANIFEST'
+# spice-path-manifest 1
+V 1
+G test-fixture
+R /
+C spice
+C spice/registry
+C spice/registry/discover
+O spice/registry/discover --config value path create=parent
+MANIFEST
+
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload -- java -version
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"'survey runtime' is not available in this image"* ]]
+}
+
+@test "runtime survey: allowed when the image manifest has survey runtime" {
+  export SPICE_PATH_MANIFEST="$TEST_TMPDIR/with-runtime.path-manifest"
+  cat > "$SPICE_PATH_MANIFEST" <<'MANIFEST'
+# spice-path-manifest 1
+V 1
+G test-fixture
+R /
+C spice
+C spice/survey
+C spice/survey/runtime
+O spice/survey/runtime --output value path create=self
+O spice/survey/runtime --anchor value path create=parent
+MANIFEST
+
+  # Reaches the agent/JFC copy (which the mock image has none of) rather than the refusal.
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload -- java -version
+  [[ "$output" != *"is not available in this image"* ]]
+  [[ "$output" == *"does not support runtime surveys"* || "$output" == *"Preparing runtime survey"* ]]
+}
+
+@test "SPICE_DOCKER_NETWORK is passed to docker run" {
+  export SPICE_DOCKER_NETWORK=none
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input" --no-upload
+  [ "$status" -eq 0 ]
+  assert_arg "survey"
+  assert_arg "inventory"
+}
+
 @test "--features federal switches to federal image and strips flag" {
   unset SPICE_IMAGE
   docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest"

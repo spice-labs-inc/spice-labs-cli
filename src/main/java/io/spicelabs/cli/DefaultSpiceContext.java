@@ -17,8 +17,8 @@ package io.spicelabs.cli;
 
 import java.util.Optional;
 
-import io.spicelabs.cli.spi.SpicePassClaims;
 import io.spicelabs.cli.spi.SpiceContext;
+import io.spicelabs.cli.spi.SpicePassClaims;
 
 /**
  * The CLI's implementation of {@link SpiceContext} handed to plugins. Keeps plugin
@@ -37,18 +37,24 @@ final class DefaultSpiceContext implements SpiceContext {
   private final String version;
   private final String spicePass;
   private final SpicePassClaims passClaims;
+  private final Edition edition;
 
   // Package-private rather than private so a test can build one with a chosen pass; the class
   // itself is package-private, so this widens nothing beyond this package.
   DefaultSpiceContext(String version, String spicePass) {
+    this(version, spicePass, Edition.current());
+  }
+
+  DefaultSpiceContext(String version, String spicePass, Edition edition) {
     this.version = version;
     this.spicePass = spicePass;
     this.passClaims = PassClaims.of(spicePass);
+    this.edition = edition;
   }
 
   static DefaultSpiceContext create() {
     DefaultSpiceContext context = new DefaultSpiceContext(
-        SpiceLabsCLI.VersionProvider.getVersionString(), System.getenv("SPICE_PASS"));
+        SpiceLabsCLI.VersionProvider.getVersionString(), System.getenv("SPICE_PASS"), Edition.current());
     current = context;
     return context;
   }
@@ -76,6 +82,11 @@ final class DefaultSpiceContext implements SpiceContext {
   @Override
   public SpicePassClaims passClaims() {
     return passClaims;
+  }
+
+  @Override
+  public boolean airgapped() {
+    return edition.airgapped();
   }
 
   /**

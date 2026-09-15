@@ -116,16 +116,20 @@ MF_MOUNT_N=0
 # before manifests existed.
 mf_load() {
   local text installed
+  # Which tier answered: override | image | installed | embedded. Only the first two
+  # describe the image actually being run, so only they may be used to conclude that a
+  # command is absent from it.
+  MF_SOURCE="embedded"
 
   # 1. Explicit override (tests, air-gapped installs).
   if [ -n "${SPICE_PATH_MANIFEST:-}" ] && [ -f "${SPICE_PATH_MANIFEST}" ]; then
     text="$(cat "${SPICE_PATH_MANIFEST}" 2>/dev/null)" || text=""
-    if mf_parse "$text"; then return 0; fi
+    if mf_parse "$text"; then MF_SOURCE="override"; return 0; fi
   fi
 
   # 2. Per-image cache, refreshed from the image when cold.
   text="$(mf_refresh)" || text=""
-  if mf_parse "$text"; then return 0; fi
+  if mf_parse "$text"; then MF_SOURCE="image"; return 0; fi
 
   # 3. Manifest installed alongside the wrapper by install.sh. Each wrapper sets
   #    MF_INSTALLED_MANIFEST to its own file: loading another CLI's manifest
@@ -133,7 +137,7 @@ mf_load() {
   installed="${MF_INSTALLED_MANIFEST:-${XDG_DATA_HOME:-$HOME/.local/share}/spice/path-manifest}"
   if [ -f "$installed" ]; then
     text="$(cat "$installed" 2>/dev/null)" || text=""
-    if mf_parse "$text"; then return 0; fi
+    if mf_parse "$text"; then MF_SOURCE="installed"; return 0; fi
   fi
 
   # 4. Built-ins, embedded in this script at build time.
@@ -694,6 +698,10 @@ SPICE_EMBEDDED_MANIFEST
 # ── END GENERATED PATH MANIFEST ──
 
 SPICE_LABS_CLI_JAR="${SPICE_LABS_CLI_JAR:-/opt/spice-labs-cli/spice-labs-cli.jar}"
+# The container's network. `host` is the default because the CLI talks to the platform
+# and to registries; an airgapped edition, or a test proving a run needs no network at
+# all, sets SPICE_DOCKER_NETWORK=none.
+SPICE_DOCKER_NETWORK="${SPICE_DOCKER_NETWORK:-host}"
 IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
 TAG="${SPICE_IMAGE_TAG:-latest}"
 # If SPICE_IMAGE is set, use it verbatim (no tag appended). Otherwise build
@@ -706,6 +714,7 @@ fi
 
 # ── Feature flag parsing (must happen before Docker checks / image pull) ──────
 #
+# --features ot          → OT Pro image (allspice; airgapped; no runtime surveys)
 # --features enterprise  → enterprise image (allspice + sassafras)
 # --features federal      → federal image (enterprise + report_cli + rogues gallery)
 # Strip the flag so it is not forwarded to the CLI container.
@@ -732,6 +741,9 @@ done
 
 if [ -z "${SPICE_IMAGE:-}" ]; then
   case "${FEATURES}" in
+  ot)
+    IMAGE_REF="ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest"
+    ;;
   enterprise)
     IMAGE_REF="ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
     ;;
@@ -802,7 +814,7 @@ elif [ "$DEBUG_MODE" = "1" ]; then
     docker image inspect "$IMAGE_REF" >/dev/null 2>&1 || {
       echo "❌ Image $IMAGE_REF not found locally either."
       echo "   The image may not exist yet, or you may not have access."
-      echo "   For enterprise/federal features, ensure --features matches an available image."
+      echo "   For ot/enterprise/federal features, ensure --features matches an available image."
       exit 1
     }
     echo "   Using local copy."
@@ -814,7 +826,7 @@ else
     docker image inspect "$IMAGE_REF" >/dev/null 2>&1 || {
       echo "❌ Image $IMAGE_REF not found locally either."
       echo "   The image may not exist yet, or you may not have access."
-      echo "   For enterprise/federal features, ensure --features matches an available image."
+      echo "   For ot/enterprise/federal features, ensure --features matches an available image."
       exit 1
     }
     echo "   Using local copy."
@@ -892,6 +904,20 @@ IS_RUNTIME_SURVEY=0
     [ "$arg" = "survey" ] && saw_survey=1 || saw_survey=0
   done
 }
+
+# A runtime survey runs the user's command on the *host*, with the agent and JFR settings
+# copied out of the image, so an image without them cannot do one. Say so before anything
+# runs rather than failing after the copy. Only a manifest that describes *this image* can
+# prove the command is absent from it: the one read out of the image, or one the caller
+# named explicitly (which is how an air-gapped install states the same thing). The
+# installed and embedded tiers describe some CLI, not this image, so they decide nothing.
+if [ "$IS_RUNTIME_SURVEY" = "1" ] \
+   && { [ "${MF_SOURCE:-}" = "image" ] || [ "${MF_SOURCE:-}" = "override" ]; } \
+   && ! mf_is_cmd "${MF_ROOT}/survey/runtime"; then
+  echo "❌ 'survey runtime' is not available in this image (${IMAGE_REF})"
+  echo "   Run 'spice survey --help' for the surveys it does have."
+  exit 2
+fi
 
 # ── Image survey detection (must happen before general arg parsing) ────────
 # `survey image` pulls the image with oras inside the container; oras reads the
@@ -1053,7 +1079,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   # Phase 2: Build JAVA_TOOL_OPTIONS
   RT_JFC="${RT_WORKDIR}/spice-jfr.jfc"
   if [ ! -f "$RT_JFC" ]; then
-    echo "❌ Failed to extract JFR settings from container"
+    echo "❌ This image does not support runtime surveys (no JFR settings in ${IMAGE_REF})"
     rm -rf "$RT_WORKDIR"
     exit 1
   fi
@@ -1066,7 +1092,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     RT_PROBES="${RT_WORKDIR}/probes.json"
     docker run --rm --entrypoint java \
       --user "$(id -u):$(id -g)" \
-      --network host \
+      --network "$SPICE_DOCKER_NETWORK" \
       ${PULL_FLAG:+$PULL_FLAG} \
       -e SPICE_PASS \
       "$IMAGE_REF" \
@@ -1130,7 +1156,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
 
   docker run --rm --entrypoint java \
     --user "$(id -u):$(id -g)" \
-    --network host \
+    --network "$SPICE_DOCKER_NETWORK" \
     ${PULL_FLAG:+$PULL_FLAG} \
     -v "${RT_WORKDIR}:${RT_WORKDIR}" \
     ${RT_ANCHOR_MOUNT[@]+"${RT_ANCHOR_MOUNT[@]}"} \
@@ -1194,7 +1220,7 @@ export SPICE_PATH_MAP
 
 exec docker run --rm \
   --user "$(id -u):$(id -g)" \
-  --network host \
+  --network "$SPICE_DOCKER_NETWORK" \
   ${PULL_FLAG:+$PULL_FLAG} \
   ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
   ${DOCKER_AUTH_ARGS[@]+"${DOCKER_AUTH_ARGS[@]}"} \

@@ -590,6 +590,42 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'myapp'
     }
 
+    It '--features ot switches to ot image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'ot', 'registry', 'discover')
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'ot'
+      $r.ContainerArgs | Should -Contain 'registry'
+      $r.ContainerArgs | Should -Contain 'discover'
+    }
+
+    It '--features=ot switches to ot image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=ot', 'registry', 'discover')
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest'
+      $r.ContainerArgs | Should -Not -Contain '--features'
+      $r.ContainerArgs | Should -Not -Contain 'ot'
+    }
+
+    It 'SPICE_DOCKER_NETWORK replaces the default host network' {
+      $env:SPICE_DOCKER_NETWORK = 'none'
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
+        $r.ExitCode | Should -Be 0
+        $r.DockerRunArgs | Should -Contain 'none'
+        $r.DockerRunArgs | Should -Not -Contain 'host'
+      } finally {
+        Remove-Item env:SPICE_DOCKER_NETWORK -ErrorAction SilentlyContinue
+      }
+    }
+
+    It 'the default container network is host' {
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.DockerRunArgs | Should -Contain 'host'
+    }
+
     It '--features federal switches to federal image and strips flag' {
       $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'federal', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0

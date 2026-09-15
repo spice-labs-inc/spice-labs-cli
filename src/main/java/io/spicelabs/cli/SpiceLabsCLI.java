@@ -138,7 +138,18 @@ public class SpiceLabsCLI implements Runnable {
 
   /** Build the command line with a configuration file already read. */
   static CommandLine newCommandLine(RunConfiguration runConfiguration) {
+    return newCommandLine(runConfiguration, Edition.current());
+  }
+
+  /**
+   * Build the command line for a given edition. The tree is pruned to the edition's features
+   * before plugins are mounted, so help, completion, the path manifest and the parser all
+   * describe the same commands. Tests pass an edition of their own; the CLI passes the one
+   * the jar's feature manifest names.
+   */
+  static CommandLine newCommandLine(RunConfiguration runConfiguration, Edition edition) {
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
+    EditionGate.apply(cmd, edition);
     cmd.setParameterExceptionHandler((ex, a) -> {
       CommandLine offending = ex.getCommandLine();
       // When a survey type (e.g. `static`) is not registered, picocli reports it
@@ -148,6 +159,13 @@ public class SpiceLabsCLI implements Runnable {
             .getUnmatched().toArray(new String[0]);
         if (unmatched.length > 0) {
           String first = unmatched[0];
+          // Case 0: `spice survey ...` in an edition that has no surveys at all.
+          if (isTopLevel(cmd, offending) && "survey".equals(first)
+              && !cmd.getSubcommands().containsKey("survey")) {
+            System.err.println("❌ Surveys are not available in the " + edition.displayName() + " edition.");
+            System.err.println("   Run 'spice --help' for the commands it has.");
+            return offending.getCommandSpec().exitCodeOnInvalidInput();
+          }
           // Case 1: `spice static ...` (without `survey`) — the user forgot the
           // `survey` parent or used a type that requires enterprise/federal.
           if (isTopLevel(cmd, offending) && isKnownSurveyType(first)) {
@@ -156,11 +174,14 @@ public class SpiceLabsCLI implements Runnable {
             return offending.getCommandSpec().exitCodeOnInvalidInput();
           }
           // Case 2: `spice survey static ...` — the survey type is not registered
-          // in this image.
+          // in this image (or the edition does not have it).
           if ("survey".equals(offending.getCommandName()) && isKnownSurveyType(first)) {
             System.err.println("❌ Unknown survey type: " + first);
             System.err.println("   Available types: "
                 + String.join(", ", offending.getSubcommands().keySet()));
+            if (edition.branded()) {
+              System.err.println("   Not available in the " + edition.displayName() + " edition.");
+            }
             System.err.println("   Run 'spice survey --help' for details.");
             return offending.getCommandSpec().exitCodeOnInvalidInput();
           }
@@ -211,6 +232,10 @@ public class SpiceLabsCLI implements Runnable {
   public static class VersionProvider implements CommandLine.IVersionProvider {
     @Override
     public String[] getVersion() throws Exception {
+      Edition edition = Edition.current();
+      if (edition.branded()) {
+        return new String[] { getVersionString(), getGitCommit(), edition.describe() };
+      }
       return new String[] { getVersionString(), getGitCommit() };
     }
 

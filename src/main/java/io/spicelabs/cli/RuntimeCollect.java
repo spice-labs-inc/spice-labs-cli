@@ -39,6 +39,12 @@ public class RuntimeCollect {
 
         // Probe config download mode: streams JSON to stdout, no file written
         if (args.length >= 1 && "--download-probes".equals(args[0])) {
+            if (context.airgapped()) {
+                // The wrapper treats a failed download as "native-only mode"; never touch the network.
+                System.err.println("Probe config download is disabled in the "
+                        + Edition.current().displayName() + " edition (airgapped)");
+                System.exit(1);
+            }
             String spicePass = context.spicePass().orElse(null);
             if (spicePass == null || spicePass.isBlank()) {
                 System.exit(1);

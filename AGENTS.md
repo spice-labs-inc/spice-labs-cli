@@ -37,6 +37,12 @@ so keep these rules when you write or change tests:
 
 ### Here
 
+- A distribution may narrow what `spice` can do by shipping `spice-edition.properties` on the
+  classpath (see `Edition`); that decides which commands exist and whether any upload path
+  does. Gate a new command in `EditionGate`, never with an `if` at the point of use, so
+  `--help`, completion and the path manifest agree with the parser. A build without the
+  manifest is unrestricted, which is what keeps a plain `mvn package` here unchanged, and
+  nothing in this repository should know any particular distribution's editions by name.
 - Downstream integration tests re-run the `SpiceLabsCLITest` cases (help, error texts, exit
   codes, output files) through the real `spice` wrapper by **method name**; keep those names
   stable, and when you add a user-visible behaviour, add its `SpiceLabsCLITest` method and

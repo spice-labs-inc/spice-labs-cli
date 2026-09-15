@@ -57,16 +57,20 @@ MF_MOUNT_N=0
 # before manifests existed.
 mf_load() {
   local text installed
+  # Which tier answered: override | image | installed | embedded. Only the first two
+  # describe the image actually being run, so only they may be used to conclude that a
+  # command is absent from it.
+  MF_SOURCE="embedded"
 
   # 1. Explicit override (tests, air-gapped installs).
   if [ -n "${SPICE_PATH_MANIFEST:-}" ] && [ -f "${SPICE_PATH_MANIFEST}" ]; then
     text="$(cat "${SPICE_PATH_MANIFEST}" 2>/dev/null)" || text=""
-    if mf_parse "$text"; then return 0; fi
+    if mf_parse "$text"; then MF_SOURCE="override"; return 0; fi
   fi
 
   # 2. Per-image cache, refreshed from the image when cold.
   text="$(mf_refresh)" || text=""
-  if mf_parse "$text"; then return 0; fi
+  if mf_parse "$text"; then MF_SOURCE="image"; return 0; fi
 
   # 3. Manifest installed alongside the wrapper by install.sh. Each wrapper sets
   #    MF_INSTALLED_MANIFEST to its own file: loading another CLI's manifest
@@ -74,7 +78,7 @@ mf_load() {
   installed="${MF_INSTALLED_MANIFEST:-${XDG_DATA_HOME:-$HOME/.local/share}/spice/path-manifest}"
   if [ -f "$installed" ]; then
     text="$(cat "$installed" 2>/dev/null)" || text=""
-    if mf_parse "$text"; then return 0; fi
+    if mf_parse "$text"; then MF_SOURCE="installed"; return 0; fi
   fi
 
   # 4. Built-ins, embedded in this script at build time.
