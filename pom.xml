@@ -60,7 +60,7 @@
         <logback.version>1.5.18</logback.version>
         <picocli.version>4.7.6</picocli.version>
         <slf4j.version>2.0.17</slf4j.version>
-        <spice-plugin-api.version>2.1.0</spice-plugin-api.version>
+        <spice-plugin-api.version>2.1.1</spice-plugin-api.version>
 
         <!-- Transitive convergence pins (see the dependencyManagement block below).
              spice-bom constrained these even though nothing here declares them
