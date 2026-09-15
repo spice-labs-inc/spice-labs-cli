@@ -19,8 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import io.spicelabs.cli.spi.SpicePassClaims;
 import io.spicelabs.cli.spi.SpiceContext;
+import io.spicelabs.cli.spi.SpicePassClaims;
 
 /**
  * The {@link SpiceContext} handed to one plugin: the shared run context, plus the
@@ -81,6 +81,11 @@ final class PluginContext implements SpiceContext {
   @Override
   public SpicePassClaims passClaims() {
     return shared.passClaims();
+  }
+
+  @Override
+  public boolean airgapped() {
+    return shared.airgapped();
   }
 
   @Override

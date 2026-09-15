@@ -593,9 +593,12 @@ $tag = if ($env:SPICE_IMAGE_TAG) { $env:SPICE_IMAGE_TAG } else { "latest" }
 # If SPICE_IMAGE is set, use it verbatim (no tag appended). Otherwise build
 # the ref from the resolved image and tag.
 $imageRef = if ($env:SPICE_IMAGE) { $env:SPICE_IMAGE } else { "${img}:${tag}" }
+# The container's network; see SPICE_DOCKER_NETWORK in `spice`.
+$script:SpiceDockerNetwork = if ($env:SPICE_DOCKER_NETWORK) { $env:SPICE_DOCKER_NETWORK } else { 'host' }
 
 # ── Feature flag parsing (must happen before Docker checks / image pull) ──────
 #
+# --features ot         → OT Pro image (allspice; airgapped; no runtime surveys)
 # --features enterprise → enterprise image (allspice + sassafras)
 # --features federal     → federal image (enterprise + report_cli + rogues gallery)
 # Strip the flag so it is not forwarded to the CLI container.
@@ -619,6 +622,7 @@ foreach ($arg in $args) {
 }
 if (-not $env:SPICE_IMAGE) {
   switch ($features) {
+    "ot"         { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest" }
     "enterprise" { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest" }
     "federal"    { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest" }
   }
@@ -866,7 +870,7 @@ if ($isRuntimeSurvey) {
     $rtProbes = Join-Path $rtWorkdir 'probes.json'
     $dlArgs = @('run', '--rm', '--entrypoint', 'java')
     $dlArgs += @($userFlag)
-    $dlArgs += @('--network', 'host')
+    $dlArgs += @('--network', $script:SpiceDockerNetwork)
     $dlArgs += @($pullFlag)
     $dlArgs += @('-e', "SPICE_PASS=$spicePass")
     $dlArgs += @("$imageRef")
@@ -926,7 +930,7 @@ if ($isRuntimeSurvey) {
 
   $p4Args = @('run', '--rm', '--entrypoint', 'java')
   $p4Args += @($userFlag)
-  $p4Args += @('--network', 'host')
+  $p4Args += @('--network', $script:SpiceDockerNetwork)
   $p4Args += @($pullFlag)
   $p4Args += @('-v', "${rtWorkdirHost}:${rtWorkdirDocker}")
   $p4Args += $rtAnchorMount
@@ -1025,7 +1029,7 @@ $ErrorActionPreference = 'Continue'
 docker run --rm `
   @userFlag `
   @pullFlag @dockerFlags `
-  --network host `
+  --network $script:SpiceDockerNetwork `
   @dockerAuthArgs `
   @volumes `
   @workdirFlag `

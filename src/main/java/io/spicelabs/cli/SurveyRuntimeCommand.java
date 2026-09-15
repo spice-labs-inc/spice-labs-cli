@@ -145,6 +145,13 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                     "Example: spice survey runtime my-app --jfr -- java -jar app.jar");
         }
 
+        // An airgapped edition never uploads nor downloads the probe configuration.
+        Edition edition = Edition.current();
+        if (edition.airgapped() && !noUpload) {
+            log.info("The {} edition never uploads; surveying locally.", edition.displayName());
+            noUpload = true;
+        }
+
         String spicePass = resolveSpicePass();
         if (!noUpload && !hasSpicePass(spicePass)) {
             throw new IllegalArgumentException(

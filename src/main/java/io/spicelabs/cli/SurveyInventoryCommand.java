@@ -175,6 +175,25 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       throw new IllegalArgumentException("Cannot use both --no-upload and --upload-only");
     }
 
+    // An airgapped edition never uploads: the upload options are refused with the reason,
+    // and a run that did not ask for --no-upload gets it, so nothing below reaches the
+    // platform (no SPICE_PASS needed, no registration, no status publishing, no upload).
+    Edition edition = Edition.current();
+    if (edition.airgapped()) {
+      if (uploadOnly) {
+        throw new IllegalArgumentException(
+            "--upload-only is not available in the " + edition.displayName() + " edition: it never uploads.");
+      }
+      if (gingerArgsRaw != null) {
+        throw new IllegalArgumentException(
+            "--upload-args is not available in the " + edition.displayName() + " edition: it never uploads.");
+      }
+      if (!noUpload) {
+        log.info("The {} edition never uploads; surveying locally.", edition.displayName());
+        noUpload = true;
+      }
+    }
+
     if (!Files.exists(input)) {
       throw new IllegalArgumentException("Input path does not exist: " + input);
     }
