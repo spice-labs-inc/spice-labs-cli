@@ -278,7 +278,7 @@
                         <phase>initialize</phase>
                     </execution>
                     <!-- A second copy under a file name unique to this artifact, so it survives
-                         being shaded into a larger jar (Surveyor reads it to pair the binary
+                         being shaded into a larger jar (consumers read it to pair the binary
                          with the test data of the same commit). -->
                     <execution>
                         <id>git-provenance</id>
