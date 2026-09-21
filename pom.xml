@@ -54,7 +54,7 @@
              -javaagent and never on the CLI's own classpath. -->
         <commons-lang3.version>3.19.0</commons-lang3.version>
         <coordinates.version>1.1.0</coordinates.version>
-        <ginger-j.version>0.4.0</ginger-j.version>
+        <ginger-j.version>0.4.3</ginger-j.version>
         <goatrodeo.version>0.18.0</goatrodeo.version>
         <java-jwt.version>4.4.0</java-jwt.version>
         <logback.version>1.5.18</logback.version>

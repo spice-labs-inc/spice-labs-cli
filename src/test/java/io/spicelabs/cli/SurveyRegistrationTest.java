@@ -46,8 +46,8 @@ class SurveyRegistrationTest {
             + "\",\"submission_timestamp\":\"2026-05-20T12:00:00Z\""
             + ",\"analyze_sub_job_id\":\"" + analyzeSubJobId + "\"}"));
 
-    // The pass's upload URL points at the mock server; ginger-j derives /surveys from it.
-    String uploadServer = server.url("/api/v1/org/o/project/p/bundle/upload").toString();
+    // The pass's upload URL points at the mock server; ginger-j derives /survey from it.
+    String uploadServer = server.url("/api/v1/project/p/bundle/upload").toString();
     String pass = passWithUploadServer(uploadServer);
 
     SurveyRegistration.Context ctx =
@@ -64,8 +64,8 @@ class SurveyRegistrationTest {
     RecordedRequest req = server.takeRequest(2, TimeUnit.SECONDS);
     assertNotNull(req);
     assertEquals("POST", req.getMethod());
-    assertTrue(req.getPath().endsWith("/api/v1/org/o/project/p/surveys"),
-        "should POST to the /surveys sibling of the upload URL, got: " + req.getPath());
+    assertTrue(req.getPath().endsWith("/api/v1/project/p/survey"),
+        "should POST to the /survey sibling of the upload URL, got: " + req.getPath());
     assertNotNull(req.getHeader("Idempotency-Key"));
     assertTrue(req.getHeader("User-Agent").startsWith("spice-labs-cli/"));
     String body = req.getBody().readUtf8();
