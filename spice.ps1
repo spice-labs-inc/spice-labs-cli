@@ -36,24 +36,8 @@ if ($logFile -and -not $env:__SPICE_LOGGING_ACTIVE) {
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalHash = Get-FileHash -Path $ScriptPath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
 
-$ReleaseInfo = $null
-if ($env:SPICE_LABS_CLI_SKIP_PULL -ne "1") {
-  try {
-    $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' }
-  } catch {
-    # Silently ignore update check failures (no network, rate limited, etc.)
-  }
-}
-if ($ReleaseInfo) {
-  $Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
-  if ($Asset -and $Asset.digest) {
-    $RemoteHash = $Asset.digest -replace "sha256:", ""
-    if ($LocalHash -ne $RemoteHash) {
-      Write-Host "[!] A newer version of this script is available. Run:"
-      Write-Host "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
-    }
-  }
-}
+# The remote half of this check runs after the image is pulled, where the
+# edition is known -- see "Script update check (remote half)" below.
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -745,6 +729,49 @@ if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
       exit 1
     }
     Write-Host "   Using local copy."
+  }
+}
+
+# ── Script update check (remote half) ────────────────────────────────────────
+#
+# After the pull, not before it: the image's own labels are the only dependable
+# statement of which edition is in play, since --features is empty whenever
+# SPICE_IMAGE names a mirror -- exactly the airgapped case. Airgapped editions
+# skip the check outright; there is nothing useful to tell a host that cannot
+# reach GitHub, and the advice would be to re-run an equally unreachable
+# installer. Invoke-RestMethod sets no timeout, so on a blackholed route this
+# otherwise stalls for the full TCP retry window before every command.
+
+function Test-SpiceEditionAirgapped($ref) {
+  # The label is stamped from editions.json at build time, so this does not
+  # duplicate the edition list. No label (an ordinary spice-labs-cli build)
+  # means not airgapped, which is the right default.
+  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
+
+  # As in Mf-Refresh: a native command writing to stderr must not terminate the
+  # pipeline under the script-wide $ErrorActionPreference = 'Stop'. The
+  # assignment is function-scoped, so it does not leak.
+  $ErrorActionPreference = 'Continue'
+  $label = (docker image inspect --format '{{index .Config.Labels "io.spicelabs.surveyor.airgapped"}}' "$ref" 2>$null | Select-Object -First 1)
+  return ($label -eq "true")
+}
+
+$ReleaseInfo = $null
+if ($env:SPICE_LABS_CLI_SKIP_PULL -ne "1" -and -not (Test-SpiceEditionAirgapped $imageRef)) {
+  try {
+    $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' }
+  } catch {
+    # Silently ignore update check failures (no network, rate limited, etc.)
+  }
+}
+if ($ReleaseInfo) {
+  $Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
+  if ($Asset -and $Asset.digest) {
+    $RemoteHash = $Asset.digest -replace "sha256:", ""
+    if ($LocalHash -ne $RemoteHash) {
+      Write-Host "[!] A newer version of this script is available. Run:"
+      Write-Host "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
+    }
   }
 }
 
