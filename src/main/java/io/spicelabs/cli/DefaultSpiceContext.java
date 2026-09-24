@@ -69,6 +69,11 @@ final class DefaultSpiceContext implements SpiceContext {
     return context != null ? context : create();
   }
 
+  /** Tests only: make a chosen context the current one ({@code null} rebuilds from the environment). */
+  static void install(DefaultSpiceContext context) {
+    current = context;
+  }
+
   @Override
   public String version() {
     return version;

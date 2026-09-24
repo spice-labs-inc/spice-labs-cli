@@ -1065,6 +1065,20 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   mkdir -p "$RT_BASE"
   RT_WORKDIR=$(mktemp -d "$RT_BASE/survey-XXXXXXXX")
 
+  # Phase 0: A licensed image refuses an unlicensed run before the target program is started,
+  # not after it has finished; stderr is shown so the refusal names its reason.
+  if ! docker run --rm --entrypoint java \
+      --user "$(id -u):$(id -g)" \
+      --network "$SPICE_DOCKER_NETWORK" \
+      ${PULL_FLAG:+$PULL_FLAG} \
+      -e SPICE_PASS \
+      "$IMAGE_REF" \
+      -cp "${SPICE_LABS_CLI_JAR}" \
+      io.spicelabs.cli.RuntimeCollect --check-licence >/dev/null; then
+    rm -rf "$RT_WORKDIR"
+    exit 1
+  fi
+
   # Phase 1: Copy agent + JFC from container to host workdir
   echo "🌶️  Preparing runtime survey..."
   SPICE_CLI_DIR=$(dirname "${SPICE_LABS_CLI_JAR}")
