@@ -1016,6 +1016,7 @@ if ($isRuntimeSurvey) {
     $dlArgs += @("$imageRef")
     $dlArgs += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect', '--download-probes')
     & docker @dlArgs > $rtProbes 2>$null
+    if ($LASTEXITCODE -ne 0) { Remove-Item $rtProbes -ErrorAction SilentlyContinue }
 
     if ((Test-Path $rtProbes) -and (Get-Item $rtProbes).Length -gt 0) {
       $spiceJto = "-javaagent:${rtWorkdirHost}/ancho.jar=${rtProbes} $spiceJto"

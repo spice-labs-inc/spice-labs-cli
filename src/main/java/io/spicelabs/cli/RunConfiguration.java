@@ -84,6 +84,7 @@ final class RunConfiguration {
   static RunConfiguration load(Path explicit) {
     Optional<Path> resolved = ConfigFile.resolve(explicit);
     if (resolved.isEmpty()) {
+      current = EMPTY;
       return EMPTY;
     }
     Path path = resolved.get();
