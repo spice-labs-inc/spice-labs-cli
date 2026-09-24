@@ -28,25 +28,8 @@ else
   LOCAL_HASH=$(shasum -a 256 "$SCRIPT_PATH" | awk '{print $1}')
 fi
 
-if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ]; then
-  REMOTE_HASH=$(
-    curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null |
-      awk '
-        BEGIN { found_spice = 0 }
-        /"name":[[:space:]]*"spice"/ { found_spice = 1 }
-        found_spice && /"digest":[[:space:]]*"sha256:/ {
-          gsub(/.*"digest":[[:space:]]*"sha256:/, "")
-          gsub(/".*/, "")
-          print
-          exit(0)
-        }'
-  ) || true
-
-  if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
-    echo "⚠️  A newer version of this script is available. Run:"
-    echo "    curl -sSfL https://install.spicelabs.io | bash"
-  fi
-fi
+# The remote half of this check runs after the image is pulled, where the
+# edition is known -- see "Script update check (remote half)" below.
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 #
@@ -831,6 +814,53 @@ else
     }
     echo "   Using local copy."
   }
+fi
+
+# ── Script update check (remote half) ────────────────────────────────────────
+#
+# This runs after the pull, not before it, because the image's own labels are
+# the only dependable statement of which edition is in play: --features is
+# empty whenever SPICE_IMAGE names a mirror, which is exactly the airgapped
+# case. Once the image is local the label is a metadata read, costing nothing.
+#
+# Airgapped editions skip the check outright: there is nothing useful to tell a
+# host that cannot reach GitHub, since the advice is to re-run an installer that
+# is equally unreachable.
+#
+# The timeouts on the curl are a second line of defence, for a connected edition
+# on a network that blackholes rather than refuses. Without them a dropped SYN
+# costs the full kernel retry window (~130s measured) before every single
+# command. The check is advisory, so giving up early is cheap -- the worst case
+# is not being told about an update until the next run.
+
+# The label is stamped from editions.json at build time, so this does not
+# duplicate the edition list. An image without it (an ordinary spice-labs-cli
+# build) is not airgapped, which is the right default.
+spice_edition_is_airgapped() {
+  [ "$(docker image inspect "$IMAGE_REF" \
+        --format '{{index .Config.Labels "io.spicelabs.surveyor.airgapped"}}' \
+        2>/dev/null)" = "true" ]
+}
+
+if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ] && ! spice_edition_is_airgapped; then
+  REMOTE_HASH=$(
+    curl -fsSL --connect-timeout 2 --max-time 5 \
+      https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null |
+      awk '
+        BEGIN { found_spice = 0 }
+        /"name":[[:space:]]*"spice"/ { found_spice = 1 }
+        found_spice && /"digest":[[:space:]]*"sha256:/ {
+          gsub(/.*"digest":[[:space:]]*"sha256:/, "")
+          gsub(/".*/, "")
+          print
+          exit(0)
+        }'
+  ) || true
+
+  if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
+    echo "⚠️  A newer version of this script is available. Run:"
+    echo "    curl -sSfL https://install.spicelabs.io | bash"
+  fi
 fi
 
 for arg in "$@"; do
