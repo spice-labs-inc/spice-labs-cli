@@ -108,7 +108,10 @@ jobs:
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
-      - name: Upload wrapper scripts and completions to GitHub Release
+      - name: Write the CLI's command model for the Spice Labs MCP
+        run: java -jar target/spice-labs-cli-*-fat.jar docs --json > cli-docs.json
+
+      - name: Upload wrapper scripts, completions and the command model to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
@@ -116,6 +119,7 @@ jobs:
             spice.ps1
             install.sh
             install.ps1
+            cli-docs.json
 
   docker_image:
     name: Build and Push Docker Image (Docker Hub + GHCR)
