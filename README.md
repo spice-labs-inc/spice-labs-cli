@@ -65,6 +65,35 @@ Ignoring artifacts published after 2026-01-01T00:00:00Z
 
 A pass with no cutoff surveys everything.
 
+#### Airgapped Spice Passes
+
+A Spice Pass comes in two forms, and they are not interchangeable.
+
+The ordinary pass is for connected use: it names the upload server and the key your surveys are
+encrypted to, and the platform verifies it on every upload. It is short-lived, and you generate a
+new one whenever you like.
+
+An **airgapped** pass is for a distribution of `spice` that runs with no network and therefore
+carries its own licence. The distribution ships the licensing public key inside the CLI, and an
+airgapped pass is signed with the matching private key (which never leaves Spice Labs' Vault),
+carries the **features** your licence covers (`x-features`) and the licence's own expiry, and
+carries nothing about uploading, because it never can. The CLI verifies it offline, before
+running any command that does work:
+
+- an ordinary pass in an airgapped distribution is refused, by name — *"SPICE_PASS holds an
+  online (long-duration) Spice Pass, but the … edition needs an airgapped one"*;
+- an airgapped pass that does not cover every feature the distribution has is refused, naming
+  the missing ones, rather than quietly running a lesser edition;
+- an expired pass says the date and what to do.
+
+Diagnostics stay available without a valid licence: `spice --version` reports the licence state
+(*licence: valid until …* or *licence: none (…)*), `spice pass decode` shows what the pass says
+and why it was refused, and `--help` works everywhere. Generate an airgapped pass from your
+project's Spice Pass page; it is only offered when your organisation holds a licence.
+
+A distribution that ships no key makes no check at all; that is what a plain build of
+this repository is.
+
 ### Image Survey
 
 Scan an OCI or Docker container image pulled by name — no need to export it to disk first.
@@ -277,7 +306,7 @@ The wrapper script automatically remaps `input` and `--output` host paths to `/m
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SPICE_PASS` | **Required** for upload. JWT token for Spice Labs auth. | _(none)_ |
+| `SPICE_PASS` | **Required** for upload, and for any command that does work in an airgapped distribution (see [Airgapped Spice Passes](#airgapped-spice-passes)). | _(none)_ |
 | `SPICE_LABS_CLI_USE_JVM` | Use the local JVM instead of Docker (`1` = enable) | `0` |
 | `SPICE_LABS_CLI_JAR` | Path to the CLI JAR when using JVM mode | `/opt/spice-labs-cli/spice-labs-cli.jar` |
 | `SPICE_LABS_JVM_ARGS` | Custom JVM flags (e.g. `-Xmx512m -XX:+UseG1GC`) | `-XX:MaxRAMPercentage=75` |

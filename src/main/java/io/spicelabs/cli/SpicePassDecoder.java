@@ -21,6 +21,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.slf4j.Logger;
@@ -41,6 +42,7 @@ public class SpicePassDecoder {
   private static final Map<String, String> CLAIM_NAMES = new LinkedHashMap<>();
   static {
     CLAIM_NAMES.put("x-type", "Token Type");
+    CLAIM_NAMES.put("x-version", "Token Version");
     CLAIM_NAMES.put("jti", "JWT ID");
     CLAIM_NAMES.put("iat", "Issued At");
     CLAIM_NAMES.put("exp", "Expires At");
@@ -57,6 +59,7 @@ public class SpicePassDecoder {
     CLAIM_NAMES.put("x-public-key", "Public Key");
     CLAIM_NAMES.put("x-challenge", "Challenge");
     CLAIM_NAMES.put("x-cutoff", "Artifact Cutoff");
+    CLAIM_NAMES.put("x-features", "Licensed Features");
   }
 
   public SpicePassDecoder(String spicePass) {
@@ -150,6 +153,25 @@ public class SpicePassDecoder {
     }
 
     log.info("  Status: {}", formatStatus());
+
+    // In an edition that requires a licence, say what the licence check makes of this pass:
+    // `pass decode` is the one command a refused customer can still run, and this is why.
+    Edition edition = Edition.current();
+    if (edition.requiresLicence()) {
+      switch (Licence.check(edition, Optional.of(jwt.getToken()))) {
+        case Licence.Granted granted -> {
+          log.info("  Licence: valid for the {} edition{}", edition.displayName(),
+              granted.expiresAt().map(t -> " until " + HUMAN_DATE.format(t)).orElse(""));
+          granted.warning().ifPresent(w -> log.info("  {}", w));
+        }
+        case Licence.Refused refused -> {
+          log.info("  Licence: ❌ {}", refused.reason());
+          for (String hint : refused.hints()) {
+            log.info("           {}", hint);
+          }
+        }
+      }
+    }
   }
 
   private String formatClaimValue(String key, Claim claim) {

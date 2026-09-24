@@ -965,6 +965,20 @@ if ($isRuntimeSurvey) {
 
   # Phase 2: Build JAVA_TOOL_OPTIONS
   $rtJfc = Join-Path $rtWorkdir 'spice-jfr.jfc'
+  # Phase 0: a licensed image refuses an unlicensed run before the target program is started.
+  $lcArgs = @('run', '--rm', '--entrypoint', 'java')
+  $lcArgs += @($userFlag)
+  $lcArgs += @('--network', $script:SpiceDockerNetwork)
+  $lcArgs += @($pullFlag)
+  $lcArgs += @('-e', "SPICE_PASS=$spicePass")
+  $lcArgs += @("$imageRef")
+  $lcArgs += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect', '--check-licence')
+  & docker @lcArgs > $null
+  if ($LASTEXITCODE -ne 0) {
+    Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
+    exit 1
+  }
+
   if (-not (Test-Path $rtJfc)) {
     Write-Host "[X] Failed to extract JFR settings from container"
     Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
