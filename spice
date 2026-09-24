@@ -823,11 +823,15 @@ fi
 # empty whenever SPICE_IMAGE names a mirror, which is exactly the airgapped
 # case. Once the image is local the label is a metadata read, costing nothing.
 #
-# Airgapped editions skip the check outright. There is nothing useful to tell a
-# host that cannot reach GitHub -- the advice is to re-run an installer that is
-# equally unreachable -- and the curl below has no timeout, so against a
-# blackholed route it stalls for the full TCP SYN-retry window (~130s measured)
-# before every single command.
+# Airgapped editions skip the check outright: there is nothing useful to tell a
+# host that cannot reach GitHub, since the advice is to re-run an installer that
+# is equally unreachable.
+#
+# The timeouts on the curl are a second line of defence, for a connected edition
+# on a network that blackholes rather than refuses. Without them a dropped SYN
+# costs the full kernel retry window (~130s measured) before every single
+# command. The check is advisory, so giving up early is cheap -- the worst case
+# is not being told about an update until the next run.
 
 # The label is stamped from editions.json at build time, so this does not
 # duplicate the edition list. An image without it (an ordinary spice-labs-cli
@@ -840,7 +844,8 @@ spice_edition_is_airgapped() {
 
 if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ] && ! spice_edition_is_airgapped; then
   REMOTE_HASH=$(
-    curl -fsSL https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null |
+    curl -fsSL --connect-timeout 2 --max-time 5 \
+      https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null |
       awk '
         BEGIN { found_spice = 0 }
         /"name":[[:space:]]*"spice"/ { found_spice = 1 }

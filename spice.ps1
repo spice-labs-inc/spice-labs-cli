@@ -739,8 +739,10 @@ if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
 # SPICE_IMAGE names a mirror -- exactly the airgapped case. Airgapped editions
 # skip the check outright; there is nothing useful to tell a host that cannot
 # reach GitHub, and the advice would be to re-run an equally unreachable
-# installer. Invoke-RestMethod sets no timeout, so on a blackholed route this
-# otherwise stalls for the full TCP retry window before every command.
+# installer. -TimeoutSec is a second line of defence, for a connected edition on
+# a network that blackholes rather than refuses: without it a dropped SYN costs
+# the full kernel retry window before every command. The check is advisory, so
+# giving up early is cheap.
 
 function Test-SpiceEditionAirgapped($ref) {
   # The label is stamped from editions.json at build time, so this does not
@@ -759,7 +761,7 @@ function Test-SpiceEditionAirgapped($ref) {
 $ReleaseInfo = $null
 if ($env:SPICE_LABS_CLI_SKIP_PULL -ne "1" -and -not (Test-SpiceEditionAirgapped $imageRef)) {
   try {
-    $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' }
+    $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' } -TimeoutSec 5
   } catch {
     # Silently ignore update check failures (no network, rate limited, etc.)
   }
