@@ -37,6 +37,25 @@ public class RuntimeCollect {
         // the CLI, instead of holding for `SpiceLabsCLI` and happening to work here.
         DefaultSpiceContext context = DefaultSpiceContext.create();
 
+        // This entry point never passes through SpiceLabsCLI's command line, so the license
+        // gate installed there does not see it: the wrapper runs this class directly for every
+        // runtime survey. Ask the same question here, before anything is collected or fetched.
+        if (License.check(Edition.current(), context.spicePass(), context.credentialVariable())
+                instanceof License.Refused refused) {
+            System.err.println("❌ " + refused.reason());
+            for (String hint : refused.hints()) {
+                System.err.println("   " + hint);
+            }
+            System.exit(LicenseGate.EXIT_CODE);
+        }
+
+        // License check only: the wrapper runs this before a runtime survey starts, because in
+        // Docker mode it runs the user's program under the agent itself and only reaches this
+        // class afterwards. Refusing then would waste the whole run; refusing here does not.
+        if (args.length >= 1 && "--check-license".equals(args[0])) {
+            System.exit(0);
+        }
+
         // Probe config download mode: streams JSON to stdout, no file written
         if (args.length >= 1 && "--download-probes".equals(args[0])) {
             if (context.airgapped()) {

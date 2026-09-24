@@ -21,6 +21,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.slf4j.Logger;
@@ -34,6 +35,7 @@ public class SpicePassDecoder {
 
   private static final Logger log = LoggerFactory.getLogger(SpicePassDecoder.class);
   private final DecodedJWT jwt;
+  private final String variable;
 
   private static final DateTimeFormatter HUMAN_DATE =
       DateTimeFormatter.ofPattern("EEE MMM dd yyyy, hh:mm:ss a z").withZone(ZoneOffset.UTC);
@@ -41,6 +43,7 @@ public class SpicePassDecoder {
   private static final Map<String, String> CLAIM_NAMES = new LinkedHashMap<>();
   static {
     CLAIM_NAMES.put("x-type", "Token Type");
+    CLAIM_NAMES.put("x-version", "Token Version");
     CLAIM_NAMES.put("jti", "JWT ID");
     CLAIM_NAMES.put("iat", "Issued At");
     CLAIM_NAMES.put("exp", "Expires At");
@@ -57,13 +60,20 @@ public class SpicePassDecoder {
     CLAIM_NAMES.put("x-public-key", "Public Key");
     CLAIM_NAMES.put("x-challenge", "Challenge");
     CLAIM_NAMES.put("x-cutoff", "Artifact Cutoff");
+    CLAIM_NAMES.put("x-features", "Licensed Features");
   }
 
   public SpicePassDecoder(String spicePass) {
+    this(spicePass, DefaultSpiceContext.PASS_VARIABLE);
+  }
+
+  /** {@code variable} is where the credential came from, so the license verdict can name it. */
+  public SpicePassDecoder(String spicePass, String variable) {
     if (spicePass == null || spicePass.isBlank()) {
-      throw new IllegalArgumentException("SPICE_PASS cannot be null or blank");
+      throw new IllegalArgumentException(variable + " cannot be null or blank");
     }
     this.jwt = JWT.decode(spicePass);
+    this.variable = variable;
   }
 
   public String getProjectId() {
@@ -96,6 +106,8 @@ public class SpicePassDecoder {
   }
 
   public void printFullInfo() {
+    log.info("{} (from {})", License.TYPE.equals(jwt.getType()) ? "Spice License" : "Spice Pass", variable);
+    log.info("");
     log.info("JWT Header:");
     log.info("  Algorithm: {}", jwt.getAlgorithm());
     log.info("  Type: {}", jwt.getType());
@@ -150,6 +162,25 @@ public class SpicePassDecoder {
     }
 
     log.info("  Status: {}", formatStatus());
+
+    // In an edition that requires a license, say what the license check makes of this credential:
+    // `pass decode` is the one command a refused customer can still run, and this is why.
+    Edition edition = Edition.current();
+    if (edition.requiresLicense()) {
+      switch (License.check(edition, Optional.of(jwt.getToken()), variable)) {
+        case License.Granted granted -> {
+          log.info("  License: valid for the {} edition{}", edition.displayName(),
+              granted.expiresAt().map(t -> " until " + HUMAN_DATE.format(t)).orElse(""));
+          granted.warning().ifPresent(w -> log.info("  {}", w));
+        }
+        case License.Refused refused -> {
+          log.info("  License: ❌ {}", refused.reason());
+          for (String hint : refused.hints()) {
+            log.info("           {}", hint);
+          }
+        }
+      }
+    }
   }
 
   private String formatClaimValue(String key, Claim claim) {
