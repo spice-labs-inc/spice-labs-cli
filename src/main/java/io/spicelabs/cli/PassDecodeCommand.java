@@ -21,19 +21,19 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 
 /**
- * Decodes and displays SPICE_PASS JWT information.
+ * Decodes and displays the credential in SPICE_PASS or SPICE_LICENSE: a Spice Pass or a Spice License.
  * Usage: spice pass decode
  */
 @Command(
     name = "decode",
-    description = "Decode and display Spice Pass (JWT) information",
+    description = "Decode and display a Spice Pass or Spice License (JWT)",
     mixinStandardHelpOptions = true,
     footer = {
         "",
         "Example:",
         "  SPICE_PASS=$MY_TOKEN spice pass decode",
         "",
-        "SPICE_PASS must be set in the environment.",
+        "SPICE_PASS or SPICE_LICENSE must be set in the environment (not both).",
         ""
     }
 )
@@ -49,10 +49,13 @@ public class PassDecodeCommand implements java.util.concurrent.Callable<Integer>
     try {
       String spicePass = resolveSpicePass();
       if (spicePass == null || spicePass.isBlank()) {
-        log.error("❌ SPICE_PASS must be set via SPICE_PASS env var");
+        log.error("❌ SPICE_PASS must be set (or SPICE_LICENSE, for a Spice License)");
         return 1;
       }
-      SpicePassDecoder decoder = new SpicePassDecoder(spicePass);
+      String variable = spicePassOverride != null && !spicePassOverride.isBlank()
+          ? DefaultSpiceContext.PASS_VARIABLE
+          : DefaultSpiceContext.current().credentialVariable();
+      SpicePassDecoder decoder = new SpicePassDecoder(spicePass, variable);
       decoder.printFullInfo();
       return 0;
     } catch (Exception ex) {

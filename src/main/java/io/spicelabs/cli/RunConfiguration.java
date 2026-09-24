@@ -84,6 +84,9 @@ final class RunConfiguration {
   static RunConfiguration load(Path explicit) {
     Optional<Path> resolved = ConfigFile.resolve(explicit);
     if (resolved.isEmpty()) {
+      // A run with no file has no configuration: say so, rather than leaving whatever an earlier
+      // load installed. main loads once, so this matters to anything that loads twice (tests).
+      current = EMPTY;
       return EMPTY;
     }
     Path path = resolved.get();

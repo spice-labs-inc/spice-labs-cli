@@ -141,13 +141,22 @@ public class SpiceLabsCLI implements Runnable {
     return newCommandLine(runConfiguration, Edition.current());
   }
 
+  /** Build the command line for a given edition, with the run's context built from the environment. */
+  static CommandLine newCommandLine(RunConfiguration runConfiguration, Edition edition) {
+    return newCommandLine(runConfiguration, edition, DefaultSpiceContext.create());
+  }
+
   /**
    * Build the command line for a given edition. The tree is pruned to the edition's features
    * before plugins are mounted, so help, completion, the path manifest and the parser all
-   * describe the same commands. Tests pass an edition of their own; the CLI passes the one
-   * the jar's feature manifest names.
+   * describe the same commands. Tests pass an edition and a context of their own; the CLI
+   * passes the ones the jar's feature manifest and the environment name.
+   *
+   * <p>The license gate is installed last, as the execution strategy, so it runs after parsing
+   * and after picocli has answered help and version requests — see {@link LicenseGate}.
    */
-  static CommandLine newCommandLine(RunConfiguration runConfiguration, Edition edition) {
+  static CommandLine newCommandLine(RunConfiguration runConfiguration, Edition edition,
+                                    DefaultSpiceContext context) {
     CommandLine cmd = new CommandLine(new SpiceLabsCLI());
     EditionGate.apply(cmd, edition);
     cmd.setParameterExceptionHandler((ex, a) -> {
@@ -197,13 +206,14 @@ public class SpiceLabsCLI implements Runnable {
     });
     // Discover and mount any subcommand plugins present on the classpath (e.g. the
     // proprietary `registry` plugin). Built-in commands are unaffected when none exist.
-    PluginLoader.registerPlugins(cmd, DefaultSpiceContext.create(), runConfiguration);
+    PluginLoader.registerPlugins(cmd, context, runConfiguration);
     // Hide the picocli-provided `generate-completion` from --help (it stays invokable —
     // install.sh calls it). The PowerShell generator is already hidden via its annotation.
     CommandLine genCompletion = cmd.getSubcommands().get("generate-completion");
     if (genCompletion != null) {
       genCompletion.getCommandSpec().usageMessage().hidden(true);
     }
+    LicenseGate.apply(cmd, edition, context);
     return cmd;
   }
 
@@ -233,6 +243,12 @@ public class SpiceLabsCLI implements Runnable {
     @Override
     public String[] getVersion() throws Exception {
       Edition edition = Edition.current();
+      if (edition.requiresLicense()) {
+        // What support will ask a stranded customer to run: say whether a license was found.
+        return new String[] { getVersionString(), getGitCommit(), edition.describe(),
+            License.describe(edition, DefaultSpiceContext.current().spicePass(),
+                DefaultSpiceContext.current().credentialVariable()) };
+      }
       if (edition.branded()) {
         return new String[] { getVersionString(), getGitCommit(), edition.describe() };
       }

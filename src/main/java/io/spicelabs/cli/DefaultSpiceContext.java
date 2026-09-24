@@ -15,6 +15,7 @@ limitations under the License. */
 
 package io.spicelabs.cli;
 
+import java.util.Map;
 import java.util.Optional;
 
 import io.spicelabs.cli.spi.SpiceContext;
@@ -25,17 +26,27 @@ import io.spicelabs.cli.spi.SpicePassClaims;
  * behaviour (version reporting, {@code SPICE_PASS} resolution, configuration) consistent with
  * the built-in commands. This is the app's concrete impl, not part of the public SPI.
  *
- * <p>The pass is read from the environment and decoded <em>once</em>, at construction, and the
- * resulting {@link SpicePassClaims} is shared by every plugin and by the built-in commands
+ * <p>The credential is read from the environment and decoded <em>once</em>, at construction, and
+ * the resulting {@link SpicePassClaims} is shared by every plugin and by the built-in commands
  * that consult {@link #current()}. Resolving it once is what makes "the cutoff in force" a
  * single fact about the run rather than something each caller re-derives.
+ *
+ * <p>It comes from {@value #PASS_VARIABLE} or {@value #LICENSE_VARIABLE}: a Spice Pass is
+ * conventionally set in the first and a Spice License in the second, but either may hold either
+ * — what the credential <em>is</em> is decided by the credential, not by its variable. Setting
+ * both is an error rather than a precedence rule, because a run holding two credentials cannot
+ * say which one it acted under.
  */
 final class DefaultSpiceContext implements SpiceContext {
+
+  static final String PASS_VARIABLE = "SPICE_PASS";
+  static final String LICENSE_VARIABLE = "SPICE_LICENSE";
 
   private static volatile DefaultSpiceContext current;
 
   private final String version;
   private final String spicePass;
+  private final String variable;
   private final SpicePassClaims passClaims;
   private final Edition edition;
 
@@ -46,17 +57,51 @@ final class DefaultSpiceContext implements SpiceContext {
   }
 
   DefaultSpiceContext(String version, String spicePass, Edition edition) {
+    this(version, spicePass, PASS_VARIABLE, edition);
+  }
+
+  DefaultSpiceContext(String version, String spicePass, String variable, Edition edition) {
     this.version = version;
     this.spicePass = spicePass;
+    this.variable = variable;
     this.passClaims = PassClaims.of(spicePass);
     this.edition = edition;
   }
 
   static DefaultSpiceContext create() {
-    DefaultSpiceContext context = new DefaultSpiceContext(
-        SpiceLabsCLI.VersionProvider.getVersionString(), System.getenv("SPICE_PASS"), Edition.current());
+    DefaultSpiceContext context = from(System.getenv(), Edition.current());
     current = context;
     return context;
+  }
+
+  /**
+   * The context for an environment: the credential from {@value #PASS_VARIABLE} or
+   * {@value #LICENSE_VARIABLE}, whichever is set (blank counts as unset, as the Windows wrapper
+   * passes both through empty). Both set is refused with {@link IllegalArgumentException}, which
+   * {@code main} reports as a usage error.
+   */
+  static DefaultSpiceContext from(Map<String, String> environment, Edition edition) {
+    String pass = environment.get(PASS_VARIABLE);
+    String license = environment.get(LICENSE_VARIABLE);
+    boolean hasPass = pass != null && !pass.isBlank();
+    boolean hasLicense = license != null && !license.isBlank();
+    if (hasPass && hasLicense) {
+      throw new IllegalArgumentException(
+          "Both " + PASS_VARIABLE + " and " + LICENSE_VARIABLE + " are set; set only one.");
+    }
+    return new DefaultSpiceContext(
+        SpiceLabsCLI.VersionProvider.getVersionString(),
+        hasLicense ? license : pass,
+        hasLicense ? LICENSE_VARIABLE : PASS_VARIABLE,
+        edition);
+  }
+
+  /**
+   * The environment variable the credential came from, for messages that must name it. With no
+   * credential at all it is {@value #PASS_VARIABLE}; the license check names the right one to set.
+   */
+  String credentialVariable() {
+    return variable;
   }
 
   /**
@@ -67,6 +112,11 @@ final class DefaultSpiceContext implements SpiceContext {
   static DefaultSpiceContext current() {
     DefaultSpiceContext context = current;
     return context != null ? context : create();
+  }
+
+  /** Tests only: make a chosen context the current one ({@code null} rebuilds from the environment). */
+  static void install(DefaultSpiceContext context) {
+    current = context;
   }
 
   @Override

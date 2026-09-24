@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
  * edition.name=Example Compact Edition
  * airgapped=true
  * features=bulk,static-detect,cbom-material
+ * license.key=spice-license.pub
  * </pre>
  *
  * <p>No manifest, or a manifest without a {@code features} key, means {@link #UNRESTRICTED}:
@@ -33,9 +34,16 @@ import org.slf4j.LoggerFactory;
  * capability a plugin provides needs nothing from here: the plugin is either on the
  * classpath or it is not, which answers the same question more directly.
  *
+ * <p>{@code license.key}, when present, names a PEM public key on the classpath and makes the
+ * edition one that <em>requires a license</em>: a run must hold a Spice License that
+ * verifies against it ({@link License}). The key is optional and its absence means
+ * no check; a value that is present but unusable — a resource that is not on the classpath, or
+ * a {@code ${…}} placeholder a build never filled in — is kept as written so that the check
+ * refuses with the real cause rather than treating the build as unlicensed.
+ *
  * <p>Everything that gates on the edition asks {@link #current()}: the command tree
- * ({@link EditionGate}), the upload paths of the survey commands, and the plugins through
- * {@link DefaultSpiceContext#edition()}.
+ * ({@link EditionGate}), the upload paths of the survey commands, the license check, and the
+ * plugins through {@link DefaultSpiceContext#edition()}.
  */
 final class Edition {
 
@@ -48,7 +56,7 @@ final class Edition {
 
   private static final Logger log = LoggerFactory.getLogger(Edition.class);
 
-  static final Edition UNRESTRICTED = new Edition("", "", false, Set.of(), true);
+  static final Edition UNRESTRICTED = new Edition("", "", false, Set.of(), null, true);
 
   private static volatile Edition current;
 
@@ -56,14 +64,16 @@ final class Edition {
   private final String displayName;
   private final boolean airgapped;
   private final Set<String> features;
+  private final String licenseKey;
   private final boolean unrestricted;
 
   private Edition(String id, String displayName, boolean airgapped, Set<String> features,
-                  boolean unrestricted) {
+                  String licenseKey, boolean unrestricted) {
     this.id = id;
     this.displayName = displayName.isEmpty() ? id : displayName;
     this.airgapped = airgapped;
     this.features = Collections.unmodifiableSet(new LinkedHashSet<>(features));
+    this.licenseKey = licenseKey;
     this.unrestricted = unrestricted;
   }
 
@@ -118,12 +128,18 @@ final class Edition {
     String id = properties.getProperty("edition", "").trim();
     String name = properties.getProperty("edition.name", "").trim();
     boolean airgapped = Boolean.parseBoolean(properties.getProperty("airgapped", "false").trim());
-    return new Edition(id, name, airgapped, declared, false);
+    String key = properties.getProperty("license.key", "").trim();
+    return new Edition(id, name, airgapped, declared, key.isEmpty() ? null : key, false);
   }
 
   /** Tests only: an edition built from its parts. */
   static Edition of(String id, String displayName, boolean airgapped, String... features) {
-    return new Edition(id, displayName, airgapped, Set.of(features), false);
+    return new Edition(id, displayName, airgapped, Set.of(features), null, false);
+  }
+
+  /** Tests only: this edition, but requiring a license against the named classpath key. */
+  Edition licensedBy(String keyResource) {
+    return new Edition(id, displayName, airgapped, features, keyResource, unrestricted);
   }
 
   String id() {
@@ -142,6 +158,16 @@ final class Edition {
     return features;
   }
 
+  /** Whether a run of this edition must hold a license (the manifest names a key). */
+  boolean requiresLicense() {
+    return licenseKey != null;
+  }
+
+  /** The classpath resource holding the licensing public key, as the manifest wrote it. */
+  String licenseKey() {
+    return licenseKey;
+  }
+
   /** Whether this build carries a manifest at all (an unbranded build has no identifier). */
   boolean branded() {
     return !id.isEmpty();
@@ -152,6 +178,9 @@ final class Edition {
     StringBuilder sb = new StringBuilder(displayName).append(" (").append(id).append("): ");
     if (airgapped) {
       sb.append("airgapped; ");
+    }
+    if (requiresLicense()) {
+      sb.append("licensed; ");
     }
     return sb.append("features: ").append(String.join(", ", features)).toString();
   }

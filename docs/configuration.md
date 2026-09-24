@@ -233,11 +233,16 @@ already have.
 
 ## What the config file cannot set
 
-Nothing from the **Spice Pass**. The cutoff, upload server and project/organization/user
-identifiers are properties of the credential the platform issued, not settings an operator
-chooses — so they have no config-file key at all, and reach commands through
-`SpiceContext.passClaims()` instead: registered JWT claims typed, everything Spice-specific
-in a verbatim `additionalClaims()` map.
+Nothing from the **Spice Pass** or **Spice License**. The cutoff, upload server, project/organization/user
+identifiers and — in a Spice License — the licensed features are properties of the
+credential the platform issued, not settings an operator chooses — so they have no config-file
+key at all, and reach commands through `SpiceContext.passClaims()` instead: registered JWT
+claims typed, everything Spice-specific in a verbatim `additionalClaims()` map.
+
+Nothing about the **license** either. Whether a build needs one, and the public key it is
+checked against, come from the distribution's feature manifest (`spice-edition.properties`,
+key `license.key`), which is baked into the jar; the config file cannot name a different key
+or switch the check off.
 
 The one place the two nearly meet is the analysis engine's `expiry`, which *is* one of its own
 settings when it runs standalone. In a nested `analysis` table it is rejected with an error

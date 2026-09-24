@@ -65,6 +65,33 @@ Ignoring artifacts published after 2026-01-01T00:00:00Z
 
 A pass with no cutoff surveys everything.
 
+#### Spice Licenses
+
+The airgapped distributions of `spice` run with no network, so the platform cannot check what
+they are licensed to do. They check it themselves, against a **Spice License**: a credential
+Spice Labs issues to your organization with your license — you do not generate it, and you need
+no platform account. The distribution ships a public key inside the CLI; a Spice License is
+signed with the matching private key (which never leaves Spice Labs' Vault), carries the
+**features** your license covers (`x-features`) and its own expiry, and carries nothing about
+uploading, because it never can.
+
+Set it in `SPICE_LICENSE` (or in `SPICE_PASS`: the credential says what it is, not the variable;
+setting both is an error). The CLI verifies it offline, before running any command that does work:
+
+- a Spice Pass is refused, by name — *"SPICE_LICENSE holds a Spice Pass (long-duration), but the
+  … edition needs a Spice License"*;
+- a license that does not cover every feature the distribution has is refused, naming the
+  missing ones, rather than quietly running a lesser edition;
+- an expired license says the date and whom to contact.
+
+Diagnostics stay available without a valid license: `spice --version` reports the license state
+(*license: valid until …* or *license: none (…)*), `spice pass decode` shows what the credential
+says and why it was refused, and `--help` works everywhere. For a new or renewed license,
+contact Spice Labs.
+
+A distribution that ships no key makes no check at all; that is what a plain build of
+this repository is.
+
 ### Image Survey
 
 Scan an OCI or Docker container image pulled by name — no need to export it to disk first.
@@ -277,7 +304,8 @@ The wrapper script automatically remaps `input` and `--output` host paths to `/m
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SPICE_PASS` | **Required** for upload. JWT token for Spice Labs auth. | _(none)_ |
+| `SPICE_PASS` | **Required** for upload. JWT token for Spice Labs auth. Not together with `SPICE_LICENSE`. | _(none)_ |
+| `SPICE_LICENSE` | **Required** for any command that does work in an airgapped distribution (see [Spice Licenses](#spice-licenses)). Not together with `SPICE_PASS`. | _(none)_ |
 | `SPICE_LABS_CLI_USE_JVM` | Use the local JVM instead of Docker (`1` = enable) | `0` |
 | `SPICE_LABS_CLI_JAR` | Path to the CLI JAR when using JVM mode | `/opt/spice-labs-cli/spice-labs-cli.jar` |
 | `SPICE_LABS_JVM_ARGS` | Custom JVM flags (e.g. `-Xmx512m -XX:+UseG1GC`) | `-XX:MaxRAMPercentage=75` |

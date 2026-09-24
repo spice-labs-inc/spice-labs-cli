@@ -5,6 +5,7 @@ package io.spicelabs.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -158,5 +159,17 @@ class ConfigFileTest {
         Path.of("/a/b.toml"),
         SpiceLabsCLI.configFileArgument(new String[] {"survey", "--config=/a/b.toml"}));
     assertEquals(null, SpiceLabsCLI.configFileArgument(new String[] {"survey"}));
+  }
+
+  @Test
+  void loadingAgainReplacesWhatAnEarlierLoadInstalled(@TempDir Path dir) throws Exception {
+    // Whatever load answers is what the run then has, including "no file at all". It used to
+    // return EMPTY but keep the previous file installed, so a test's config leaked into the next.
+    Path config = Files.writeString(dir.resolve("config.toml"), "[logging]\nlevel = \"debug\"\n");
+    RunConfiguration first = RunConfiguration.load(config);
+    assertSame(first, RunConfiguration.current());
+
+    RunConfiguration second = RunConfiguration.load(null);
+    assertSame(second, RunConfiguration.current());
   }
 }
