@@ -749,7 +749,7 @@ set -- "${PARSED_ARGS[@]}"
 
 if [ "${SPICE_LABS_CLI_USE_JVM:-0}" = "1" ]; then
   [ -f "$SPICE_LABS_CLI_JAR" ] || {
-    echo "Missing: $SPICE_LABS_CLI_JAR"
+    echo "Missing: $SPICE_LABS_CLI_JAR" >&2
     exit 1
   }
   JVM_ARGS="${SPICE_LABS_JVM_ARGS:--XX:MaxRAMPercentage=75}"
@@ -782,8 +782,8 @@ fi
 # ── Docker checks ────────────────────────────────────────────────────────────
 
 if ! command -v docker &>/dev/null; then
-  echo "❌ Docker is not installed or not in PATH"
-  echo "   Please install Docker: https://docs.docker.com/get-docker/"
+  echo "❌ Docker is not installed or not in PATH" >&2
+  echo "   Please install Docker: https://docs.docker.com/get-docker/" >&2
   exit 1
 fi
 
@@ -797,28 +797,28 @@ PULL_FLAG=""
 if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" = "1" ]; then
   PULL_FLAG="--pull=never"
 elif [ "$DEBUG_MODE" = "1" ]; then
-  echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
-  docker pull "$IMAGE_REF" || {
-    echo "⚠️  Failed to pull $IMAGE_REF"
+  echo "📦 Checking for updates to Spice Labs Surveyor CLI..." >&2
+  docker pull "$IMAGE_REF" >&2 || {
+    echo "⚠️  Failed to pull $IMAGE_REF" >&2
     docker image inspect "$IMAGE_REF" >/dev/null 2>&1 || {
-      echo "❌ Image $IMAGE_REF not found locally either."
-      echo "   The image may not exist yet, or you may not have access."
-      echo "   For ot/enterprise/federal features, ensure --features matches an available image."
+      echo "❌ Image $IMAGE_REF not found locally either." >&2
+      echo "   The image may not exist yet, or you may not have access." >&2
+      echo "   For ot/enterprise/federal features, ensure --features matches an available image." >&2
       exit 1
     }
-    echo "   Using local copy."
+    echo "   Using local copy." >&2
   }
 else
-  echo "📦 Checking for updates to Spice Labs Surveyor CLI..."
+  echo "📦 Checking for updates to Spice Labs Surveyor CLI..." >&2
   docker pull --quiet "$IMAGE_REF" >/dev/null 2>&1 || {
-    echo "⚠️  Failed to pull $IMAGE_REF"
+    echo "⚠️  Failed to pull $IMAGE_REF" >&2
     docker image inspect "$IMAGE_REF" >/dev/null 2>&1 || {
-      echo "❌ Image $IMAGE_REF not found locally either."
-      echo "   The image may not exist yet, or you may not have access."
-      echo "   For ot/enterprise/federal features, ensure --features matches an available image."
+      echo "❌ Image $IMAGE_REF not found locally either." >&2
+      echo "   The image may not exist yet, or you may not have access." >&2
+      echo "   For ot/enterprise/federal features, ensure --features matches an available image." >&2
       exit 1
     }
-    echo "   Using local copy."
+    echo "   Using local copy." >&2
   }
 fi
 
@@ -864,8 +864,8 @@ if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ] && ! spice_edition_is_airgapped; 
   ) || true
 
   if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
-    echo "⚠️  A newer version of this script is available. Run:"
-    echo "    curl -sSfL https://install.spicelabs.io | bash"
+    echo "⚠️  A newer version of this script is available. Run:" >&2
+    echo "    curl -sSfL https://install.spicelabs.io | bash" >&2
   fi
 fi
 
@@ -950,8 +950,8 @@ IS_RUNTIME_SURVEY=0
 if [ "$IS_RUNTIME_SURVEY" = "1" ] \
    && { [ "${MF_SOURCE:-}" = "image" ] || [ "${MF_SOURCE:-}" = "override" ]; } \
    && ! mf_is_cmd "${MF_ROOT}/survey/runtime"; then
-  echo "❌ 'survey runtime' is not available in this image (${IMAGE_REF})"
-  echo "   Run 'spice survey --help' for the surveys it does have."
+  echo "❌ 'survey runtime' is not available in this image (${IMAGE_REF})" >&2
+  echo "   Run 'spice survey --help' for the surveys it does have." >&2
   exit 2
 fi
 
@@ -1085,14 +1085,14 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   [ -n "$rt_prev" ] && RT_CLI_ARGS+=("$rt_prev")
 
   if [ ${#RT_USER_CMD[@]} -eq 0 ]; then
-    echo "❌ No command specified after --"
-    echo "Usage: spice survey runtime <subject> --jfr -- <command...>"
+    echo "❌ No command specified after --" >&2
+    echo "Usage: spice survey runtime <subject> --jfr -- <command...>" >&2
     exit 1
   fi
 
   if [ -z "$RT_SUBJECT" ]; then
-    echo "❌ No subject specified"
-    echo "Usage: spice survey runtime <subject> --jfr -- <command...>"
+    echo "❌ No subject specified" >&2
+    echo "Usage: spice survey runtime <subject> --jfr -- <command...>" >&2
     exit 1
   fi
 
@@ -1102,7 +1102,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   RT_WORKDIR=$(mktemp -d "$RT_BASE/survey-XXXXXXXX")
 
   # Phase 1: Copy agent + JFC from container to host workdir
-  echo "🌶️  Preparing runtime survey..."
+  echo "🌶️  Preparing runtime survey..." >&2
   SPICE_CLI_DIR=$(dirname "${SPICE_LABS_CLI_JAR}")
   docker run --rm --entrypoint sh \
     --user "$(id -u):$(id -g)" \
@@ -1115,7 +1115,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   # Phase 2: Build JAVA_TOOL_OPTIONS
   RT_JFC="${RT_WORKDIR}/spice-jfr.jfc"
   if [ ! -f "$RT_JFC" ]; then
-    echo "❌ This image does not support runtime surveys (no JFR settings in ${IMAGE_REF})"
+    echo "❌ This image does not support runtime surveys (no JFR settings in ${IMAGE_REF})" >&2
     rm -rf "$RT_WORKDIR"
     exit 1
   fi
@@ -1124,7 +1124,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
 
   if [ "$RT_NATIVE_ONLY" = "0" ] && [ -f "$RT_WORKDIR/ancho.jar" ]; then
     # Download probe config from server via container, piped to host
-    echo "📡 Downloading probe configuration..."
+    echo "📡 Downloading probe configuration..." >&2
     RT_PROBES="${RT_WORKDIR}/probes.json"
     docker run --rm --entrypoint java \
       --user "$(id -u):$(id -g)" \
@@ -1140,12 +1140,12 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
       SPICE_JTO="-javaagent:${RT_WORKDIR}/ancho.jar=${RT_PROBES} ${SPICE_JTO}"
     else
       rm -f "$RT_PROBES"
-      echo "⚠️  Could not download probe config. Using native-only mode."
+      echo "⚠️  Could not download probe config. Using native-only mode." >&2
     fi
   fi
 
   # Phase 3: Execute target command on the HOST
-  echo "🚀 Executing: ${RT_USER_CMD[*]}"
+  echo "🚀 Executing: ${RT_USER_CMD[*]}" >&2
   EXISTING_JTO="${JAVA_TOOL_OPTIONS:-}"
   if [ -n "$EXISTING_JTO" ]; then
     export JAVA_TOOL_OPTIONS="${SPICE_JTO} ${EXISTING_JTO}"
@@ -1166,19 +1166,19 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   fi
 
   if [ $RT_TARGET_RC -ne 0 ]; then
-    echo "⚠️  Target command exited with code $RT_TARGET_RC. Still collecting recordings."
+    echo "⚠️  Target command exited with code $RT_TARGET_RC. Still collecting recordings." >&2
   fi
 
   # Check for recordings
   RT_JFR_COUNT=$(find "$RT_WORKDIR" -maxdepth 1 -name '*.jfr' 2>/dev/null | wc -l)
   if [ "$RT_JFR_COUNT" -eq 0 ]; then
-    echo "❌ No JFR recordings found in $RT_WORKDIR"
+    echo "❌ No JFR recordings found in $RT_WORKDIR" >&2
     [ "$RT_KEEP_RECORDING" = "0" ] && rm -rf "$RT_WORKDIR"
     exit 1
   fi
 
   # Phase 4: Parse + upload in container
-  echo "📊 Analyzing recordings..."
+  echo "📊 Analyzing recordings..." >&2
   RT_COLLECT_ARGS=("$RT_SUBJECT" "$RT_WORKDIR")
   [ "$RT_NO_UPLOAD" = "1" ] && RT_COLLECT_ARGS+=("--no-upload")
 
@@ -1207,7 +1207,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   if [ "$RT_KEEP_RECORDING" = "0" ]; then
     rm -rf "$RT_WORKDIR"
   else
-    echo "Recordings kept in: $RT_WORKDIR"
+    echo "Recordings kept in: $RT_WORKDIR" >&2
   fi
 
   exit $((RT_TARGET_RC != 0 ? RT_TARGET_RC : RT_COLLECT_RC))

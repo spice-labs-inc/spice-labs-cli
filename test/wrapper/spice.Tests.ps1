@@ -431,6 +431,11 @@ O spice/registry/cbom --output value path create=self
     # throwing under Pester's $ErrorActionPreference = 'Stop'.
     $savedEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    # The wrapper writes its own messages straight to the console error stream, which
+    # *>&1 does not see when the script runs in this process.
+    $stderrWriter = New-Object System.IO.StringWriter
+    $savedStderr = [Console]::Error
+    [Console]::SetError($stderrWriter)
     try {
       # Reset LASTEXITCODE by running a trivial native command that exits 0
       if ($IsWindows -or -not (Test-Path variable:IsWindows)) { cmd /c "exit /b 0" } else { true }
@@ -443,7 +448,9 @@ O spice/registry/cbom --output value path create=self
 
     } finally {
       $ErrorActionPreference = $savedEAP
+      [Console]::SetError($savedStderr)
     }
+    $stderrLines = @($stderrWriter.ToString() -split "`r?`n" | Where-Object { $_ })
 
     # Parse structured output between markers
     $containerArgs = @()
@@ -467,6 +474,7 @@ O spice/registry/cbom --output value path create=self
 
     [PSCustomObject]@{
       RawOutput     = $rawLines
+      Stderr        = $stderrLines
       ExitCode      = [int]$exitCode
       ContainerArgs = $containerArgs
       ContainerEnv  = $containerEnv
@@ -1051,6 +1059,8 @@ if (`$jto -match 'settings=([^,]+)') {
     It 'missing subject fails' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', '--jfr', '--', 'echo', 'hello')
       $r.ExitCode | Should -Be 1
+      ($r.Stderr -join "`n") | Should -Match 'No subject specified'
+      ($r.RawOutput -join "`n") | Should -Not -Match 'No subject specified'
     }
 
     It 'target command runs on host' {
@@ -1158,7 +1168,7 @@ if (`$jto -match 'settings=([^,]+)') {
       $relocated | Should -Not -BeNullOrEmpty
       # The value stays inside the config file, where the CLI will read it verbatim,
       # so the user is told it will not resolve where they wrote it.
-      $warned = $r.RawOutput | Where-Object { $_ -match 'WARN.*/etc/spice-test-staging is mounted at /mnt/spice/' }
+      $warned = $r.Stderr | Where-Object { $_ -match 'WARN.*/etc/spice-test-staging is mounted at /mnt/spice/' }
       $warned | Should -Not -BeNullOrEmpty
     }
 

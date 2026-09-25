@@ -291,8 +291,8 @@ function Mount-Path($value, $create, $mustExist) {
   if (Test-Path -LiteralPath $value) {
     if ($isDir) { $dir = $value } else { $dir = Split-Path -Parent $value }
   } elseif ($mustExist) {
-    Write-Host "ERROR ❌ Input path does not exist: $value"
-    Write-Host "INFO  Use --help for usage information."
+    [Console]::Error.WriteLine("ERROR ❌ Input path does not exist: $value")
+    [Console]::Error.WriteLine("INFO  Use --help for usage information.")
     exit 2
   } elseif ($create -eq 'self') {
     try { New-Item -ItemType Directory -Path $value -Force | Out-Null } catch { return $value }
@@ -363,7 +363,7 @@ function Mount-ConfigPaths($text) {
     # words, and a wrapper that refuses a run over a mount detail it cannot fix is
     # worse than one that says what it did.
     if ($result -ne (Convert-ToDockerPath $value)) {
-      Write-Host "WARN  ⚠️  $value is mounted at $result inside the container; a setting that names it may not resolve."
+      [Console]::Error.WriteLine("WARN  ⚠️  $value is mounted at $result inside the container; a setting that names it may not resolve.")
     }
   }
 }

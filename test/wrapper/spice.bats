@@ -683,6 +683,12 @@ MANIFEST
   [[ "$output" == *"No subject specified"* ]]
 }
 
+@test "runtime survey: wrapper messages go to stderr, not stdout" {
+  run bash -c "\"$WRAPPER\" survey runtime --jfr -- echo hello 2>/dev/null"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+}
+
 @test "runtime survey: target command runs on host" {
   local marker="$TEST_TMPDIR/host-ran.txt"
   run "$WRAPPER" survey runtime myapp --jfr --no-upload -- touch "$marker"
