@@ -41,14 +41,18 @@ $LocalHash = Get-FileHash -Path $ScriptPath -Algorithm SHA256 | Select-Object -E
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+function Write-Stderr($message) {
+  [Console]::Error.WriteLine($message)
+}
+
 function Get-AbsolutePath($path) {
   if ($path -eq "~") { $path = $HOME }
   elseif ($path -like "~/*" -or $path -like "~\*") { $path = Join-Path $HOME ($path -replace "^~[/\\]") }
   try {
     return (Resolve-Path -LiteralPath $path -ErrorAction Stop).ProviderPath
   } catch {
-    Write-Host "ERROR ❌ Input path does not exist: $path"
-    Write-Host "INFO  Use --help for usage information."
+    Write-Stderr "ERROR ❌ Input path does not exist: $path"
+    Write-Stderr "INFO  Use --help for usage information."
     exit 2
   }
 }
@@ -361,8 +365,8 @@ function Mount-Path($value, $create, $mustExist) {
   if (Test-Path -LiteralPath $value) {
     if ($isDir) { $dir = $value } else { $dir = Split-Path -Parent $value }
   } elseif ($mustExist) {
-    Write-Host "ERROR ❌ Input path does not exist: $value"
-    Write-Host "INFO  Use --help for usage information."
+    Write-Stderr "ERROR ❌ Input path does not exist: $value"
+    Write-Stderr "INFO  Use --help for usage information."
     exit 2
   } elseif ($create -eq 'self') {
     try { New-Item -ItemType Directory -Path $value -Force | Out-Null } catch { return $value }
@@ -433,7 +437,7 @@ function Mount-ConfigPaths($text) {
     # words, and a wrapper that refuses a run over a mount detail it cannot fix is
     # worse than one that says what it did.
     if ($result -ne (Convert-ToDockerPath $value)) {
-      Write-Host "WARN  ⚠️  $value is mounted at $result inside the container; a setting that names it may not resolve."
+      Write-Stderr "WARN  ⚠️  $value is mounted at $result inside the container; a setting that names it may not resolve."
     }
   }
 }
@@ -707,7 +711,7 @@ if ($env:SPICE_LABS_CLI_USE_JVM -eq "1") {
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   Write-Error "[X] Docker is not installed or not in PATH"
-  Write-Host "   Please install Docker: https://docs.docker.com/get-docker/"
+  Write-Stderr "   Please install Docker: https://docs.docker.com/get-docker/"
   exit 1
 }
 
@@ -721,20 +725,20 @@ if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
   $pullFlag += "--pull=never"
 } else {
   try {
-    Write-Host "[*] Checking for updates to Spice Labs Surveyor CLI..."
-    if ($debugMode) { docker pull "$imageRef" }
+    Write-Stderr "[*] Checking for updates to Spice Labs Surveyor CLI..."
+    if ($debugMode) { docker pull "$imageRef" | ForEach-Object { Write-Stderr $_ } }
     else { docker pull --quiet "$imageRef" | Out-Null }
   } catch {
-    Write-Warning "[!] Failed to pull $imageRef"
+    Write-Stderr "[!] Failed to pull $imageRef"
     $localExists = $false
     try { docker image inspect "$imageRef" | Out-Null; $localExists = $true } catch {}
     if (-not $localExists) {
       Write-Error "[X] Image $imageRef not found locally either."
-      Write-Host "   The image may not exist yet, or you may not have access."
-      Write-Host "   For enterprise/federal features, ensure --features matches an available image."
+      Write-Stderr "   The image may not exist yet, or you may not have access."
+      Write-Stderr "   For enterprise/federal features, ensure --features matches an available image."
       exit 1
     }
-    Write-Host "   Using local copy."
+    Write-Stderr "   Using local copy."
   }
 }
 
@@ -777,8 +781,8 @@ if ($ReleaseInfo) {
   if ($Asset -and $Asset.digest) {
     $RemoteHash = $Asset.digest -replace "sha256:", ""
     if ($LocalHash -ne $RemoteHash) {
-      Write-Host "[!] A newer version of this script is available. Run:"
-      Write-Host "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
+      Write-Stderr "[!] A newer version of this script is available. Run:"
+      Write-Stderr "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
     }
   }
 }
@@ -965,14 +969,14 @@ if ($isRuntimeSurvey) {
   if ($rtPrev) { $rtCliArgs += $rtPrev }
 
   if ($rtUserCmd.Count -eq 0) {
-    Write-Host "[X] No command specified after --"
-    Write-Host "Usage: spice survey runtime <subject> --jfr -- <command...>"
+    Write-Stderr "[X] No command specified after --"
+    Write-Stderr "Usage: spice survey runtime <subject> --jfr -- <command...>"
     exit 1
   }
 
   if (-not $rtSubject) {
-    Write-Host "[X] No subject specified"
-    Write-Host "Usage: spice survey runtime <subject> --jfr -- <command...>"
+    Write-Stderr "[X] No subject specified"
+    Write-Stderr "Usage: spice survey runtime <subject> --jfr -- <command...>"
     exit 1
   }
 
@@ -988,7 +992,7 @@ if ($isRuntimeSurvey) {
   $rtWorkdirHost = (Get-AbsolutePath $rtWorkdir)
 
   # Phase 1: Extract agent + JFC from container
-  Write-Host "Preparing runtime survey..."
+  Write-Stderr "Preparing runtime survey..."
   $spiceCliDir = Split-Path $jar -Parent
   $p1Args = @('run', '--rm', '--entrypoint', 'sh')
   $p1Args += @($userFlag)
@@ -1001,7 +1005,7 @@ if ($isRuntimeSurvey) {
   # Phase 2: Build JAVA_TOOL_OPTIONS
   $rtJfc = Join-Path $rtWorkdir 'spice-jfr.jfc'
   if (-not (Test-Path $rtJfc)) {
-    Write-Host "[X] Failed to extract JFR settings from container"
+    Write-Stderr "[X] Failed to extract JFR settings from container"
     Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
     exit 1
   }
@@ -1012,7 +1016,7 @@ if ($isRuntimeSurvey) {
   }
 
   if (-not $rtNativeOnly -and (Test-Path (Join-Path $rtWorkdir 'ancho.jar'))) {
-    Write-Host "Downloading probe configuration..."
+    Write-Stderr "Downloading probe configuration..."
     $rtProbes = Join-Path $rtWorkdir 'probes.json'
     $dlArgs = @('run', '--rm', '--entrypoint', 'java')
     $dlArgs += @($userFlag)
@@ -1028,12 +1032,12 @@ if ($isRuntimeSurvey) {
       $spiceJto = "-javaagent:${rtWorkdirHost}/ancho.jar=${rtProbes} $spiceJto"
     } else {
       Remove-Item $rtProbes -ErrorAction SilentlyContinue
-      Write-Host "[!] Could not download probe config. Using native-only mode."
+      Write-Stderr "[!] Could not download probe config. Using native-only mode."
     }
   }
 
   # Phase 3: Execute target command on the HOST
-  Write-Host "Executing: $($rtUserCmd -join ' ')"
+  Write-Stderr "Executing: $($rtUserCmd -join ' ')"
   $existingJto = $env:JAVA_TOOL_OPTIONS
   if ($existingJto) {
     $env:JAVA_TOOL_OPTIONS = "$spiceJto $existingJto"
@@ -1051,19 +1055,19 @@ if ($isRuntimeSurvey) {
   else { Remove-Item Env:JAVA_TOOL_OPTIONS -ErrorAction SilentlyContinue }
 
   if ($rtTargetRc -ne 0) {
-    Write-Host "[!] Target command exited with code $rtTargetRc. Still collecting recordings."
+    Write-Stderr "[!] Target command exited with code $rtTargetRc. Still collecting recordings."
   }
 
   # Check for recordings
   $rtRecordings = Get-ChildItem -Path $rtWorkdir -Filter '*.jfr' -ErrorAction SilentlyContinue
   if (-not $rtRecordings -or $rtRecordings.Count -eq 0) {
-    Write-Host "[X] No JFR recordings found in $rtWorkdir"
+    Write-Stderr "[X] No JFR recordings found in $rtWorkdir"
     if (-not $rtKeepRecording) { Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue }
     exit 1
   }
 
   # Phase 4: Parse + upload in container
-  Write-Host "Analyzing recordings..."
+  Write-Stderr "Analyzing recordings..."
   $rtCollectArgs = @($rtSubject, $rtWorkdirDocker)
   if ($rtNoUpload) { $rtCollectArgs += '--no-upload' }
 
@@ -1092,7 +1096,7 @@ if ($isRuntimeSurvey) {
   if (-not $rtKeepRecording) {
     Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
   } else {
-    Write-Host "Recordings kept in: $rtWorkdir"
+    Write-Stderr "Recordings kept in: $rtWorkdir"
   }
 
   if ($rtTargetRc -ne 0) { exit $rtTargetRc } else { exit $rtCollectRc }
