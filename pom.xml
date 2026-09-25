@@ -62,16 +62,7 @@
         <slf4j.version>2.0.17</slf4j.version>
         <spice-plugin-api.version>2.1.1</spice-plugin-api.version>
 
-        <!-- Transitive convergence pins (see the dependencyManagement block below).
-             spice-bom constrained these even though nothing here declares them
-             directly; goatrodeo and ginger-j pull them in. -->
-        <saffron.version>0.2.3</saffron.version>
-        <bouncycastle.version>1.84</bouncycastle.version>
-        <jackson.version>2.18.9</jackson.version>
-        <snakeyaml.version>2.3</snakeyaml.version>
-        <xz.version>1.12</xz.version>
-        <byte-buddy.version>1.18.12</byte-buddy.version>
-        <ancho.version>0.0.8</ancho.version>
+       <ancho.version>0.0.8</ancho.version>
         <!--        Use this version for local dev-->
         <!--        <ancho.version>0.0.1-SNAPSHOT</ancho.version> -->
         <junit.jupiter.version>5.13.1</junit.jupiter.version>
@@ -86,65 +77,6 @@
              channel worth stopping at. -->
         <central.autoPublish>true</central.autoPublish>
     </properties>
-
-    <!-- Transitive convergence pins. spice-bom's dependencyManagement applied to the
-         whole resolved graph, not just the dependencies declared below, so dropping
-         the import would silently move these. Pinned to the values spice-bom 1.0.11
-         produced, so the fat jar's contents do not change. -->
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>io.spicelabs</groupId>
-                <artifactId>saffron</artifactId>
-                <version>${saffron.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.bouncycastle</groupId>
-                <artifactId>bcprov-jdk18on</artifactId>
-                <version>${bouncycastle.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.bouncycastle</groupId>
-                <artifactId>bcutil-jdk18on</artifactId>
-                <version>${bouncycastle.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.bouncycastle</groupId>
-                <artifactId>bcpkix-jdk18on</artifactId>
-                <version>${bouncycastle.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.bouncycastle</groupId>
-                <artifactId>bcpg-jdk18on</artifactId>
-                <version>${bouncycastle.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-databind</artifactId>
-                <version>${jackson.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.fasterxml.jackson.datatype</groupId>
-                <artifactId>jackson-datatype-jsr310</artifactId>
-                <version>${jackson.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.yaml</groupId>
-                <artifactId>snakeyaml</artifactId>
-                <version>${snakeyaml.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.tukaani</groupId>
-                <artifactId>xz</artifactId>
-                <version>${xz.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>net.bytebuddy</groupId>
-                <artifactId>byte-buddy</artifactId>
-                <version>${byte-buddy.version}</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <!-- The spice runtime classpath, declared directly with versions from the
