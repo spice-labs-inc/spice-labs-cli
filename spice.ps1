@@ -795,9 +795,11 @@ foreach ($arg in $args) {
   }
 }
 
-# Trim SPICE_PASS to remove invisible characters (e.g. CRLF, BOM, trailing
-# whitespace) that Windows may introduce via the Environment Variables GUI.
+# Trim SPICE_PASS and SPICE_LICENSE to remove invisible characters (e.g. CRLF, BOM,
+# trailing whitespace) that Windows may introduce via the Environment Variables GUI. Both are
+# passed through as given; the CLI refuses a run where both are set.
 $spicePass = if ($env:SPICE_PASS) { $env:SPICE_PASS.Trim() } else { "" }
+$spiceLicense = if ($env:SPICE_LICENSE) { $env:SPICE_LICENSE.Trim() } else { "" }
 
 # --user: match bash wrapper behavior on Linux/macOS. Not needed on Windows
 # where Docker Desktop handles file ownership transparently.
@@ -1004,6 +1006,21 @@ if ($isRuntimeSurvey) {
 
   # Phase 2: Build JAVA_TOOL_OPTIONS
   $rtJfc = Join-Path $rtWorkdir 'spice-jfr.jfc'
+  # Phase 0: a licensed image refuses an unlicensed run before the target program is started.
+  $lcArgs = @('run', '--rm', '--entrypoint', 'java')
+  $lcArgs += @($userFlag)
+  $lcArgs += @('--network', $script:SpiceDockerNetwork)
+  $lcArgs += @($pullFlag)
+  $lcArgs += @('-e', "SPICE_PASS=$spicePass")
+  $lcArgs += @('-e', "SPICE_LICENSE=$spiceLicense")
+  $lcArgs += @("$imageRef")
+  $lcArgs += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect', '--check-license')
+  & docker @lcArgs > $null
+  if ($LASTEXITCODE -ne 0) {
+    Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
+    exit 1
+  }
+
   if (-not (Test-Path $rtJfc)) {
     Write-Stderr "[X] Failed to extract JFR settings from container"
     Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
@@ -1023,6 +1040,7 @@ if ($isRuntimeSurvey) {
     $dlArgs += @('--network', $script:SpiceDockerNetwork)
     $dlArgs += @($pullFlag)
     $dlArgs += @('-e', "SPICE_PASS=$spicePass")
+    $dlArgs += @('-e', "SPICE_LICENSE=$spiceLicense")
     $dlArgs += @("$imageRef")
     $dlArgs += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect', '--download-probes')
     & docker @dlArgs > $rtProbes 2>$null
@@ -1086,6 +1104,7 @@ if ($isRuntimeSurvey) {
   $p4Args += @('-v', "${rtWorkdirHost}:${rtWorkdirDocker}")
   $p4Args += $rtAnchorMount
   $p4Args += @('-e', "SPICE_PASS=$spicePass")
+  $p4Args += @('-e', "SPICE_LICENSE=$spiceLicense")
   $p4Args += @("$imageRef")
   $p4Args += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect')
   $p4Args += @($rtCollectArgs)
@@ -1162,6 +1181,7 @@ docker run --rm `
   @volumes `
   @workdirFlag `
   -e "SPICE_PASS=$spicePass" `
+  -e "SPICE_LICENSE=$spiceLicense" `
   @envArgs `
    "$imageRef" `
    @dockerArgs
