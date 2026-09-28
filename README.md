@@ -78,14 +78,14 @@ uploading, because it never can.
 Set it in `SPICE_LICENSE` (or in `SPICE_PASS`: the credential says what it is, not the variable;
 setting both is an error). The CLI verifies it offline, before running any command that does work:
 
-- a Spice Pass is refused, by name — *"SPICE_LICENSE holds a Spice Pass (long-duration), but the
-  … edition needs a Spice License"*;
+- a Spice Pass is refused, by name — _"SPICE_LICENSE holds a Spice Pass (long-duration), but the
+  OT/IT Pro edition needs a Spice License"_;
 - a license that does not cover every feature the distribution has is refused, naming the
   missing ones, rather than quietly running a lesser edition;
 - an expired license says the date and whom to contact.
 
 Diagnostics stay available without a valid license: `spice --version` reports the license state
-(*license: valid until …* or *license: none (…)*), `spice pass decode` shows what the credential
+(_license: valid until …_ or _license: none (…)_), `spice pass decode` shows what the credential
 says and why it was refused, and `--help` works everywhere. For a new or renewed license,
 contact Spice Labs.
 
@@ -202,55 +202,55 @@ variable, or the flag — which is how to answer "why is it doing that?" without
 
 ### Global
 
-| Option | Description | Default |
-|--------|-------------|---------|
+| Option     | Description                | Default                                                        |
+| ---------- | -------------------------- | -------------------------------------------------------------- |
 | `--config` | Path to a TOML config file | discovered per platform (see [Configuration](#-configuration)) |
 
 ### Inventory Survey
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--no-upload` | Survey only, skip upload | `false` |
-| `--upload-only` | Upload previously-generated ADGs (skip survey) | `false` |
-| `--output` | Output directory for survey results | `~/.spicelabs/surveyor/` |
-| `--tag-json` | Additional JSON metadata for tags | _(none)_ |
-| `--log-level` | `debug` \| `info` \| `warn` \| `error` | `info` |
-| `--log-file` | Path to log file (output appended to both console and file) | _(none)_ |
-| `--threads` | Number of threads to use | half of available CPU cores |
-| `--max-records` | Max records to process per batch | `5000` |
-| `--chunk-size` | Target chunk size in MB for uploads | `64` |
-| `--analysis-args` | Additional analysis args in key=value format | _(none)_ |
-| `--upload-args` | Additional upload args in key=value format | _(none)_ |
+| Option            | Description                                                 | Default                     |
+| ----------------- | ----------------------------------------------------------- | --------------------------- |
+| `--no-upload`     | Survey only, skip upload                                    | `false`                     |
+| `--upload-only`   | Upload previously-generated ADGs (skip survey)              | `false`                     |
+| `--output`        | Output directory for survey results                         | `~/.spicelabs/surveyor/`    |
+| `--tag-json`      | Additional JSON metadata for tags                           | _(none)_                    |
+| `--log-level`     | `debug` \| `info` \| `warn` \| `error`                      | `info`                      |
+| `--log-file`      | Path to log file (output appended to both console and file) | _(none)_                    |
+| `--threads`       | Number of threads to use                                    | half of available CPU cores |
+| `--max-records`   | Max records to process per batch                            | `5000`                      |
+| `--chunk-size`    | Target chunk size in MB for uploads                         | `64`                        |
+| `--analysis-args` | Additional analysis args in key=value format                | _(none)_                    |
+| `--upload-args`   | Additional upload args in key=value format                  | _(none)_                    |
 
 ### Image Survey
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--subject` | Label identifying the system being surveyed | the image reference |
-| `--no-upload` | Survey only, skip upload | `false` |
-| `--output` | Output directory for the pulled layout | system temp |
-| `--tag-json` | Additional JSON metadata for tags | _(none)_ |
-| `--log-level` | `debug` \| `info` \| `warn` \| `error` | `info` |
-| `--log-file` | Path to log file (output appended to both console and file) | _(none)_ |
-| `--threads` | Number of threads to use | half of available CPU cores |
-| `--max-records` | Max records to process per batch | `5000` |
-| `--chunk-size` | Target chunk size in MB for uploads | `64` |
-| `--analysis-args` | Additional analysis args in key=value format | _(none)_ |
-| `--upload-args` | Additional upload args in key=value format | _(none)_ |
+| Option            | Description                                                 | Default                     |
+| ----------------- | ----------------------------------------------------------- | --------------------------- |
+| `--subject`       | Label identifying the system being surveyed                 | the image reference         |
+| `--no-upload`     | Survey only, skip upload                                    | `false`                     |
+| `--output`        | Output directory for the pulled layout                      | system temp                 |
+| `--tag-json`      | Additional JSON metadata for tags                           | _(none)_                    |
+| `--log-level`     | `debug` \| `info` \| `warn` \| `error`                      | `info`                      |
+| `--log-file`      | Path to log file (output appended to both console and file) | _(none)_                    |
+| `--threads`       | Number of threads to use                                    | half of available CPU cores |
+| `--max-records`   | Max records to process per batch                            | `5000`                      |
+| `--chunk-size`    | Target chunk size in MB for uploads                         | `64`                        |
+| `--analysis-args` | Additional analysis args in key=value format                | _(none)_                    |
+| `--upload-args`   | Additional upload args in key=value format                  | _(none)_                    |
 
 ### Runtime Survey
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--jfr` | **Required.** Use JFR instrumentation | — |
-| `--anchor` | Path to the jar/war/ear being surveyed; hashed so the runtime survey correlates with an inventory survey that indexed the same artifact, producing a combined CBOM | _(none)_ |
-| `--native-only` | Use only native JDK security events (no agent) | `false` |
-| `--no-upload` | Analyze locally, don't upload results | `false` |
-| `--keep-recording` | Don't delete JFR recordings after upload | `false` |
-| `--output` | Directory for temporary files | `~/.spicelabs/runtime-survey/` |
-| `--log-level` | `debug` \| `info` \| `warn` \| `error` | `info` |
-| `--log-file` | Path to log file (output appended to both console and file) | _(none)_ |
-| `--chunk-size` | Target chunk size in MB for uploads | `64` |
+| Option             | Description                                                                                                                                                        | Default                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
+| `--jfr`            | **Required.** Use JFR instrumentation                                                                                                                              | —                              |
+| `--anchor`         | Path to the jar/war/ear being surveyed; hashed so the runtime survey correlates with an inventory survey that indexed the same artifact, producing a combined CBOM | _(none)_                       |
+| `--native-only`    | Use only native JDK security events (no agent)                                                                                                                     | `false`                        |
+| `--no-upload`      | Analyze locally, don't upload results                                                                                                                              | `false`                        |
+| `--keep-recording` | Don't delete JFR recordings after upload                                                                                                                           | `false`                        |
+| `--output`         | Directory for temporary files                                                                                                                                      | `~/.spicelabs/runtime-survey/` |
+| `--log-level`      | `debug` \| `info` \| `warn` \| `error`                                                                                                                             | `info`                         |
+| `--log-file`       | Path to log file (output appended to both console and file)                                                                                                        | _(none)_                       |
+| `--chunk-size`     | Target chunk size in MB for uploads                                                                                                                                | `64`                           |
 
 Flags can appear anywhere before the `--` separator.
 
@@ -302,17 +302,17 @@ The wrapper script automatically remaps `input` and `--output` host paths to `/m
 
 ## 📦 Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SPICE_PASS` | **Required** for upload. JWT token for Spice Labs auth. Not together with `SPICE_LICENSE`. | _(none)_ |
-| `SPICE_LICENSE` | **Required** for any command that does work in an airgapped distribution (see [Spice Licenses](#spice-licenses)). Not together with `SPICE_PASS`. | _(none)_ |
-| `SPICE_LABS_CLI_USE_JVM` | Use the local JVM instead of Docker (`1` = enable) | `0` |
-| `SPICE_LABS_CLI_JAR` | Path to the CLI JAR when using JVM mode | `/opt/spice-labs-cli/spice-labs-cli.jar` |
-| `SPICE_LABS_JVM_ARGS` | Custom JVM flags (e.g. `-Xmx512m -XX:+UseG1GC`) | `-XX:MaxRAMPercentage=75` |
-| `SPICE_IMAGE` | Docker image to use | `spicelabs/spice-labs-cli` |
-| `SPICE_IMAGE_TAG` | Docker image tag | `latest` |
-| `SPICE_LABS_CLI_SKIP_PULL` | Skip `docker pull` before run (`1` = skip) | `0` |
-| `SPICE_DOCKER_FLAGS` | Additional flags passed to `docker run` | _(none)_ |
+| Variable                   | Description                                                                                                                                       | Default                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `SPICE_PASS`               | **Required** for upload. JWT token for Spice Labs auth. Not together with `SPICE_LICENSE`.                                                        | _(none)_                                 |
+| `SPICE_LICENSE`            | **Required** for any command that does work in an airgapped distribution (see [Spice Licenses](#spice-licenses)). Not together with `SPICE_PASS`. | _(none)_                                 |
+| `SPICE_LABS_CLI_USE_JVM`   | Use the local JVM instead of Docker (`1` = enable)                                                                                                | `0`                                      |
+| `SPICE_LABS_CLI_JAR`       | Path to the CLI JAR when using JVM mode                                                                                                           | `/opt/spice-labs-cli/spice-labs-cli.jar` |
+| `SPICE_LABS_JVM_ARGS`      | Custom JVM flags (e.g. `-Xmx512m -XX:+UseG1GC`)                                                                                                   | `-XX:MaxRAMPercentage=75`                |
+| `SPICE_IMAGE`              | Docker image to use                                                                                                                               | `spicelabs/spice-labs-cli`               |
+| `SPICE_IMAGE_TAG`          | Docker image tag                                                                                                                                  | `latest`                                 |
+| `SPICE_LABS_CLI_SKIP_PULL` | Skip `docker pull` before run (`1` = skip)                                                                                                        | `0`                                      |
+| `SPICE_DOCKER_FLAGS`       | Additional flags passed to `docker run`                                                                                                           | _(none)_                                 |
 
 ---
 
