@@ -61,7 +61,6 @@ public class SpicePassDecoder {
     CLAIM_NAMES.put("x-challenge", "Challenge");
     CLAIM_NAMES.put("x-cutoff", "Artifact Cutoff");
     CLAIM_NAMES.put("x-features", "Licensed Features");
-    CLAIM_NAMES.put("x-features-withheld", "Withheld Features");
     CLAIM_NAMES.put("x-edition", "Licensed Edition");
   }
 

@@ -72,19 +72,19 @@ they are licensed to do. They check it themselves, against a **Spice License**: 
 Spice Labs issues to your organization with your license — you do not generate it, and you need
 no platform account. The distribution ships a public key inside the CLI; a Spice License is
 signed with the matching private key (which never leaves Spice Labs' Vault), carries the
-**features** your license covers (`x-features`), those it knows of and does not cover
-(`x-features-withheld`), the edition it was issued for (`x-edition`) and its own expiry, and
-carries nothing about uploading, because it never can.
+**features** your license grants (`x-features`), the edition it was issued for (`x-edition`)
+and its own expiry, and carries nothing about uploading, because it never can.
 
 Set it in `SPICE_LICENSE` (or in `SPICE_PASS`: the credential says what it is, not the variable;
 setting both is an error). The CLI verifies it offline, before running any command that does work:
 
 - a Spice Pass is refused, by name — _"SPICE_LICENSE holds a Spice Pass (long-duration), but the
   OT/IT Pro edition needs a Spice License"_;
-- a license that does not cover every feature the distribution has is refused, naming the
-  missing ones, rather than quietly running a lesser edition. A feature added to an edition
-  after your license was issued is one the license names neither way: it is covered if the
-  license was issued for this edition, so a new release never locks out a current license;
+- a feature is covered when your license grants it, or when this release grants it to the
+  edition your license was issued for, so a new release never locks out a current license and
+  a feature it opens up is yours too. A license that does not cover every feature the
+  distribution has is refused, naming the missing ones, rather than quietly running a lesser
+  edition;
 - an expired license says the date and whom to contact.
 
 Diagnostics stay available without a valid license: `spice --version` reports the license state

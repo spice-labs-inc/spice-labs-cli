@@ -97,12 +97,6 @@ final class License {
   /** The claim naming the features the license grants. */
   static final String FEATURES_CLAIM = "x-features";
 
-  /**
-   * The claim naming the features the license knows of and does not grant. With
-   * {@link #FEATURES_CLAIM} it is every feature that existed when the license was issued.
-   */
-  static final String WITHHELD_CLAIM = "x-features-withheld";
-
   /** The claim naming the edition the license was issued for, when it was issued for one. */
   static final String EDITION_CLAIM = "x-edition";
 
@@ -255,27 +249,21 @@ final class License {
     }
 
     // 5. The grant covers the build. Not narrowed: a build that ships more than the license
-    //    covers is refused, never quietly run as a lesser edition. A license names the features
-    //    it grants and those it withholds; a feature it names in neither did not exist when it
-    //    was issued, and is decided by the edition it was issued for, so a release that adds a
-    //    feature to an edition does not lock out the licenses already issued for it. Withheld
-    //    wins over granted, should a license ever say both.
+    //    covers is refused, never quietly run as a lesser edition. A feature is covered when the
+    //    license grants it, or when the software does: a license issued for this build's edition
+    //    is entitled to every feature this release gives that edition, including one a later
+    //    release added after the license was issued.
     List<String> granted = verified.getClaim(FEATURES_CLAIM).asList(String.class);
     if (granted == null) {
       return new Refused(
           "Your Spice License names no licensed features.",
           OBTAIN);
     }
-    List<String> named = verified.getClaim(WITHHELD_CLAIM).asList(String.class);
-    Set<String> withheld = named == null ? Set.of() : Set.copyOf(named);
     boolean issuedForThisEdition = edition.id().equals(verified.getClaim(EDITION_CLAIM).asString());
     Set<String> missing = new LinkedHashSet<>();
-    for (String feature : edition.features()) {
-      boolean covered = withheld.contains(feature) ? false
-          : granted.contains(feature) || issuedForThisEdition;
-      if (!covered) {
-        missing.add(feature);
-      }
+    if (!issuedForThisEdition) {
+      missing.addAll(edition.features());
+      granted.forEach(missing::remove);
     }
     if (!missing.isEmpty()) {
       return new Refused(

@@ -224,47 +224,35 @@ class LicenseTest {
     assertTrue(r.hints().get(0).contains("covers: bulk, static-detect"), r.hints().toString());
   }
 
-  // A release may add a feature to an edition after a license for it was issued: the license
-  // names that feature neither as granted nor as withheld, and the edition it was issued for
-  // decides.
+  // A feature is covered when the license grants it, or when the software grants it to the
+  // edition the license was issued for: a release may add a feature to that edition, or open one
+  // up, after the license was issued.
 
   @Test
-  void featureTheLicenseNeverHeardOf_isGranted_whenIssuedForThisEdition() {
+  void featureNotGranted_isCovered_whenIssuedForThisEdition() {
     License.Outcome outcome = check(LICENSED, signed(spiceLicense("bulk", "static-detect")
-        .withClaim(License.WITHHELD_CLAIM, List.of("inventory-surveys"))
         .withClaim(License.EDITION_CLAIM, "ex")));
     assertInstanceOf(License.Granted.class, outcome, outcome.toString());
   }
 
   @Test
-  void featureTheLicenseNeverHeardOf_isRefused_whenIssuedForAnotherEdition() {
+  void featureNotGranted_isRefused_whenIssuedForAnotherEdition() {
     License.Refused r = refused(LICENSED, signed(spiceLicense("bulk", "static-detect")
-        .withClaim(License.WITHHELD_CLAIM, List.of("inventory-surveys"))
         .withClaim(License.EDITION_CLAIM, "other")));
     assertTrue(r.reason().contains("lacks cbom-material"), r.reason());
   }
 
   @Test
-  void featureTheLicenseNeverHeardOf_isRefused_whenIssuedForNoEdition() {
-    License.Refused r = refused(LICENSED, signed(spiceLicense("bulk", "static-detect")
-        .withClaim(License.WITHHELD_CLAIM, List.of("inventory-surveys"))));
+  void featureNotGranted_isRefused_whenIssuedForNoEdition() {
+    License.Refused r = refused(LICENSED, signed(spiceLicense("bulk", "static-detect")));
     assertTrue(r.reason().contains("lacks cbom-material"), r.reason());
   }
 
   @Test
-  void withheldFeature_isRefused_evenForTheEditionItWasIssuedFor() {
-    License.Refused r = refused(LICENSED, signed(spiceLicense("bulk", "static-detect")
-        .withClaim(License.WITHHELD_CLAIM, List.of("cbom-material"))
-        .withClaim(License.EDITION_CLAIM, "ex")));
-    assertTrue(r.reason().contains("lacks cbom-material"), r.reason());
-  }
-
-  @Test
-  void featureBothGrantedAndWithheld_isWithheld() {
-    License.Refused r = refused(LICENSED, signed(spiceLicense("bulk", "static-detect", "cbom-material")
-        .withClaim(License.WITHHELD_CLAIM, List.of("cbom-material"))
-        .withClaim(License.EDITION_CLAIM, "ex")));
-    assertTrue(r.reason().contains("lacks cbom-material"), r.reason());
+  void aLicenseForAnotherEditionIsCoveredByWhatItGrants() {
+    License.Outcome outcome = check(LICENSED, signed(spiceLicense("bulk", "static-detect", "cbom-material")
+        .withClaim(License.EDITION_CLAIM, "other")));
+    assertInstanceOf(License.Granted.class, outcome, outcome.toString());
   }
 
   @Test
