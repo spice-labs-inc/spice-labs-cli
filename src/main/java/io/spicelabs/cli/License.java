@@ -97,6 +97,9 @@ final class License {
   /** The claim naming the features the license grants. */
   static final String FEATURES_CLAIM = "x-features";
 
+  /** The claim naming the edition the license was issued for, when it was issued for one. */
+  static final String EDITION_CLAIM = "x-edition";
+
   /** The {@code x-type} a Spice License carries; a Spice Pass says "long-duration". */
   static final String LICENSE_TYPE = "license";
 
@@ -246,15 +249,22 @@ final class License {
     }
 
     // 5. The grant covers the build. Not narrowed: a build that ships more than the license
-    //    covers is refused, never quietly run as a lesser edition.
+    //    covers is refused, never quietly run as a lesser edition. A feature is covered when the
+    //    license grants it, or when the software does: a license issued for this build's edition
+    //    is entitled to every feature this release gives that edition, including one a later
+    //    release added after the license was issued.
     List<String> granted = verified.getClaim(FEATURES_CLAIM).asList(String.class);
     if (granted == null) {
       return new Refused(
           "Your Spice License names no licensed features.",
           OBTAIN);
     }
-    Set<String> missing = new LinkedHashSet<>(edition.features());
-    granted.forEach(missing::remove);
+    boolean issuedForThisEdition = edition.id().equals(verified.getClaim(EDITION_CLAIM).asString());
+    Set<String> missing = new LinkedHashSet<>();
+    if (!issuedForThisEdition) {
+      missing.addAll(edition.features());
+      granted.forEach(missing::remove);
+    }
     if (!missing.isEmpty()) {
       return new Refused(
           "Your Spice License does not cover the " + product + " edition: it lacks " + String.join(", ", missing) + ".",
