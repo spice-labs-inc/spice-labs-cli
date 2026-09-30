@@ -1231,7 +1231,7 @@ P spice/survey/inventory 1 value path exists
       $env:XDG_CONFIG_HOME = Join-Path $script:TestDir 'xdg'
       $env:DISPLAY = ':0'
       Remove-Item env:WAYLAND_DISPLAY, env:SSH_CONNECTION, env:SSH_TTY, env:OPENER_EXIT -ErrorAction SilentlyContinue
-      if (-not $IsWindows) {
+      if ($IsLinux -or $IsMacOS) {
         foreach ($opener in @('open', 'xdg-open')) {
           $path = Join-Path $script:MockBinDir $opener
           Set-Content -Path $path -Value "#!/bin/bash`necho `"`$1`" > `"`$OPENED_FILE`"`nexit `"`${OPENER_EXIT:-0}`"`n"
@@ -1245,7 +1245,7 @@ P spice/survey/inventory 1 value path exists
 
     AfterEach {
       Remove-Item env:OPENED_FILE, env:XDG_CONFIG_HOME, env:DISPLAY, env:SSH_CONNECTION, env:OPENER_EXIT -ErrorAction SilentlyContinue
-      if (-not $IsWindows) {
+      if ($IsLinux -or $IsMacOS) {
         foreach ($f in @('open', 'xdg-open', 'xdg-mime')) {
           Remove-Item (Join-Path $script:MockBinDir $f) -ErrorAction SilentlyContinue
         }
@@ -1261,7 +1261,7 @@ P spice/survey/inventory 1 value path exists
       Test-Path $script:OpenedFile | Should -BeFalse
     }
 
-    It '--browser fetches HTML from the container and opens it on the host' -Skip:$IsWindows {
+    It '--browser fetches HTML from the container and opens it on the host' -Skip:(-not ($IsLinux -or $IsMacOS)) {
       $r = Invoke-SpiceWrapper -Arguments @('docs', '--browser', 'completion')
       $r.ExitCode | Should -Be 0
       ($r.RawOutput -join "`n") | Should -Match 'Opened the guide in your browser:'
@@ -1283,7 +1283,7 @@ P spice/survey/inventory 1 value path exists
       $r.DockerRunArgs | Should -BeNullOrEmpty
     }
 
-    It '--browser with an opener that fails is an error' -Skip:$IsWindows {
+    It '--browser with an opener that fails is an error' -Skip:(-not ($IsLinux -or $IsMacOS)) {
       $env:OPENER_EXIT = '1'
       $r = Invoke-SpiceWrapper -Arguments @('docs', '--browser')
       $r.ExitCode | Should -Be 1
