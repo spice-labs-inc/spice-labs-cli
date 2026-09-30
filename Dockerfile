@@ -7,7 +7,7 @@
 #              image (see .github/workflows/build.yml).
 #   builder  — compiles spice-labs-cli + assembles the fat JAR + stages ancho.
 #              Built FROM deps so the Maven cache is already warm.
-#   spice    — runtime image: JRE + fat JAR + JFR config + wrapper scripts.
+#   spice    — runtime image: JRE + fat JAR + syft + JFR config + wrapper scripts.
 #   test     — deps + runs `mvn verify`. Used by CI so tests run against the
 #              exact dependency image that produced the runtime JAR.
 #
@@ -24,8 +24,9 @@ WORKDIR /workspace
 
 ENV MAVEN_CONFIG="-B -ntp"
 
-# Install Maven + the OS deps the runtime image will need later. git is
-# required by the git-commit-id-maven-plugin at build time.
+# Install Maven + the OS deps the runtime image will need later (syft is added
+# in the runtime stage via a COPY --from). git is required by the
+# git-commit-id-maven-plugin at build time.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl git maven \
         bash coreutils findutils \
@@ -152,7 +153,10 @@ CMD ["verify"]
 
 # ---- runtime ----------------------------------------------------------------
 # Slim runtime: JRE only, no JDK, no Maven. The fat JAR is the only artifact;
-# the JFR config and wrapper scripts mirror what the install/release flow ships.
+# syft is layered in because `survey inventory` turns on goatrodeo's static
+# metadata, which finds OS packages, lockfile dependencies and Go modules only
+# through syft (and skips them silently without it); the JFR config and wrapper
+# scripts mirror what the install/release flow ships.
 FROM eclipse-temurin:21-jre AS spice
 ARG VERSION="unknown"
 # oras pulls OCI/Docker images by name for `spice survey image`. Baked in so no
@@ -176,6 +180,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # builds default to "unknown").
 ENV SPICE_VERSION=${VERSION}
 
+COPY --from=anchore/syft:v1.30.0 /syft /usr/bin/syft
 COPY --from=builder /workspace/target/*-fat.jar ./spice-labs-cli.jar
 COPY --from=builder /workspace/target/ancho.jar ./ancho.jar
 # Plugin jars (empty in a public build); placed on the classpath alongside the CLI.
