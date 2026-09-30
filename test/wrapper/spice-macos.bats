@@ -300,12 +300,23 @@ MOCK
   skip "Runtime survey requires complex Docker mocking"
 }
 
-# ── spice docs: the guide in a browser on the host ───────────────────────────
+# ── spice guide: the guide in a browser on the host ──────────────────────────
 # In Docker mode the container has no browser, so the wrapper asks it for HTML and opens
 # the page itself. Mock openers (`open` on macOS, `xdg-open` elsewhere) record what they
-# were asked to open; bats' stdout is not a terminal, so only --browser opens anything.
+# were asked to open. bats' stdout is not a terminal, so run_in_terminal gives the wrapper
+# one where a test needs it.
 
-docs_setup() {
+# Run the wrapper with a pseudo-terminal on its standard output (util-linux script, or BSD
+# script on macOS), as `run` does otherwise.
+run_in_terminal() {
+  if script --version >/dev/null 2>&1; then
+    run script -qec "$(printf '%q ' "$@")" /dev/null
+  else
+    run script -q /dev/null "$@"
+  fi
+}
+
+guide_setup() {
   export XDG_CONFIG_HOME="$TEST_TMPDIR/xdg" XDG_CONFIG_DIRS="$TEST_TMPDIR/xdg-dirs"
   export DISPLAY=:0
   unset WAYLAND_DISPLAY SSH_CONNECTION SSH_TTY
@@ -318,80 +329,98 @@ docs_setup() {
   chmod +x "$MOCK_BIN/xdg-mime"
 }
 
-@test "docs: output not a terminal passes through for the container to print" {
-  docs_setup
-  run "$WRAPPER" docs completion
+@test "guide: output not a terminal passes through for the container to print" {
+  guide_setup
+  run "$WRAPPER" guide completion
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ARG:docs"* ]]
+  [[ "$output" == *"ARG:guide"* ]]
   [[ "$output" == *"ARG:completion"* ]]
   [[ "$output" != *"ARG:--html"* ]]
   [ ! -f "$OPENED_FILE" ]
 }
 
-@test "docs --browser: fetches HTML from the container and opens it on the host" {
-  docs_setup
-  run "$WRAPPER" docs --browser completion
+@test "guide --browser: fetches HTML from the container and opens it on the host" {
+  guide_setup
+  run "$WRAPPER" guide --browser completion
   [ "$status" -eq 0 ]
   [[ "$output" == *"Opened the guide in your browser:"* ]]
   local opened; opened="$(cat "$OPENED_FILE")"
   [[ "$opened" == */guide.html ]]
   # What the container was asked for is what landed in the file the browser opens.
-  grep -qx "ARG:docs" "$opened"
+  grep -qx "ARG:guide" "$opened"
   grep -qx "ARG:completion" "$opened"
   grep -qx "ARG:--html" "$opened"
   ! grep -qx "ARG:--browser" "$opened"
 }
 
-@test "docs --browser: recognised after spice's own --config" {
-  docs_setup
+@test "guide --browser: recognised after spice's own --config" {
+  guide_setup
   touch "$TEST_TMPDIR/spice.toml"
-  run "$WRAPPER" --config "$TEST_TMPDIR/spice.toml" docs --browser
+  run "$WRAPPER" --config "$TEST_TMPDIR/spice.toml" guide --browser
   [ "$status" -eq 0 ]
   grep -qx "ARG:--html" "$(cat "$OPENED_FILE")"
 }
 
-@test "docs --browser: over SSH, refuses without running the container" {
-  docs_setup
+@test "guide --browser: over SSH, refuses without running the container" {
+  guide_setup
   export SSH_CONNECTION="10.0.0.1 22 10.0.0.2 22"
-  run "$WRAPPER" docs --browser
+  run "$WRAPPER" guide --browser
   [ "$status" -eq 1 ]
   [[ "$output" == *"Cannot open a browser: this is an SSH session"* ]]
   [ ! -s "$DOCKER_ARGS_FILE" ]
 }
 
-@test "docs --browser: an opener that fails is an error" {
-  docs_setup
+@test "guide --browser: an opener that fails is an error" {
+  guide_setup
   export OPENER_EXIT=1
-  run "$WRAPPER" docs --browser
+  run "$WRAPPER" guide --browser
   [ "$status" -eq 1 ]
   [[ "$output" == *"could not open"* ]]
 }
 
-@test "docs --markdown: passes through even when a browser is available" {
-  docs_setup
-  run "$WRAPPER" docs --markdown intro
+@test "guide --markdown: passes through even when a browser is available" {
+  guide_setup
+  run "$WRAPPER" guide --markdown intro
   [ "$status" -eq 0 ]
   [[ "$output" == *"ARG:--markdown"* ]]
   [[ "$output" != *"ARG:--html"* ]]
   [ ! -f "$OPENED_FILE" ]
 }
 
-@test "docs: a failing container is reported, and nothing is opened" {
-  docs_setup
+@test "guide: a failing container is reported, and nothing is opened" {
+  guide_setup
   export TEST_EXIT_CODE=2
-  run "$WRAPPER" docs --browser nope
+  run "$WRAPPER" guide --browser nope
   [ "$status" -eq 2 ]
   [ ! -f "$OPENED_FILE" ]
 }
 
-@test "docs: JVM mode leaves the choice to the CLI on the host" {
-  docs_setup
+@test "guide: JVM mode leaves the choice to the CLI on the host" {
+  guide_setup
   local jar="$TEST_TMPDIR/fake.jar"
   touch "$jar"
   export SPICE_LABS_CLI_USE_JVM=1 SPICE_LABS_CLI_JAR="$jar"
-  run "$WRAPPER" docs --browser completion
+  run "$WRAPPER" guide --browser completion
   [ "$status" -eq 0 ]
   local java_args; java_args="$(cat "$JAVA_ARGS_FILE")"
-  [[ "$java_args" == *"docs --browser completion"* ]]
+  [[ "$java_args" == *"guide --browser completion"* ]]
+  [ ! -f "$OPENED_FILE" ]
+}
+
+@test "guide: in a terminal, opens the page in a browser by default" {
+  guide_setup
+  run_in_terminal "$WRAPPER" guide completion
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Opened the guide in your browser:"* ]]
+  grep -qx "ARG:--html" "$(cat "$OPENED_FILE")"
+}
+
+@test "docs --json: spice's own docs command reaches the container untouched, even in a terminal" {
+  guide_setup
+  run_in_terminal "$WRAPPER" docs --json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ARG:docs"* ]]
+  [[ "$output" == *"ARG:--json"* ]]
+  [[ "$output" != *"ARG:--html"* ]]
   [ ! -f "$OPENED_FILE" ]
 }

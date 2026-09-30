@@ -301,14 +301,15 @@ docker run --rm \
 
 The wrapper script automatically remaps `input` and `--output` host paths to `/mnt/input` and `/mnt/output` inside the container.
 
-A container cannot open a browser on the host, so the wrappers handle `spice docs` there. That
-command is contributed by a plugin (Surveyor builds carry it) and shows the user guide. When a
-browser can be opened (not over SSH; on Linux, with a display and an application for HTML) and
-the output is a terminal, the wrapper asks the container for the guide as HTML
-(`docs --html`), writes it to a temporary file and opens it with `open`, `xdg-open` or
-`Start-Process`; otherwise the container prints it as Markdown. `--browser` insists on a browser,
-and `--markdown` or `--html` go to the container unchanged. In JVM mode the CLI decides for
-itself.
+A container cannot open a browser on the host, so the wrappers handle `spice guide` there. That
+command is contributed by a plugin (Surveyor builds carry it) and shows the user guide; it is
+unrelated to `spice docs`, which prints every command's help and goes to the container as any
+other command does. When a browser can be opened (not over SSH; on Linux, with a display and an
+application for HTML) and the output is a terminal, the wrapper asks the container for the
+guide as HTML (`guide --html`), writes it to a temporary file and opens it with `open`,
+`xdg-open` or `Start-Process`; otherwise the container prints it as Markdown. `--browser`
+insists on a browser, and `--markdown` or `--html` go to the container unchanged. In JVM mode
+the CLI decides for itself.
 
 ---
 
