@@ -751,6 +751,17 @@ SCRIPT
   rm -rf "$outdir"
 }
 
+@test "runtime survey: image without JFR settings reports it and cleans up" {
+  # The mock image has nothing at this path, as an image without runtime surveys has no
+  # agent or JFR settings; the failed copy must not end the script before it says so.
+  export SPICE_LABS_CLI_JAR=/opt/no-runtime/spice-labs-cli.jar
+  local outdir="$TEST_TMPDIR/rt"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload --output "$outdir" -- true
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"does not support runtime surveys"* ]]
+  [ -z "$(find "$outdir" -maxdepth 1 -type d -name 'survey-*' 2>/dev/null)" ]
+}
+
 @test "runtime survey: JFC extracted from container" {
   local outdir="$HOME/.spicelabs/test-rt-jfc-$$"
   run "$WRAPPER" survey runtime myapp --jfr --no-upload --keep-recording --output "$outdir" -- true
