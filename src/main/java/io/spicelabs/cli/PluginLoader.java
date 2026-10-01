@@ -88,7 +88,9 @@ public final class PluginLoader {
         PluginContext pluginContext = new PluginContext(context, runConfiguration, claimed);
         Object command = plugin.command(pluginContext);
         if (command == null) {
-          log.warn("Skipping plugin '{}': command() returned null", id);
+          // The SPI's way for a plugin to decline: allspice's `survey static` does this in
+          // editions that ship allspice without Sassafras. Not a fault, so not a warning.
+          log.debug("Skipping plugin '{}': command() returned null", id);
           continue;
         }
 
