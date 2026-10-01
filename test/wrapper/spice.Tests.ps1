@@ -1217,14 +1217,14 @@ P spice/survey/inventory 1 value path exists
     }
   }
 
-  # ── spice guide: the guide in a browser on the host ────────────────────────
+  # ── spice docs: the guide in a browser on the host ─────────────────────────
   # In Docker mode the container has no browser, so the wrapper asks it for HTML and opens
   # the page itself. Mock openers (`open` on macOS, `xdg-open` elsewhere) record what they
   # were asked to open. The tests' output is redirected, so only --browser opens anything.
   # On Windows the opener is Start-Process, which would launch the runner's own browser,
   # so the tests that open are skipped there.
 
-  Context 'spice guide' {
+  Context 'spice docs' {
     BeforeEach {
       $script:OpenedFile = Join-Path $script:TestDir 'opened.txt'
       $env:OPENED_FILE = $script:OpenedFile
@@ -1253,23 +1253,23 @@ P spice/survey/inventory 1 value path exists
     }
 
     It 'passes through for the container to print when output is redirected' {
-      $r = Invoke-SpiceWrapper -Arguments @('guide', 'completion')
+      $r = Invoke-SpiceWrapper -Arguments @('docs', 'completion')
       $r.ExitCode | Should -Be 0
-      $r.ContainerArgs | Should -Contain 'guide'
+      $r.ContainerArgs | Should -Contain 'docs'
       $r.ContainerArgs | Should -Contain 'completion'
       $r.ContainerArgs | Should -Not -Contain '--html'
       Test-Path $script:OpenedFile | Should -BeFalse
     }
 
     It '--browser fetches HTML from the container and opens it on the host' -Skip:(-not ($IsLinux -or $IsMacOS)) {
-      $r = Invoke-SpiceWrapper -Arguments @('guide', '--browser', 'completion')
+      $r = Invoke-SpiceWrapper -Arguments @('docs', '--browser', 'completion')
       $r.ExitCode | Should -Be 0
       ($r.RawOutput -join "`n") | Should -Match 'Opened the guide in your browser:'
       $opened = (Get-Content $script:OpenedFile).Trim()
       $opened | Should -Match 'guide\.html$'
       # What the container was asked for is what landed in the file the browser opens.
       $page = Get-Content $opened
-      $page | Should -Contain 'ARG:guide'
+      $page | Should -Contain 'ARG:docs'
       $page | Should -Contain 'ARG:completion'
       $page | Should -Contain 'ARG:--html'
       $page | Should -Not -Contain 'ARG:--browser'
@@ -1277,7 +1277,7 @@ P spice/survey/inventory 1 value path exists
 
     It '--browser over SSH refuses without running the container' {
       $env:SSH_CONNECTION = '10.0.0.1 22 10.0.0.2 22'
-      $r = Invoke-SpiceWrapper -Arguments @('guide', '--browser')
+      $r = Invoke-SpiceWrapper -Arguments @('docs', '--browser')
       $r.ExitCode | Should -Be 1
       ($r.Stderr -join "`n") | Should -Match 'Cannot open a browser: this is an SSH session'
       $r.DockerRunArgs | Should -BeNullOrEmpty
@@ -1285,13 +1285,13 @@ P spice/survey/inventory 1 value path exists
 
     It '--browser with an opener that fails is an error' -Skip:(-not ($IsLinux -or $IsMacOS)) {
       $env:OPENER_EXIT = '1'
-      $r = Invoke-SpiceWrapper -Arguments @('guide', '--browser')
+      $r = Invoke-SpiceWrapper -Arguments @('docs', '--browser')
       $r.ExitCode | Should -Be 1
       ($r.Stderr -join "`n") | Should -Match 'could not open'
     }
 
     It '--markdown passes through even when a browser is available' {
-      $r = Invoke-SpiceWrapper -Arguments @('guide', '--markdown', 'intro')
+      $r = Invoke-SpiceWrapper -Arguments @('docs', '--markdown', 'intro')
       $r.ExitCode | Should -Be 0
       $r.ContainerArgs | Should -Contain '--markdown'
       $r.ContainerArgs | Should -Not -Contain '--html'
@@ -1307,6 +1307,34 @@ P spice/survey/inventory 1 value path exists
       Test-Path $script:OpenedFile | Should -BeFalse
     }
 
+    It '--commands reaches the container untouched' {
+      $r = Invoke-SpiceWrapper -Arguments @('docs', '--commands')
+      $r.ExitCode | Should -Be 0
+      $r.ContainerArgs | Should -Contain '--commands'
+      $r.ContainerArgs | Should -Not -Contain '--html'
+      Test-Path $script:OpenedFile | Should -BeFalse
+    }
+
+    It 'when the fetch fails, runs the command as given for the container to answer' -Skip:(-not ($IsLinux -or $IsMacOS)) {
+      # Like an image without a guide: `docs --html` fails. Each run is logged on its own line.
+      $real = Join-Path $script:MockBinDir 'docker'
+      $kept = Join-Path $script:MockBinDir 'docker-image'
+      $runs = Join-Path $script:TestDir 'docker-runs.txt'
+      Move-Item $real $kept
+      Set-Content -Path $real -Value "#!/bin/bash`necho `"`$*`" >> '$runs'`nif [[ `" `$* `" == *`" --html `"* ]]; then echo 'ERROR no guide'; exit 1; fi`nexec '$kept' `"`$@`"`n"
+      chmod +x $real
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('docs', '--browser', 'nope')
+        $lines = @(Get-Content $runs)
+        $lines.Count | Should -Be 2
+        $lines[0] | Should -Match ' docs nope --html$'
+        $lines[1] | Should -Match ' docs nope --browser$'
+        Test-Path $script:OpenedFile | Should -BeFalse
+      } finally {
+        Move-Item $kept $real -Force
+      }
+    }
+
     It 'JVM mode leaves the choice to the CLI on the host' {
       $jar = Join-Path $script:TestDir 'fake.jar'
       Set-Content -Path $jar -Value 'fake'
@@ -1314,8 +1342,8 @@ P spice/survey/inventory 1 value path exists
       $env:SPICE_LABS_CLI_JAR = $jar
       $env:JAVA_ARGS_FILE = $script:JavaArgsFile
       try {
-        $r = Invoke-SpiceWrapper -Arguments @('guide', '--browser', 'completion')
-        (@(Get-Content $script:JavaArgsFile) -join ' ') | Should -Match 'guide --browser completion'
+        $r = Invoke-SpiceWrapper -Arguments @('docs', '--browser', 'completion')
+        (@(Get-Content $script:JavaArgsFile) -join ' ') | Should -Match 'docs --browser completion'
         Test-Path $script:OpenedFile | Should -BeFalse
       } finally {
         Remove-Item env:SPICE_LABS_CLI_USE_JVM, env:SPICE_LABS_CLI_JAR, env:JAVA_ARGS_FILE -ErrorAction SilentlyContinue

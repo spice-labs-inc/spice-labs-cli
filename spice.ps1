@@ -626,10 +626,15 @@ C spice/path-manifest
 O spice/path-manifest --config value path create=parent
 C spice/docs
 O spice/docs --json flag
+O spice/docs --commands flag
+O spice/docs --browser flag
+O spice/docs --markdown flag
+O spice/docs --html flag
 O spice/docs -h flag
 O spice/docs --help flag
 O spice/docs -V flag
 O spice/docs --version flag
+P spice/docs 0 value
 C spice/config
 O spice/config -h flag
 O spice/config --help flag
@@ -859,29 +864,30 @@ if (-not $script:MfConfigFile) {
   if ($discovered) { $script:MfConfigFile = $discovered }
 }
 
-# ── The guide in a browser (spice guide) ─────────────────────────────────────
-# `spice guide [<page>]` opens the user guide in a browser when one can be opened and
-# prints it as Markdown otherwise. The CLI decides that itself when it runs on the host
-# (JVM mode, above), but in a container there is no browser to open, so here the wrapper
-# decides: it asks the container for the page as HTML (`guide --html`), writes it to a
-# temporary file and opens that on the host. --markdown and --html are the container's
-# own business; --browser insists on a browser, and fails without one.
+# ── The guide in a browser (spice docs) ─────────────────────────────────────
+# `spice docs [<page>]` opens the user guide, when the image carries one, in a browser when
+# one can be opened, and prints it as Markdown otherwise. The CLI decides that itself when it
+# runs on the host (JVM mode, above), but in a container there is no browser to open, so here
+# the wrapper decides: it asks the container for the page as HTML (`docs --html`), writes it
+# to a temporary file and opens that on the host. Everything else `docs` does is the
+# container's business: --json and --commands (the command model and every command's help),
+# --markdown and --html. --browser insists on a browser, and fails without one.
 
-# Whether the first command word, past spice's own options, is `guide`.
-function Test-GuideCommand($argList) {
+# Whether the first command word, past spice's own options, is `docs`.
+function Test-DocsCommand($argList) {
   $prev = ''
   foreach ($a in $argList) {
     if ($prev -eq '--config') { $prev = ''; continue }
     if ($a -eq '--config') { $prev = '--config'; continue }
     if ($a -like '-*') { continue }
-    return ($a -eq 'guide')
+    return ($a -eq 'docs')
   }
   return $false
 }
 
 # The host's way to open an HTML file, as @{ Name; Open = { param($file) ... -> bool } }; or,
 # when there is none, @{ Reason }. The same rules the CLI applies on the host.
-function Find-GuideBrowser {
+function Find-DocsBrowser {
   if ($env:SSH_CONNECTION -or $env:SSH_TTY) {
     return @{ Reason = 'this is an SSH session, so a browser would open on the remote machine' }
   }
@@ -924,23 +930,23 @@ function Find-GuideBrowser {
   }.GetNewClosure() }
 }
 
-$guideBrowser = $null    # the opener, when the page is to be fetched as HTML and opened here
-$guideForced = $false    # --browser: no browser is an error rather than a reason to print
-if (Test-GuideCommand $args) {
-  $guideForm = $false
+$docsBrowser = $null    # the opener, when the page is to be fetched as HTML and opened here
+$docsForced = $false    # --browser: no browser is an error rather than a reason to print
+if (Test-DocsCommand $args) {
+  $docsForm = $false
   foreach ($a in $args) {
-    if (@('--markdown', '--html', '-h', '--help', '-V', '--version') -contains $a) { $guideForm = $true }
-    if ($a -eq '--browser') { $guideForced = $true }
+    if (@('--json', '--commands', '--markdown', '--html', '-h', '--help', '-V', '--version') -contains $a) { $docsForm = $true }
+    if ($a -eq '--browser') { $docsForced = $true }
   }
-  if (-not $guideForm) {
-    $found = Find-GuideBrowser
+  if (-not $docsForm) {
+    $found = Find-DocsBrowser
     if ($found.Reason) {
-      if ($guideForced) { Write-Stderr "Cannot open a browser: $($found.Reason)."; exit 1 }
-    } elseif ($guideForced -or -not [Console]::IsOutputRedirected) {
-      $guideBrowser = $found
+      if ($docsForced) { Write-Stderr "Cannot open a browser: $($found.Reason)."; exit 1 }
+    } elseif ($docsForced -or -not [Console]::IsOutputRedirected) {
+      $docsBrowser = $found
     }
   }
-  if ($guideBrowser) {
+  if ($docsBrowser) {
     # The container is asked for HTML instead of choosing for itself (it has no browser).
     $args = @($args | Where-Object { $_ -ne '--browser' }) + @('--html')
   }
@@ -1266,13 +1272,13 @@ $dockerRun = @($dockerRun | Where-Object { $null -ne $_ })   # an unset array mu
 # 'Continue' prevents docker stderr from becoming a terminating error
 $ErrorActionPreference = 'Continue'
 
-if ($guideBrowser) {
+if ($docsBrowser) {
   # The page comes out of the container as HTML; the browser is on this side. Decoded as
   # UTF-8 whatever the console's code page, and written back as UTF-8 without a BOM. The
   # file stays behind for the browser to read, in the system's temporary directory.
-  $guideDir = Join-Path ([System.IO.Path]::GetTempPath()) "spice-guide-$([guid]::NewGuid().ToString('N').Substring(0,8))"
-  New-Item -ItemType Directory -Path $guideDir -Force | Out-Null
-  $guideFile = Join-Path $guideDir 'guide.html'
+  $docsDir = Join-Path ([System.IO.Path]::GetTempPath()) "spice-docs-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+  New-Item -ItemType Directory -Path $docsDir -Force | Out-Null
+  $docsFile = Join-Path $docsDir 'guide.html'
   $savedEncoding = [Console]::OutputEncoding
   try {
     [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
@@ -1280,18 +1286,24 @@ if ($guideBrowser) {
   } finally {
     [Console]::OutputEncoding = $savedEncoding
   }
-  $guideRc = $LASTEXITCODE
-  if ($guideRc -ne 0 -or -not $html) {
-    Remove-Item $guideDir -Recurse -Force -ErrorAction SilentlyContinue
-    exit $guideRc
+  $docsRc = $LASTEXITCODE
+  if ($docsRc -ne 0 -or -not $html) {
+    # No page came back: an image without a guide (whose `docs` prints every command's help),
+    # an older image whose `docs` has no --html, or a page the guide does not have. Run the
+    # command as it was given and let the container answer.
+    Remove-Item $docsDir -Recurse -Force -ErrorAction SilentlyContinue
+    $original = @($dockerArgs | Select-Object -First ($dockerArgs.Count - 1))   # less the --html
+    if ($docsForced) { $original += '--browser' }
+    & docker @dockerRun @original
+    exit $LASTEXITCODE
   }
-  [System.IO.File]::WriteAllText($guideFile, $html, (New-Object System.Text.UTF8Encoding $false))
-  if (& $guideBrowser.Open $guideFile) {
-    Write-Output "Opened the guide in your browser: $guideFile"
+  [System.IO.File]::WriteAllText($docsFile, $html, (New-Object System.Text.UTF8Encoding $false))
+  if (& $docsBrowser.Open $docsFile) {
+    Write-Output "Opened the guide in your browser: $docsFile"
     exit 0
   }
-  Write-Stderr "``$($guideBrowser.Name)`` could not open $guideFile."
-  if ($guideForced) { exit 1 }
+  Write-Stderr "``$($docsBrowser.Name)`` could not open $docsFile."
+  if ($docsForced) { exit 1 }
   Write-Stderr 'Printing the guide as Markdown instead.'
   $dockerArgs = @($dockerArgs | ForEach-Object { if ($_ -eq '--html') { '--markdown' } else { $_ } })
 }
