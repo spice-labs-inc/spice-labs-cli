@@ -1116,7 +1116,8 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     exit 1
   fi
 
-  # Phase 1: Copy agent + JFC from container to host workdir
+  # Phase 1: Copy agent + JFC from container to host workdir. Either may be absent (an
+  # image without runtime surveys); the copy's status is ignored and the file check below decides.
   echo "🌶️  Preparing runtime survey..." >&2
   SPICE_CLI_DIR=$(dirname "${SPICE_LABS_CLI_JAR}")
   docker run --rm --entrypoint sh \
@@ -1125,7 +1126,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     -v "${RT_WORKDIR}:${RT_WORKDIR}" \
     "$IMAGE_REF" \
     -c "cp '${SPICE_CLI_DIR}/ancho.jar' '${RT_WORKDIR}/' 2>/dev/null; \
-        cp '${SPICE_CLI_DIR}/spice-jfr.jfc' '${RT_WORKDIR}/' 2>/dev/null"
+        cp '${SPICE_CLI_DIR}/spice-jfr.jfc' '${RT_WORKDIR}/' 2>/dev/null" || true
 
   # Phase 2: Build JAVA_TOOL_OPTIONS
   RT_JFC="${RT_WORKDIR}/spice-jfr.jfc"

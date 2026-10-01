@@ -53,7 +53,9 @@ class MockDocker {
     // Identity mounts mean the working directory the wrapper passes is also a real
     // host directory, so the mock can write there directly.
     if (workDir != null && volumes.ContainsKey(workDir)) workDir = volumes[workDir];
-    // Phase 1: extraction
+    // Phase 1: extraction. MOCK_NO_RUNTIME_FILES stands in for an image without runtime
+    // surveys: nothing to copy, and the copy fails.
+    if (entrypoint == "sh" && Environment.GetEnvironmentVariable("MOCK_NO_RUNTIME_FILES") == "1") return 1;
     if (entrypoint == "sh" && volumes.Count > 0) {
       foreach (var kv in volumes) {
         if (Directory.Exists(kv.Value)) {
@@ -290,6 +292,12 @@ for _arg in "`$@"; do
   if [ "`$_prev" = "-v" ]; then _vol_host="`${_arg%%:*}"; fi
   _prev="`$_arg"
 done
+
+# Phase 1: extraction (--entrypoint sh). MOCK_NO_RUNTIME_FILES stands in for an image
+# without runtime surveys: nothing to copy, and the copy fails.
+if [ "`$_entrypoint" = "sh" ] && [ "`${MOCK_NO_RUNTIME_FILES:-}" = "1" ]; then
+  exit 1
+fi
 
 # Phase 1: extraction (--entrypoint sh) — create mock files in workdir
 if [ "`$_entrypoint" = "sh" ] && [ -n "`$_vol_host" ] && [ -d "`$_vol_host" ]; then
@@ -1061,6 +1069,20 @@ if (`$jto -match 'settings=([^,]+)') {
       $r.ExitCode | Should -Be 1
       ($r.Stderr -join "`n") | Should -Match 'No subject specified'
       ($r.RawOutput -join "`n") | Should -Not -Match 'No subject specified'
+    }
+
+    It 'image without JFR settings reports it and cleans up' {
+      $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-nojfc-$PID"
+      $env:MOCK_NO_RUNTIME_FILES = '1'
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', 'true')
+        $r.ExitCode | Should -Be 1
+        ($r.Stderr -join "`n") | Should -Match 'does not support runtime surveys'
+        @(Get-ChildItem -Path $outdir -Directory -Filter 'survey-*' -ErrorAction SilentlyContinue).Count | Should -Be 0
+      } finally {
+        Remove-Item env:MOCK_NO_RUNTIME_FILES -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
+      }
     }
 
     It 'target command runs on host' {

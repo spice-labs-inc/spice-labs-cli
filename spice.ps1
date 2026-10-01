@@ -1022,7 +1022,7 @@ if ($isRuntimeSurvey) {
   }
 
   if (-not (Test-Path $rtJfc)) {
-    Write-Stderr "[X] Failed to extract JFR settings from container"
+    Write-Stderr "[X] This image does not support runtime surveys (no JFR settings in ${imageRef})"
     Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
     exit 1
   }
