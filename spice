@@ -666,10 +666,15 @@ C spice/path-manifest
 O spice/path-manifest --config value path create=parent
 C spice/docs
 O spice/docs --json flag
+O spice/docs --commands flag
+O spice/docs --browser flag
+O spice/docs --markdown flag
+O spice/docs --html flag
 O spice/docs -h flag
 O spice/docs --help flag
 O spice/docs -V flag
 O spice/docs --version flag
+P spice/docs 0 value
 C spice/config
 O spice/config -h flag
 O spice/config --help flag
@@ -917,6 +922,109 @@ for arg in "$@"; do
 done
 if [ -z "$MF_CONFIG_FILE" ]; then
   MF_CONFIG_FILE="$(spice_config_file)" || MF_CONFIG_FILE=""
+fi
+
+# ── The guide in a browser (spice docs) ─────────────────────────────────────
+# `spice docs [<page>]` opens the user guide, when the image carries one, in a browser when
+# one can be opened, and prints it as Markdown otherwise. The CLI decides that itself when it
+# runs on the host (JVM mode, above), but in a container there is no browser to open, so here
+# the wrapper decides: it asks the container for the page as HTML (`docs --html`), writes it
+# to a temporary file and opens that with the host's opener. Everything else `docs` does is the
+# container's business: --json and --commands (the command model and every command's help),
+# --markdown and --html. --browser insists on a browser, and fails without one.
+
+# Whether the first command word, past spice's own options, is `docs`.
+docs_is_command() {
+  local prev=""
+  for a in "$@"; do
+    if [ "$prev" = "--config" ]; then prev=""; continue; fi
+    case "$a" in
+      --config) prev="--config" ;;
+      -*) ;;
+      docs) return 0 ;;
+      *) return 1 ;;
+    esac
+  done
+  return 1
+}
+
+# The host's way to open an HTML file in a browser, in DOCS_OPENER; or, when there is
+# none, the reason in DOCS_NO_BROWSER. The same rules the CLI applies on the host.
+docs_find_browser() {
+  DOCS_OPENER=()
+  DOCS_NO_BROWSER=""
+  if [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_TTY:-}" ]; then
+    DOCS_NO_BROWSER="this is an SSH session, so a browser would open on the remote machine"
+    return 1
+  fi
+  case "$(uname -s)" in
+    Darwin)
+      command -v open >/dev/null 2>&1 && { DOCS_OPENER=(open); return 0; }
+      DOCS_NO_BROWSER="there is no \`open\` command"
+      return 1 ;;
+    CYGWIN*|MINGW*|MSYS*)
+      DOCS_OPENER=(cmd //c start "")
+      return 0 ;;
+  esac
+  if grep -qi microsoft /proc/version 2>/dev/null && command -v wslview >/dev/null 2>&1; then
+    DOCS_OPENER=(wslview)
+    return 0
+  fi
+  if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    DOCS_NO_BROWSER="there is no graphical display (DISPLAY and WAYLAND_DISPLAY are unset)"
+    return 1
+  fi
+  command -v xdg-open >/dev/null 2>&1 || {
+    DOCS_NO_BROWSER="there is no \`xdg-open\` command"
+    return 1
+  }
+  if command -v xdg-mime >/dev/null 2>&1 && [ -z "$(xdg-mime query default text/html 2>/dev/null)" ]; then
+    DOCS_NO_BROWSER="no application is registered to open HTML"
+    return 1
+  fi
+  DOCS_OPENER=(xdg-open)
+  return 0
+}
+
+# Open the file with the opener; true when it accepted. An opener still running after a
+# few seconds has handed the file to a browser that it waits for, which also counts.
+docs_open() {
+  "${DOCS_OPENER[@]}" "$1" >/dev/null 2>&1 &
+  local pid=$! i
+  for ((i = 0; i < 50; i++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid"
+      return $?
+    fi
+    sleep 0.1
+  done
+  return 0
+}
+
+DOCS_BROWSER=0      # 1: fetch the page as HTML and open it on the host
+DOCS_FORCED=0       # 1: --browser; no browser is an error rather than a reason to print
+if docs_is_command "$@"; then
+  docs_form=""
+  for a in "$@"; do
+    case "$a" in
+      --json|--commands|--markdown|--html|-h|--help|-V|--version) docs_form="container" ;;
+      --browser) DOCS_FORCED=1 ;;
+    esac
+  done
+  if [ -z "$docs_form" ]; then
+    if docs_find_browser; then
+      if [ "$DOCS_FORCED" = "1" ] || [ -t 1 ]; then DOCS_BROWSER=1; fi
+    elif [ "$DOCS_FORCED" = "1" ]; then
+      echo "Cannot open a browser: ${DOCS_NO_BROWSER}." >&2
+      exit 1
+    fi
+  fi
+  if [ "$DOCS_BROWSER" = "1" ]; then
+    # The container is asked for HTML instead of choosing for itself (it has no browser).
+    DOCS_ARGS=()
+    for a in "$@"; do [ "$a" = "--browser" ] || DOCS_ARGS+=("$a"); done
+    set -- "${DOCS_ARGS[@]}" --html
+  fi
 fi
 
 # ── Path manifest ────────────────────────────────────────────────────────────
@@ -1272,17 +1380,55 @@ if [ ${#MF_PATH_MAP[@]} -gt 0 ]; then
 fi
 export SPICE_PATH_MAP
 
-exec docker run --rm \
-  --user "$(id -u):$(id -g)" \
-  --network "$SPICE_DOCKER_NETWORK" \
-  ${PULL_FLAG:+$PULL_FLAG} \
-  ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS} \
-  ${DOCKER_AUTH_ARGS[@]+"${DOCKER_AUTH_ARGS[@]}"} \
-  ${MF_VOLUMES[@]+"${MF_VOLUMES[@]}"} \
-  ${WORKDIR_FLAG[@]+"${WORKDIR_FLAG[@]}"} \
-  -e SPICE_PASS \
-  -e SPICE_LICENSE \
-  -e SPICE_PATH_MAP \
-  ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS} \
-  "$IMAGE_REF" \
-  ${MF_ARGS[@]+"${MF_ARGS[@]}"}
+# shellcheck disable=SC2206
+DOCKER_RUN=(docker run --rm
+  --user "$(id -u):$(id -g)"
+  --network "$SPICE_DOCKER_NETWORK"
+  ${PULL_FLAG:+$PULL_FLAG}
+  ${SPICE_DOCKER_FLAGS:+$SPICE_DOCKER_FLAGS}
+  ${DOCKER_AUTH_ARGS[@]+"${DOCKER_AUTH_ARGS[@]}"}
+  ${MF_VOLUMES[@]+"${MF_VOLUMES[@]}"}
+  ${WORKDIR_FLAG[@]+"${WORKDIR_FLAG[@]}"}
+  -e SPICE_PASS
+  -e SPICE_LICENSE
+  -e SPICE_PATH_MAP
+  ${SPICE_LABS_JVM_ARGS:+-e SPICE_LABS_JVM_ARGS}
+  "$IMAGE_REF")
+
+if [ "$DOCS_BROWSER" = "1" ]; then
+  # The page comes out of the container as HTML; the browser is on this side. The file
+  # stays behind for the browser to read, in the system's temporary directory.
+  DOCS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/spice-docs.XXXXXX")"
+  DOCS_FILE="$DOCS_DIR/guide.html"
+  # Captured rather than left to `set -e`, which would end the script on a failed fetch.
+  docs_rc=0
+  "${DOCKER_RUN[@]}" ${MF_ARGS[@]+"${MF_ARGS[@]}"} > "$DOCS_FILE" || docs_rc=$?
+  if [ "$docs_rc" -ne 0 ] || [ ! -s "$DOCS_FILE" ]; then
+    # No page came back: an image without a guide (whose `docs` prints every command's help),
+    # an older image whose `docs` has no --html, or a page the guide does not have. Run the
+    # command as it was given and let the container answer.
+    rm -rf "$DOCS_DIR"
+    DOCS_ARGS=()
+    for ((i = 0; i < ${#MF_ARGS[@]} - 1; i++)); do DOCS_ARGS+=("${MF_ARGS[i]}"); done  # less the --html
+    [ "$DOCS_FORCED" = "1" ] && DOCS_ARGS+=(--browser)
+    exec "${DOCKER_RUN[@]}" ${DOCS_ARGS[@]+"${DOCS_ARGS[@]}"}
+  fi
+  if docs_open "$DOCS_FILE"; then
+    echo "Opened the guide in your browser: $DOCS_FILE"
+    exit 0
+  fi
+  echo "\`${DOCS_OPENER[0]}\` could not open $DOCS_FILE." >&2
+  if [ "$DOCS_FORCED" = "1" ]; then
+    exit 1
+  fi
+  echo "Printing the guide as Markdown instead." >&2
+  # The same command, asking for Markdown in place of HTML.
+  DOCS_ARGS=()
+  for a in ${MF_ARGS[@]+"${MF_ARGS[@]}"}; do
+    [ "$a" = "--html" ] && a="--markdown"
+    DOCS_ARGS+=("$a")
+  done
+  exec "${DOCKER_RUN[@]}" "${DOCS_ARGS[@]}"
+fi
+
+exec "${DOCKER_RUN[@]}" ${MF_ARGS[@]+"${MF_ARGS[@]}"}

@@ -94,7 +94,15 @@ public class GeneratePowershellCompletion implements Callable<Integer> {
       }
       sb.append("  }\n");
     }
-    sb.append("  pass = @{\n    __sub  = @('decode')\n    decode = @('--help')\n  }\n}\n");
+    sb.append("  pass = @{\n    __sub  = @('decode')\n    decode = @('--help')\n  }\n");
+    // docs takes a page of the user guide, when the build carries one, or one of its options.
+    // The completer offers a command's __sub list after its name, so that list is both.
+    List<String> docs = new ArrayList<>();
+    Guide.pages().forEach(p -> docs.add(p.id()));
+    docs.addAll(List.of("--json", "--commands", "--browser", "--markdown", "--html", "--help"));
+    sb.append("  docs = @{\n    __sub  = @(")
+      .append(docs.stream().map(d -> "'" + d + "'").collect(Collectors.joining(", ")))
+      .append(")\n  }\n}\n");
     return sb.toString();
   }
 

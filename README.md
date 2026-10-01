@@ -134,6 +134,23 @@ spice survey runtime <subject> --jfr -- <command>
 - **`--`** — separates CLI options from the target command
 - **`command`** — the JVM command to instrument (e.g. `java -jar app.jar`, `mvn test`)
 
+### Documentation
+
+`spice docs` documents the build you have:
+
+- `spice docs --commands` prints the help for every command, one after another;
+- `spice docs --json` prints the same as JSON, with each argument's type, requirement and
+  default, for tools and AI agents (each release attaches it as `cli-docs.json`);
+- a distribution may carry a user guide. Then `spice docs` shows it, and `spice docs <page>`
+  one page of it: in a browser when one can be opened and the output is a terminal, as Markdown
+  otherwise (so `spice docs | less` prints). `--browser`, `--markdown` and `--html` choose the
+  form, and tab completion offers the page names. Without a guide, `spice docs` prints the help
+  for every command, as `--commands` does.
+
+A distribution adds the guide to the jar under `spice-guide/`: `pages.tsv` (one page per line,
+id, tab, title), `guide.md`, `pages/<id>.md` and `guide.html` (one self-contained page, routed by
+URL hash).
+
 ### Examples
 
 ```bash
@@ -300,6 +317,15 @@ docker run --rm \
 ```
 
 The wrapper script automatically remaps `input` and `--output` host paths to `/mnt/input` and `/mnt/output` inside the container.
+
+A container cannot open a browser on the host, so the wrappers handle the user guide of
+`spice docs` (see [Documentation](#documentation)) there. When a browser can be opened (not over
+SSH; on Linux, with a display and an application for HTML) and the output is a terminal, the
+wrapper asks the container for the guide as HTML (`docs --html`), writes it to a temporary file
+and opens it with `open`, `xdg-open` or `Start-Process`; otherwise the container prints it as
+Markdown. When no page comes back (an image without a guide, or an older one), the wrapper runs
+the command as given. `--json`, `--commands`, `--markdown` and `--html` go to the container
+unchanged, and `--browser` insists on a browser. In JVM mode the CLI decides for itself.
 
 ---
 
