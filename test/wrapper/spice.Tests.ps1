@@ -477,16 +477,21 @@ O spice/registry/cbom --output value path create=self
       [string]$DockerFlags,
       [AllowNull()]
       [string]$SpiceImage = 'spice-wrapper-test',
-      [string]$PathManifest
+      [string]$PathManifest,
+      [switch]$AllowUpdateCheck,
+      [string]$UpdateCacheDir
     )
 
     # Put mock docker first on PATH
     $env:PATH = "$($script:MockBinDir)$([System.IO.Path]::PathSeparator)$($env:PATH)"
 
-    $env:SPICE_LABS_CLI_SKIP_PULL = '1'
+    if ($AllowUpdateCheck) { Remove-Item env:SPICE_LABS_CLI_SKIP_PULL -ErrorAction SilentlyContinue }
+    else { $env:SPICE_LABS_CLI_SKIP_PULL = '1' }
     # The mock docker records every invocation, so a manifest refresh would clobber the
     # captured args. These tests exercise the manifest embedded in the wrapper.
     $env:SPICE_SKIP_MANIFEST_REFRESH = '1'
+    if ($UpdateCacheDir) { $env:SPICE_CACHE_DIR = $UpdateCacheDir }
+    else { Remove-Item env:SPICE_CACHE_DIR -ErrorAction SilentlyContinue }
     if ($PathManifest) {
       $env:SPICE_PATH_MANIFEST = $PathManifest
     } else {
@@ -570,6 +575,7 @@ AfterAll {
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 Describe 'spice.ps1 wrapper' {
 
@@ -1578,6 +1584,62 @@ P spice/survey/inventory 1 value path exists
       } finally {
         Remove-Item env:SPICE_LABS_CLI_USE_JVM, env:SPICE_LABS_CLI_JAR, env:JAVA_ARGS_FILE -ErrorAction SilentlyContinue
       }
+    }
+  }
+
+  # -- Script update check cadence --
+
+  Context 'script update check runs at most once a day' {
+
+    It 'suppresses the check when the marker says one ran within the day' {
+      $cache = Join-Path $script:TestDir 'cache'
+      $marker = Join-Path $cache 'script-update-check'
+      New-Item -ItemType Directory -Path $cache -Force | Out-Null
+      # Written exactly as the wrapper writes it, so the content comparison is byte-exact.
+      [System.IO.File]::WriteAllText($marker, 'already-checked')
+      # Backdate the wrapper so its own mtime cannot suppress the check.
+      (Get-Item -LiteralPath $script:WrapperScript).LastWriteTime = (Get-Date).AddDays(-3)
+
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir) -AllowUpdateCheck -UpdateCacheDir $cache
+      $r.ExitCode | Should -Be 0
+      # The gated block never runs: the marker is not rewritten.
+      [System.IO.File]::ReadAllText($marker) | Should -Be 'already-checked'
+      ($r.Stderr -join "`n") | Should -Not -Match 'newer version'
+    }
+
+    It 'runs the check when due and records the marker' {
+      $cache = Join-Path $script:TestDir 'cache'
+      $marker = Join-Path $cache 'script-update-check'
+      (Get-Item -LiteralPath $script:WrapperScript).LastWriteTime = (Get-Date).AddDays(-3)
+
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir) -AllowUpdateCheck -UpdateCacheDir $cache
+      $r.ExitCode | Should -Be 0
+      # The marker is only written inside the gated block, so its existence proves the
+      # check was due and ran (the fetch itself may fail; the write is unconditional).
+      Test-Path -LiteralPath $marker | Should -BeTrue
+      [System.IO.File]::ReadAllText($marker) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'suppresses the check for a script written within the last day' {
+      $cache = Join-Path $script:TestDir 'cache'
+      $marker = Join-Path $cache 'script-update-check'
+      (Get-Item -LiteralPath $script:WrapperScript).LastWriteTime = Get-Date
+
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir) -AllowUpdateCheck -UpdateCacheDir $cache
+      $r.ExitCode | Should -Be 0
+      # A fresh install needs no first-day advice: no fetch, no marker.
+      Test-Path -LiteralPath $marker | Should -BeFalse
+    }
+
+    It 'does not throw when the marker cannot be written' {
+      # A file in place of the cache directory makes the marker path uncreatable.
+      $blocked = Join-Path $script:TestDir 'blocked'
+      Set-Content -LiteralPath $blocked -Value 'i am a file, not a dir'
+      (Get-Item -LiteralPath $script:WrapperScript).LastWriteTime = (Get-Date).AddDays(-3)
+
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir) -AllowUpdateCheck -UpdateCacheDir $blocked
+      $r.ExitCode | Should -Be 0
+      $r.Stderr | Should -Not -Match 'EXCEPTION'
     }
   }
 }
