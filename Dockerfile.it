@@ -1,21 +1,21 @@
-# Enterprise spice image = the spice-labs-cli OSS image + allspice's
+# IT spice image = the spice-labs-cli OSS image + allspice's
 # proprietary allspice fat JAR (which bundles sassafras) layered on top.
 #
 # The result is the same `spice` CLI (survey, pass, etc.) with the allspice
-# JAR available at /opt/allspice/ for enterprise features (registry survey,
+# JAR available at /opt/allspice/ for IT features (registry survey,
 # static crypto analysis). The entrypoint stays as the spice CLI — allspice is
 # a library/resource, not the primary command.
 #
-# The federal image (Dockerfile.federal) extends this image with report_cli
+# The IT Pro image (Dockerfile.itpro) extends this image with report_cli
 # and the rogues gallery for CBOM generation.
 #
 # Build:
-#   docker build -f Dockerfile.enterprise \
+#   docker build -f Dockerfile.it \
 #     --build-arg SPICE_IMAGE=spicelabs/spice-labs-cli \
 #     --build-arg SPICE_TAG=latest \
 #     --build-arg ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice \
 #     --build-arg ALLSPICE_TAG=latest \
-#     -t ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:vX.Y.Z .
+#     -t ghcr.io/spice-labs-inc/spice-labs-cli-it:vX.Y.Z .
 #
 # In CI, SPICE_IMAGE is the just-built pr-<N> (or vX.Y.Z) OSS image and
 # ALLSPICE_IMAGE/ALLSPICE_TAG resolve to the latest allspice release.

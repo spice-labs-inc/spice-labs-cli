@@ -1,16 +1,16 @@
-# Federal spice image = the enterprise image + report_cli + rogues gallery.
+# IT Pro spice image = the IT image + report_cli + rogues gallery.
 #
-# The enterprise image has allspice.jar (registry pipeline + sassafras). The
-# federal image adds the report_cli Rust binary and the PQC rogues gallery,
+# The IT image has allspice.jar (registry pipeline + sassafras). The
+# IT Pro image adds the report_cli Rust binary and the PQC rogues gallery,
 # enabling CycloneDX CBOM generation (spice survey static --cbom).
 #
 # Build:
-#   docker build -f Dockerfile.federal \
+#   docker build -f Dockerfile.itpro \
 #     --build-arg SPICE_IMAGE=spicelabs/spice-labs-cli \
 #     --build-arg SPICE_TAG=latest \
 #     --build-arg ALLSPICE_IMAGE=ghcr.io/spice-labs-inc/allspice \
 #     --build-arg ALLSPICE_TAG=latest \
-#     -t ghcr.io/spice-labs-inc/spice-labs-cli-federal:vX.Y.Z .
+#     -t ghcr.io/spice-labs-inc/spice-labs-cli-itpro:vX.Y.Z .
 
 # Global build args (available to FROM instructions). Declared before the
 # first FROM so both stages can use them.
@@ -34,12 +34,12 @@ FROM ${SPICE_IMAGE}:${SPICE_TAG}
 #                       discovery on the classpath
 #   report_cli        — Rust binary for CycloneDX CBOM generation
 #   rogues_gallery*   — PQC rogues gallery data
-# Copy the spice plugin JARs into plugins/ (same as enterprise) and the
+# Copy the spice plugin JARs into plugins/ (same as the IT image) and the
 # allspice fat JAR + CBOM assets into /opt/allspice/.
 COPY --from=allspice /opt/allspice/plugins/ /opt/spice-labs-cli/plugins/
 COPY --from=allspice /opt/allspice/allspice.jar /opt/allspice/allspice.jar
 # COPY --chmod (BuildKit) sets the executable bit without a RUN, so the
-# federal image has zero RUN commands and needs no QEMU for cross-arch.
+# IT Pro image has zero RUN commands and needs no QEMU for cross-arch.
 COPY --chmod=755 --from=allspice /opt/allspice/report_cli /opt/allspice/report_cli
 COPY --from=allspice /opt/allspice/rogues_gallery* /opt/allspice/
 

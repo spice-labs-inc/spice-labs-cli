@@ -2,7 +2,7 @@ name: Publish The Spice Labs Surveyor CLI Container Images
 
 # Publishing IS the release. A GitHub Release (vX.Y.Z tag, published) triggers
 # the full build graph: JARs -> Maven Central + GHP, OSS image -> Docker Hub +
-# GHCR, then enterprise + federal images (retagged from the sha-<sha> images
+# GHCR, then IT + IT Pro images (retagged from the sha-<sha> images
 # produced by the merged PR, or built from source as a fallback). survey.yml
 # runs after this workflow via workflow_run (by name) to survey the published
 # artifacts, so the workflow name above must not change without updating that
@@ -15,8 +15,8 @@ env:
   OWNER: spice-labs-inc
   PLATFORMS: linux/amd64,linux/arm64
   PUBLIC_DOCKER_IMAGE: spicelabs/spice-labs-cli
-  ENTERPRISE_IMAGE: ghcr.io/spice-labs-inc/spice-labs-cli-enterprise
-  FEDERAL_IMAGE: ghcr.io/spice-labs-inc/spice-labs-cli-federal
+  IT_IMAGE: ghcr.io/spice-labs-inc/spice-labs-cli-it
+  ITPRO_IMAGE: ghcr.io/spice-labs-inc/spice-labs-cli-itpro
 
 jobs:
   publish_jars:
@@ -194,8 +194,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  build_enterprise:
-    name: Build and Push Enterprise Image
+  build_it:
+    name: Build and Push IT Image
     runs-on: ubuntu-24.04
     needs: [publish_jars, docker_image]
     permissions:
@@ -219,14 +219,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Build and push enterprise image
+      - name: Build and push IT image
         # FROM the just-released OSS image (SPICE_TAG=vX.Y.Z), which already
         # carries the released fat JAR. Layers allspice's plugins on top.
-        # The allspice base image is pinned by digest in Dockerfile.enterprise.
+        # The allspice base image is pinned by digest in Dockerfile.it.
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile.enterprise
+          file: Dockerfile.it
           platforms: ${{ env.PLATFORMS }}
           push: true
           provenance: mode=max
@@ -235,11 +235,11 @@ jobs:
             SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
             SPICE_TAG=${{ needs.publish_jars.outputs.version }}
           tags: |
-            ${{ env.ENTERPRISE_IMAGE }}:${{ github.event.release.tag_name }}
-            ${{ env.ENTERPRISE_IMAGE }}:latest
+            ${{ env.IT_IMAGE }}:${{ github.event.release.tag_name }}
+            ${{ env.IT_IMAGE }}:latest
 
-  build_federal:
-    name: Build and Push Federal Image
+  build_itpro:
+    name: Build and Push IT Pro Image
     runs-on: ubuntu-24.04
     needs: [publish_jars, docker_image]
     permissions:
@@ -263,15 +263,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Build and push federal image
+      - name: Build and push IT Pro image
         # FROM the just-released OSS image (SPICE_TAG=vX.Y.Z), which already
-        # carries the released fat JAR. Extends the enterprise image with
+        # carries the released fat JAR. Extends the IT image with
         # report_cli and rogues_gallery for CBOM generation. The allspice base
-        # image is pinned by digest in Dockerfile.federal.
+        # image is pinned by digest in Dockerfile.itpro.
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile.federal
+          file: Dockerfile.itpro
           platforms: ${{ env.PLATFORMS }}
           push: true
           provenance: mode=max
@@ -280,11 +280,11 @@ jobs:
             SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
             SPICE_TAG=${{ needs.publish_jars.outputs.version }}
           tags: |
-            ${{ env.FEDERAL_IMAGE }}:${{ github.event.release.tag_name }}
-            ${{ env.FEDERAL_IMAGE }}:latest
+            ${{ env.ITPRO_IMAGE }}:${{ github.event.release.tag_name }}
+            ${{ env.ITPRO_IMAGE }}:latest
 
   # Its own job rather than a step inside publish_jars: failing inside
-  # publish_jars would block docker_image and the enterprise/federal images,
+  # publish_jars would block docker_image and the IT/IT Pro images,
   # which do not depend on Maven Central and are freely retaggable. Those should
   # still ship while the Central deployment waits for a decision. This job
   # exists to turn the run red -- `mvn deploy` succeeds even when the
@@ -325,7 +325,7 @@ jobs:
 
   notify:
     name: Notify deployment result
-    needs: [publish_jars, docker_image, build_enterprise, build_federal, confirm_central_release]
+    needs: [publish_jars, docker_image, build_it, build_itpro, confirm_central_release]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -335,7 +335,7 @@ jobs:
         run: |
           JAR_STATUS="${{ needs.publish_jars.result }}"
           DOCKER_STATUS="${{ needs.docker_image.result }}"
-          ENT_STATUS="${{ needs.build_enterprise.result }}"
+          IT_STATUS="${{ needs.build_it.result }}"
           SUCCESSOR_OK="${{ needs.publish_jars.outputs.successor-ok }}"
 
           # Staged, not failed: the jars are uploaded and validated but parked in
@@ -346,7 +346,7 @@ jobs:
             echo "overall_status=failure" >> "$GITHUB_OUTPUT"
             echo "message=⚠️ Awaiting manual confirmation in the Maven Central Portal." >> "$GITHUB_OUTPUT"
             echo "workflow_name=${{ github.workflow }} — AWAITING MANUAL CONFIRMATION in the Maven Central Portal" >> "$GITHUB_OUTPUT"
-          elif [ "$JAR_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ] && [ "$ENT_STATUS" == "success" ]; then
+          elif [ "$JAR_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ] && [ "$IT_STATUS" == "success" ]; then
             echo "overall_status=success" >> "$GITHUB_OUTPUT"
             echo "message=✅ All components deployed successfully!" >> "$GITHUB_OUTPUT"
             echo "workflow_name=${{ github.workflow }}" >> "$GITHUB_OUTPUT"
@@ -355,7 +355,7 @@ jobs:
             MESSAGE="❌ Deployment failed:"
             [ "$JAR_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ JAR publishing failed." || MESSAGE="$MESSAGE ✅ JAR publishing succeeded."
             [ "$DOCKER_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ Docker build/push failed." || MESSAGE="$MESSAGE ✅ Docker build/push succeeded."
-            [ "$ENT_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ Enterprise image build failed." || MESSAGE="$MESSAGE ✅ Enterprise image build succeeded."
+            [ "$IT_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ IT image build failed." || MESSAGE="$MESSAGE ✅ IT image build succeeded."
             echo "message=$MESSAGE" >> "$GITHUB_OUTPUT"
             echo "workflow_name=${{ github.workflow }}" >> "$GITHUB_OUTPUT"
           fi
@@ -377,7 +377,7 @@ jobs:
     needs:
       - publish_jars
       - docker_image
-      - build_enterprise
+      - build_it
       - notify
     if: always()
     runs-on: ubuntu-24.04
