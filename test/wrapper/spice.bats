@@ -669,6 +669,112 @@ MANIFEST
   [[ "$output" != *"SPICE_TEST_BEGIN"* ]]
 }
 
+# ── Image surveys: docker:// input and registry logins ───────────────────────
+
+# A credential helper that knows two registries and logs what it was asked.
+make_fake_helper() {
+  mkdir -p "$TEST_TMPDIR/bin"
+  cat > "$TEST_TMPDIR/bin/docker-credential-fake" <<HELPER
+#!/bin/bash
+[ "\$1" = get ] || exit 1
+IFS= read -r registry || true
+echo "\$registry" >> "$TEST_TMPDIR/helper-asked.log"
+case "\$registry" in
+  https://index.docker.io/v1/) echo '{"ServerURL":"https://index.docker.io/v1/","Username":"hubuser","Secret":"hub-s3cret"}' ;;
+  ghcr.io) echo '{"ServerURL":"ghcr.io","Username":"ghuser","Secret":"gh-s3cret"}' ;;
+  *) echo 'credentials not found in native keychain'; exit 1 ;;
+esac
+HELPER
+  chmod +x "$TEST_TMPDIR/bin/docker-credential-fake"
+  touch "$TEST_TMPDIR/helper-asked.log"
+  export PATH="$TEST_TMPDIR/bin:$PATH"
+}
+
+# Docker config dir with the given config.json; the container copies what it was handed.
+use_docker_config() {
+  mkdir -p "$TEST_TMPDIR/dockercfg" "$TEST_TMPDIR/copy" "$TEST_TMPDIR/tmp"
+  printf '%s\n' "$1" > "$TEST_TMPDIR/dockercfg/config.json"
+  export DOCKER_CONFIG="$TEST_TMPDIR/dockercfg"
+  export TMPDIR="$TEST_TMPDIR/tmp"
+  export SPICE_DOCKER_FLAGS="-v $TEST_TMPDIR/copy:/copy -e MOCK_DOCKER_CONFIG_COPY=/copy/config.json"
+}
+
+handed_over() { tr -d ' \n' < "$TEST_TMPDIR/copy/config.json"; }
+
+@test "docker:// input passes through to the CLI untouched" {
+  run "$WRAPPER" survey inventory myapp docker://ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 0 ]
+  assert_arg "docker://ghcr.io/acme/app:1.0"
+}
+
+@test "image-looking input reaches the CLI instead of the missing-path error" {
+  run "$WRAPPER" survey inventory myapp nginx:1.27 --no-upload
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Input path does not exist"* ]]
+  assert_arg "nginx:1.27"
+}
+
+@test "registry login: inline auths entry is mounted as it is" {
+  make_fake_helper
+  use_docker_config '{"auths":{"ghcr.io":{"auth":"aW5saW5lOng="}},"credsStore":"fake"}'
+  run "$WRAPPER" survey inventory myapp docker://ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 0 ]
+  [ "$(handed_over)" = '{"auths":{"ghcr.io":{"auth":"aW5saW5lOng="}},"credsStore":"fake"}' ]
+  [ ! -s "$TEST_TMPDIR/helper-asked.log" ]
+}
+
+@test "registry login: credsStore helper login is handed over, then removed" {
+  make_fake_helper
+  use_docker_config '{"auths":{"ghcr.io":{}},"credsStore":"fake"}'
+  run "$WRAPPER" survey inventory myapp docker://ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 0 ]
+  [ "$(handed_over)" = "{\"auths\":{\"ghcr.io\":{\"auth\":\"$(printf 'ghuser:gh-s3cret' | base64)\"}}}" ]
+  [ "$(container_env DOCKER_CONFIG)" = "/mnt/spice/docker-config" ]
+  [[ "$output" != *"s3cret"* ]]
+  [ -z "$(ls -A "$TEST_TMPDIR/tmp")" ]
+}
+
+@test "registry login: credHelpers entry wins over credsStore" {
+  make_fake_helper
+  use_docker_config '{"credsStore":"not-installed","credHelpers":{"ghcr.io":"fake"}}'
+  run "$WRAPPER" survey inventory myapp docker://ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 0 ]
+  [ "$(handed_over)" = "{\"auths\":{\"ghcr.io\":{\"auth\":\"$(printf 'ghuser:gh-s3cret' | base64)\"}}}" ]
+}
+
+@test "registry login: Docker Hub images use Docker Hub's key" {
+  make_fake_helper
+  use_docker_config '{"credsStore":"fake"}'
+  run "$WRAPPER" survey inventory myapp docker://nginx:1.27 --no-upload
+  [ "$status" -eq 0 ]
+  grep -qxF "https://index.docker.io/v1/" "$TEST_TMPDIR/helper-asked.log"
+  [ "$(handed_over)" = "{\"auths\":{\"https://index.docker.io/v1/\":{\"auth\":\"$(printf 'hubuser:hub-s3cret' | base64)\"}}}" ]
+}
+
+@test "registry login: survey image alias asks the helper too" {
+  make_fake_helper
+  use_docker_config '{"credsStore":"fake"}'
+  run "$WRAPPER" survey image --subject myapp ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 0 ]
+  grep -qxF "ghcr.io" "$TEST_TMPDIR/helper-asked.log"
+}
+
+@test "registry login: missing helper falls back to the config as it is" {
+  use_docker_config '{"credsStore":"not-installed"}'
+  run "$WRAPPER" survey inventory myapp docker://ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 0 ]
+  [ "$(handed_over)" = '{"credsStore":"not-installed"}' ]
+}
+
+@test "registry login: temporary login is removed when the run fails" {
+  make_fake_helper
+  use_docker_config '{"credsStore":"fake"}'
+  export SPICE_DOCKER_FLAGS="$SPICE_DOCKER_FLAGS -e TEST_EXIT_CODE=3"
+  run "$WRAPPER" survey inventory myapp docker://ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 3 ]
+  [ -z "$(ls -A "$TEST_TMPDIR/tmp")" ]
+}
+
 # ── Runtime survey orchestration ─────────────────────────────────────────
 
 @test "runtime survey: missing command after -- fails" {

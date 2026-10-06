@@ -83,6 +83,13 @@ printf '\033[31mCOLORED:red-text\033[0m\n'
 # Stderr output for log-file capture tests
 echo "STDERR:test-error-output" >&2
 
+# Registry-login tests: keep the docker config the wrapper mounted, which may be a
+# temporary one removed when the run ends.
+echo "ENV:DOCKER_CONFIG=${DOCKER_CONFIG:-}"
+if [ -n "${MOCK_DOCKER_CONFIG_COPY:-}" ] && [ -r /mnt/spice/docker-config/config.json ]; then
+  cp /mnt/spice/docker-config/config.json "$MOCK_DOCKER_CONFIG_COPY"
+fi
+
 echo "===SPICE_TEST_END==="
 
 # Support configurable exit code for exit-code propagation tests

@@ -59,6 +59,9 @@ import picocli.CommandLine.Parameters;
  *
  * Usage:
  *   spice survey inventory &lt;subject&gt; &lt;input&gt; [options]
+ *
+ * <p>The input is a file or folder, or {@code docker://<image>} for a container image in a
+ * registry, which is pulled and surveyed by {@link SurveyImageCommand}.
  */
 @Command(
     name = "inventory",
@@ -69,6 +72,9 @@ import picocli.CommandLine.Parameters;
         "Examples:",
         "  # Survey a directory of artifacts and upload",
         "  spice survey inventory my-app ./build/libs",
+        "",
+        "  # Survey a container image from a registry",
+        "  spice survey inventory my-app docker://nginx:1.27",
         "",
         "  # Survey a single file, skip upload, write output to ./out",
         "  spice survey inventory my-app ./app.jar --no-upload --output ./out",
@@ -90,7 +96,15 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   @Parameters(index = "0", description = "Label identifying the system being surveyed")
   String subject;
 
-  @Parameters(index = "1", description = "Path to artifacts (directory or single file)")
+  @Parameters(
+      index = "1",
+      paramLabel = "<input>",
+      converter = SurveyInput.Converter.class,
+      description = "Path to artifacts (directory or single file), or docker://<image> for a container image in a registry"
+  )
+  SurveyInput source;
+
+  /** The file or folder surveyed, resolved from {@link #source} when the run starts. */
   Path input;
 
   @Option(names = "--output", description = "Output directory for survey results")
@@ -143,6 +157,9 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
   @Override
   public Integer call() throws Exception {
+    if (input == null && source != null && source.isImage()) {
+      return surveyImage();
+    }
     try {
       configureLogging();
 
@@ -166,6 +183,44 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       }
       return 1;
     }
+  }
+
+  /**
+   * A {@code docker://} input: pull the image and survey it exactly as {@code survey image}
+   * does, with this command's subject and options.
+   */
+  int surveyImage() throws Exception {
+    String ref;
+    try {
+      if (uploadOnly) {
+        throw new IllegalArgumentException(
+            "--upload-only uploads the output folder of an earlier survey, not an image.");
+      }
+      ref = source.image();
+    } catch (IllegalArgumentException ex) {
+      log.error("❌ {}", ex.getMessage());
+      log.info("Use --help for usage information.");
+      return 1;
+    }
+    SurveyImageCommand image = newImageCommand();
+    image.image = ref;
+    image.subject = subject;
+    image.output = output;
+    image.noUpload = noUpload;
+    image.tagJson = tagJson;
+    image.threads = threads;
+    image.maxRecords = maxRecords;
+    image.chunkSizeMB = chunkSizeMB;
+    image.logLevel = logLevel;
+    image.logFile = logFile;
+    image.goatRodeoArgsRaw = goatRodeoArgsRaw;
+    image.gingerArgsRaw = gingerArgsRaw;
+    return image.execute();
+  }
+
+  /** Seam for tests, which replace the pull. */
+  SurveyImageCommand newImageCommand() {
+    return new SurveyImageCommand();
   }
 
   void run() throws Exception {
@@ -194,6 +249,9 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       }
     }
 
+    if (input == null) {
+      input = source.path();
+    }
     if (!Files.exists(input)) {
       throw new IllegalArgumentException("Input path does not exist: " + input);
     }

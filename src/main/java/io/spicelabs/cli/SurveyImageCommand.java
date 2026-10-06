@@ -37,31 +37,18 @@ import picocli.CommandLine.Parameters;
  * as {@code survey inventory} — so upload, cutoff, progress reporting and all the shared
  * options behave identically.
  *
- * <p>Usage:
- *   spice survey image &lt;image&gt; [--subject &lt;label&gt;] [options]
+ * <p>{@code spice survey inventory <subject> docker://<image>} runs this. Typed directly,
+ * {@code spice survey image <image>} is a hidden alias kept for existing scripts.
  */
 @Command(
     name = "image",
-    description = "Survey an OCI or Docker image pulled by name",
+    hidden = true,
+    description = "Survey an OCI or Docker image pulled by name (replaced by: spice survey inventory <subject> docker://<image>)",
     mixinStandardHelpOptions = true,
     footer = {
         "",
-        "Examples:",
-        "  # Survey the latest nginx image and upload",
-        "  spice survey image nginx",
-        "",
-        "  # Survey a tagged image from a specific registry, skip upload",
-        "  spice survey image ghcr.io/spice-labs-inc/grinder:0.1.0 --no-upload",
-        "",
-        "  # Survey by digest, write output to ./out",
-        "  spice survey image ubuntu@sha256:... --no-upload --output ./out",
-        "",
-        "  # Label the survey instead of using the image name",
-        "  spice survey image nginx --subject my-nginx",
-        "",
-        "The image reference may use any form oras accepts. A bare name such as",
-        "'nginx' is expanded to 'docker.io/library/nginx:latest'. SPICE_PASS must be",
-        "set in the environment for upload.",
+        "This command will be removed. Use instead:",
+        "  spice survey inventory <subject> docker://<image>",
         ""
     }
 )
@@ -93,7 +80,7 @@ public class SurveyImageCommand implements java.util.concurrent.Callable<Integer
   Integer threads;
 
   @Option(names = "--max-records", description = "Max records to process per batch (default: 5000)")
-  int maxRecords = 5000;
+  Integer maxRecords;
 
   @Option(names = "--chunk-size", description = "Target chunk size in MB for uploads (default: 64)")
   Integer chunkSizeMB;
@@ -120,6 +107,19 @@ public class SurveyImageCommand implements java.util.concurrent.Callable<Integer
 
   @Override
   public Integer call() throws Exception {
+    System.err.println(replacementNotice());
+    return execute();
+  }
+
+  /** The one line the alias prints: that it goes away, and the command to use instead. */
+  String replacementNotice() {
+    String label = subject != null && !subject.isBlank() ? subject : image;
+    return "Note: spice survey image will be removed. Use: spice survey inventory "
+        + label + " " + SurveyInput.DOCKER_PREFIX + image;
+  }
+
+  /** Pull and survey, logging a failure and returning 1 rather than throwing. */
+  int execute() throws Exception {
     try {
       return run();
     } catch (IllegalArgumentException ex) {

@@ -363,6 +363,9 @@ mount_path() {
 
   if [ -e "$value" ]; then
     if [ -d "$value" ]; then dir="$value"; else dir="$(dirname "$value")"; fi
+  elif [ "$must_exist" = "1" ] && mf_looks_like_image "$value"; then
+    # `nginx:1.27` where a path belongs: the CLI explains how to name an image.
+    return 0
   elif [ "$must_exist" = "1" ]; then
     echo "ERROR ❌ Input path does not exist: $value" >&2
     echo "INFO  Use --help for usage information." >&2
@@ -409,6 +412,23 @@ mount_path() {
   # literally rather than matched as a pattern.
   container="${target}${abs#"$dir_abs"}"
   MF_RESULT="$container"
+}
+
+# Whether a value that is not a path reads as a container image reference: a tag,
+# a digest or a registry host first, and nothing written as a path. Matches
+# SurveyInput.looksLikeImage.
+mf_looks_like_image() {
+  local value="$1" first
+  case "$value" in
+    ''|/*|.*|~*|*\\*|*' '*|[A-Za-z]:*) return 1 ;;
+    *@*|*:*) return 0 ;;
+    */*) first="${value%%/*}" ;;
+    *) return 1 ;;
+  esac
+  case "$first" in
+    *.*|[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]) return 0 ;;
+  esac
+  return 1
 }
 
 # Add a deduped bind mount, recording identity mounts so nested paths can reuse
@@ -1065,20 +1085,107 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ] \
 fi
 
 # ── Image survey detection (must happen before general arg parsing) ────────
-# `survey image` pulls the image with oras inside the container; oras reads the
-# Docker credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json)
-# for registry auth, so the host's credentials must ride into the container.
+# `survey inventory <subject> docker://<image>` (and the older `survey image`)
+# pulls the image with oras inside the container; oras reads the Docker
+# credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json) for
+# registry auth, so the host's credentials must ride into the container.
 
 IS_IMAGE_SURVEY=0
+AUTH_IMAGE_REF=""
 {
   saw_survey=0
+  in_survey_type=""
+  skip_next=0
   for arg in "$@"; do
+    if [ "$in_survey_type" = "inventory" ]; then
+      case "$arg" in docker://*) IS_IMAGE_SURVEY=1; AUTH_IMAGE_REF="${arg#docker://}"; break ;; esac
+      continue
+    fi
+    if [ "$in_survey_type" = "image" ]; then
+      if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
+      case "$arg" in
+        --*=*) continue ;;
+        -*) if mf_takes_value "${MF_ROOT}/survey/image" "$arg"; then skip_next=1; fi; continue ;;
+      esac
+      AUTH_IMAGE_REF="$arg"
+      break
+    fi
     if [ "$saw_survey" = "1" ] && [ "$arg" = "image" ]; then
       IS_IMAGE_SURVEY=1
-      break
+      in_survey_type="image"
+      continue
+    fi
+    if [ "$saw_survey" = "1" ] && [ "$arg" = "inventory" ]; then
+      in_survey_type="inventory"
+      continue
     fi
     [ "$arg" = "survey" ] && saw_survey=1 || saw_survey=0
   done
+}
+
+# The key Docker's config.json and credential helpers use for an image's registry.
+docker_registry_key() {
+  local ref="$1" first="${1%%/*}"
+  if [ "$first" != "$ref" ] && { [[ "$first" == *.* || "$first" == *:* ]] || [ "$first" = "localhost" ]; }; then
+    case "$first" in
+      docker.io|index.docker.io|registry-1.docker.io) echo "https://index.docker.io/v1/" ;;
+      *) echo "$first" ;;
+    esac
+  else
+    echo "https://index.docker.io/v1/"
+  fi
+}
+
+# The string value of "$2" in the flat JSON on stdin, still JSON-escaped; empty if absent.
+json_string_field() {
+  local name="$1"
+  grep -oE "\"${name}\"[[:space:]]*:[[:space:]]*\"([^\"\\\\]|\\\\.)*\"" | head -n 1 \
+    | sed -E 's/^"[^"]*"[[:space:]]*:[[:space:]]*"//; s/"$//' || true
+}
+
+json_unescape() {
+  sed -e 's/\\"/"/g' -e 's#\\/#/#g' -e 's/\\\\/\\/g'
+}
+
+# Docker Desktop keeps logins in a credential helper (credsStore or credHelpers), and
+# config.json then holds no secret oras can read inside the container. Ask the helper
+# here and hand the container a config with just this registry's login. Any problem
+# leaves today's mount in place: public images still work, private ones fail in oras.
+SPICE_DOCKER_CONFIG_TMP=""
+docker_auth_from_helper() {
+  local cfg="$1" key="$2" flat key_re entry helper creds user secret b64
+  flat="$(tr -d '\n\r\t' < "$cfg")" || return 1
+  key_re="$(printf '%s' "$key" | sed 's#[][\.*^$+?(){}|]#\\&#g')"
+  entry="$(printf '%s' "$flat" | grep -oE "\"${key_re}\"[[:space:]]*:[[:space:]]*\\{[^}]*\\}" | head -n 1 || true)"
+  if printf '%s' "$entry" | grep -qE '"(auth|identitytoken)"[[:space:]]*:[[:space:]]*"[^"]+"'; then
+    return 1
+  fi
+  helper="$(printf '%s' "$flat" | grep -oE '"credHelpers"[[:space:]]*:[[:space:]]*\{[^}]*\}' | head -n 1 \
+    | grep -oE "\"${key_re}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -n 1 \
+    | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true)"
+  if [ -z "$helper" ]; then
+    helper="$(printf '%s' "$flat" | json_string_field credsStore)"
+  fi
+  [[ "$helper" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  command -v "docker-credential-${helper}" >/dev/null 2>&1 || return 1
+  creds="$(printf '%s' "$key" | "docker-credential-${helper}" get 2>/dev/null | tr -d '\n\r\t')" || return 1
+  user="$(printf '%s' "$creds" | json_string_field Username | json_unescape)"
+  secret="$(printf '%s' "$creds" | json_string_field Secret)"
+  [ -n "$secret" ] || return 1
+  SPICE_DOCKER_CONFIG_TMP="$(mktemp -d "${TMPDIR:-/tmp}/spice-docker-config.XXXXXX")" || return 1
+  chmod 700 "$SPICE_DOCKER_CONFIG_TMP"
+  trap 'rm -rf "$SPICE_DOCKER_CONFIG_TMP"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  (
+    umask 077
+    if [ "$user" = "<token>" ]; then
+      printf '{"auths":{"%s":{"identitytoken":"%s"}}}\n' "$key" "$secret"
+    else
+      b64="$(printf '%s:%s' "$user" "$(printf '%s' "$secret" | json_unescape)" | base64 | tr -d '\n')"
+      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$key" "$b64"
+    fi > "$SPICE_DOCKER_CONFIG_TMP/config.json"
+  )
 }
 
 # Resolve the host's docker config dir (DOCKER_CONFIG, else ~/.docker) and mount
@@ -1090,6 +1197,10 @@ DOCKER_AUTH_ARGS=()
 if [ "$IS_IMAGE_SURVEY" = "1" ]; then
   DOCKER_CONFIG_HOST="${DOCKER_CONFIG:-${HOME:-}/.docker}"
   if [ -f "${DOCKER_CONFIG_HOST}/config.json" ]; then
+    if [ -n "$AUTH_IMAGE_REF" ] \
+        && docker_auth_from_helper "${DOCKER_CONFIG_HOST}/config.json" "$(docker_registry_key "$AUTH_IMAGE_REF")"; then
+      DOCKER_CONFIG_HOST="$SPICE_DOCKER_CONFIG_TMP"
+    fi
     DOCKER_AUTH_ARGS=(
       "-v" "${DOCKER_CONFIG_HOST}:/mnt/spice/docker-config:ro"
       "-e" "DOCKER_CONFIG=/mnt/spice/docker-config"
@@ -1432,4 +1543,10 @@ if [ "$DOCS_BROWSER" = "1" ]; then
   exec "${DOCKER_RUN[@]}" "${DOCS_ARGS[@]}"
 fi
 
+if [ -n "$SPICE_DOCKER_CONFIG_TMP" ]; then
+  # Not exec: the EXIT trap removes the temporary registry login once the run ends.
+  run_rc=0
+  "${DOCKER_RUN[@]}" ${MF_ARGS[@]+"${MF_ARGS[@]}"} || run_rc=$?
+  exit "$run_rc"
+fi
 exec "${DOCKER_RUN[@]}" ${MF_ARGS[@]+"${MF_ARGS[@]}"}

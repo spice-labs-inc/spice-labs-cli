@@ -321,6 +321,9 @@ mount_path() {
 
   if [ -e "$value" ]; then
     if [ -d "$value" ]; then dir="$value"; else dir="$(dirname "$value")"; fi
+  elif [ "$must_exist" = "1" ] && mf_looks_like_image "$value"; then
+    # `nginx:1.27` where a path belongs: the CLI explains how to name an image.
+    return 0
   elif [ "$must_exist" = "1" ]; then
     echo "ERROR ❌ Input path does not exist: $value" >&2
     echo "INFO  Use --help for usage information." >&2
@@ -367,6 +370,23 @@ mount_path() {
   # literally rather than matched as a pattern.
   container="${target}${abs#"$dir_abs"}"
   MF_RESULT="$container"
+}
+
+# Whether a value that is not a path reads as a container image reference: a tag,
+# a digest or a registry host first, and nothing written as a path. Matches
+# SurveyInput.looksLikeImage.
+mf_looks_like_image() {
+  local value="$1" first
+  case "$value" in
+    ''|/*|.*|~*|*\\*|*' '*|[A-Za-z]:*) return 1 ;;
+    *@*|*:*) return 0 ;;
+    */*) first="${value%%/*}" ;;
+    *) return 1 ;;
+  esac
+  case "$first" in
+    *.*|[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]) return 0 ;;
+  esac
+  return 1
 }
 
 # Add a deduped bind mount, recording identity mounts so nested paths can reuse

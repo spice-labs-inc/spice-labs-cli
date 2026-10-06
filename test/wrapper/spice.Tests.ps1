@@ -50,6 +50,13 @@ class MockDocker {
         volumes[ContainerPath(vol)] = HostPath(vol);
       }
     }
+    // Registry-login tests: keep the docker config the wrapper mounted, which may be a
+    // temporary one removed when the run ends.
+    var copyTo = Environment.GetEnvironmentVariable("MOCK_DOCKER_CONFIG_COPY");
+    if (!string.IsNullOrEmpty(copyTo) && volumes.ContainsKey("/mnt/spice/docker-config:ro")) {
+      var src = Path.Combine(volumes["/mnt/spice/docker-config:ro"], "config.json");
+      if (File.Exists(src)) File.Copy(src, copyTo, true);
+    }
     // Identity mounts mean the working directory the wrapper passes is also a real
     // host directory, so the mock can write there directly.
     if (workDir != null && volumes.ContainsKey(workDir)) workDir = volumes[workDir];
@@ -155,6 +162,39 @@ class MockJava {
     & $csc /nologo /out:$mockJavaExe /target:exe $mockJavaCsFile 2>&1 | Out-Null
     if (-not (Test-Path $mockJavaExe)) { throw "Failed to compile mock java.exe" }
 
+    # A credential helper, as Docker Desktop installs one: registry on stdin, JSON out.
+    $mockHelperExe = Join-Path $script:MockBinDir 'docker-credential-fake.exe'
+    $mockHelperCs = @'
+using System;
+using System.IO;
+class FakeHelper {
+  static int Main(string[] args) {
+    if (args.Length < 1 || args[0] != "get") return 1;
+    string registry = Console.In.ReadToEnd().Trim();
+    var log = Environment.GetEnvironmentVariable("FAKE_HELPER_LOG");
+    if (!string.IsNullOrEmpty(log)) File.AppendAllText(log, registry + "\n");
+    if (registry == "https://index.docker.io/v1/") {
+      Console.WriteLine("{\"ServerURL\":\"https://index.docker.io/v1/\",\"Username\":\"hubuser\",\"Secret\":\"hub-s3cret\"}");
+      return 0;
+    }
+    if (registry == "ghcr.io") {
+      Console.WriteLine("{\"ServerURL\":\"ghcr.io\",\"Username\":\"ghuser\",\"Secret\":\"gh-s3cret\"}");
+      return 0;
+    }
+    if (registry == "tok.example.com") {
+      Console.WriteLine("{\"ServerURL\":\"tok.example.com\",\"Username\":\"<token>\",\"Secret\":\"tok-s3cret\"}");
+      return 0;
+    }
+    Console.WriteLine("credentials not found in native keychain");
+    return 1;
+  }
+}
+'@
+    $mockHelperCsFile = Join-Path $script:MockBinDir 'FakeHelper.cs'
+    Set-Content -Path $mockHelperCsFile -Value $mockHelperCs
+    & $csc /nologo /out:$mockHelperExe /target:exe $mockHelperCsFile 2>&1 | Out-Null
+    if (-not (Test-Path $mockHelperExe)) { throw "Failed to compile mock docker-credential-fake.exe" }
+
     $mockDocker = Join-Path $script:MockBinDir 'docker-mock.ps1'  # unused on Windows, kept for compat
     Set-Content -Path $mockDocker -Value @'
 # Mock docker - reads args from MOCK_DOCKER_ARGS env var (set by docker.cmd shim)
@@ -249,6 +289,11 @@ foreach ($a in $allArgs) {
   if ($a -match '^[a-z]' -and $a -notmatch '^--' -and $a -notmatch '^host$' -and $a -match '(:|/)') { $foundImage = $true; continue }
   if ($a -match '^spice-') { $foundImage = $true; continue }
 }
+# Registry-login tests: keep the docker config the wrapper mounted (mirrors the C# mock).
+if ($env:MOCK_DOCKER_CONFIG_COPY -and $volumes['/mnt/spice/docker-config:ro']) {
+  $src = Join-Path $volumes['/mnt/spice/docker-config:ro'] 'config.json'
+  if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $env:MOCK_DOCKER_CONFIG_COPY -Force }
+}
 # If no --output was given and /mnt/output is mounted, write the default marker
 # file to the host dir so tests can verify the volume mount (mirrors the C# mock).
 $hasOutput = $false
@@ -330,6 +375,22 @@ echo '===SPICE_TEST_END==='
 exit 0
 "@
     chmod +x $mockJavaSh 2>`$null
+
+    # A credential helper, as Docker Desktop installs one (mirrors the Windows .exe).
+    $mockHelperSh = Join-Path $script:MockBinDir 'docker-credential-fake'
+    Set-Content -Path $mockHelperSh -Value @'
+#!/bin/bash
+[ "$1" = get ] || exit 1
+IFS= read -r registry || true
+[ -n "$FAKE_HELPER_LOG" ] && echo "$registry" >> "$FAKE_HELPER_LOG"
+case "$registry" in
+  https://index.docker.io/v1/) echo '{"ServerURL":"https://index.docker.io/v1/","Username":"hubuser","Secret":"hub-s3cret"}' ;;
+  ghcr.io) echo '{"ServerURL":"ghcr.io","Username":"ghuser","Secret":"gh-s3cret"}' ;;
+  tok.example.com) echo '{"ServerURL":"tok.example.com","Username":"<token>","Secret":"tok-s3cret"}' ;;
+  *) echo 'credentials not found in native keychain'; exit 1 ;;
+esac
+'@
+    chmod +x $mockHelperSh 2>$null
   }
 
   function global:Convert-TestPathToDockerPath($p) {
@@ -875,6 +936,115 @@ Describe 'spice.ps1 wrapper' {
   }
 
   # ── Exit code ────────────────────────────────────────────────────────────
+
+  # ── Image surveys: docker:// input and registry logins ─────────────────────
+
+  Context 'Image surveys and registry logins' {
+    BeforeEach {
+      $script:CfgDir = Join-Path $script:TestDir 'dockercfg'
+      New-Item -ItemType Directory -Path $script:CfgDir -Force | Out-Null
+      $script:HandedOver = Join-Path $script:TestDir 'handed-over.json'
+      $script:HelperLog = Join-Path $script:TestDir 'helper-asked.log'
+      Set-Content -LiteralPath $script:HelperLog -Value '' -NoNewline
+      $env:DOCKER_CONFIG = $script:CfgDir
+      $env:MOCK_DOCKER_CONFIG_COPY = $script:HandedOver
+      $env:FAKE_HELPER_LOG = $script:HelperLog
+    }
+
+    AfterEach {
+      Remove-Item env:DOCKER_CONFIG, env:MOCK_DOCKER_CONFIG_COPY, env:FAKE_HELPER_LOG -ErrorAction SilentlyContinue
+    }
+
+    BeforeAll {
+      function Set-DockerConfig([string]$Json) {
+        [System.IO.File]::WriteAllText((Join-Path $script:CfgDir 'config.json'), $Json)
+      }
+
+      # The host directory mounted as the container's docker config.
+      function Get-MountedDockerConfig($r) {
+        $mount = @($r.DockerRunArgs | Where-Object { $_ -like '*:/mnt/spice/docker-config:ro' }) | Select-Object -First 1
+        if ($mount) { return ($mount -replace ':/mnt/spice/docker-config:ro$', '') }
+        return $null
+      }
+
+      function Get-HandedOverAuths {
+        $cfg = Get-Content -LiteralPath $script:HandedOver -Raw | ConvertFrom-Json
+        @($cfg.PSObject.Properties.Name) | Should -Be @('auths')
+        return $cfg.auths
+      }
+
+      function ConvertTo-Base64([string]$s) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)) }
+    }
+
+    It 'passes a docker:// input through untouched' {
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'docker://ghcr.io/acme/app:1.0', '--no-upload')
+      $r.ExitCode | Should -Be 0
+      $r.ContainerArgs | Should -Contain 'docker://ghcr.io/acme/app:1.0'
+    }
+
+    It 'lets an image-looking input reach the CLI instead of the missing-path error' {
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'nginx:1.27', '--no-upload')
+      $r.ExitCode | Should -Be 0
+      ($r.Stderr -join "`n") | Should -Not -Match 'Input path does not exist'
+      $r.ContainerArgs | Should -Contain 'nginx:1.27'
+    }
+
+    It 'mounts a config with the login inline as it is' {
+      Set-DockerConfig '{"auths":{"ghcr.io":{"auth":"aW5saW5lOng="}},"credsStore":"fake"}'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'docker://ghcr.io/acme/app:1.0')
+      Get-MountedDockerConfig $r | Should -Be $script:CfgDir
+      (Get-Content -LiteralPath $script:HelperLog -Raw) | Should -BeNullOrEmpty
+    }
+
+    It 'hands over the credsStore login for this registry only, then removes it' {
+      Set-DockerConfig '{"auths":{"ghcr.io":{}},"credsStore":"fake"}'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'docker://ghcr.io/acme/app:1.0', '--no-upload')
+      $r.ExitCode | Should -Be 0
+      (Get-HandedOverAuths).'ghcr.io'.auth | Should -Be (ConvertTo-Base64 'ghuser:gh-s3cret')
+      $mounted = Get-MountedDockerConfig $r
+      $mounted | Should -Not -Be $script:CfgDir
+      Test-Path -LiteralPath $mounted | Should -BeFalse
+      (($r.RawOutput + $r.Stderr + $r.DockerRunArgs) -join "`n") | Should -Not -Match 's3cret'
+    }
+
+    It 'prefers a credHelpers entry over credsStore' {
+      Set-DockerConfig '{"credsStore":"not-installed","credHelpers":{"ghcr.io":"fake"}}'
+      $null = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'docker://ghcr.io/acme/app:1.0')
+      (Get-HandedOverAuths).'ghcr.io'.auth | Should -Be (ConvertTo-Base64 'ghuser:gh-s3cret')
+    }
+
+    It 'logs Docker Hub images in under Docker Hub''s key' {
+      Set-DockerConfig '{"credsStore":"fake"}'
+      $null = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'docker://nginx:1.27')
+      (Get-Content -LiteralPath $script:HelperLog) | Should -Contain 'https://index.docker.io/v1/'
+      (Get-HandedOverAuths).'https://index.docker.io/v1/'.auth | Should -Be (ConvertTo-Base64 'hubuser:hub-s3cret')
+    }
+
+    It 'hands over an identity token as one' {
+      Set-DockerConfig '{"credsStore":"fake"}'
+      $null = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'docker://tok.example.com/acme/app:1.0')
+      (Get-HandedOverAuths).'tok.example.com'.identitytoken | Should -Be 'tok-s3cret'
+    }
+
+    It 'asks the helper for the survey image alias too' {
+      Set-DockerConfig '{"credsStore":"fake"}'
+      $null = Invoke-SpiceWrapper -Arguments @('survey', 'image', '--subject', 'myapp', 'ghcr.io/acme/app:1.0')
+      (Get-Content -LiteralPath $script:HelperLog) | Should -Contain 'ghcr.io'
+    }
+
+    It 'falls back to the config as it is when the helper is missing' {
+      Set-DockerConfig '{"credsStore":"not-installed"}'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'docker://ghcr.io/acme/app:1.0')
+      Get-MountedDockerConfig $r | Should -Be $script:CfgDir
+    }
+
+    It 'removes the temporary login when the run fails' {
+      Set-DockerConfig '{"credsStore":"fake"}'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'docker://ghcr.io/acme/app:1.0') -DockerFlags '-e TEST_EXIT_CODE=3'
+      $r.ExitCode | Should -Be 3
+      Test-Path -LiteralPath (Get-MountedDockerConfig $r) | Should -BeFalse
+    }
+  }
 
   Context 'Exit code' {
     It 'non-zero exit code propagated' {

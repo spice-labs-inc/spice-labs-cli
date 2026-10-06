@@ -38,7 +38,7 @@ import picocli.CommandLine.UnmatchedArgumentException;
         "",
         "Examples:",
         "  spice survey inventory my-app ./build/libs",
-        "  spice survey image my-app nginx",
+        "  spice survey inventory my-app docker://nginx:1.27",
         "  spice survey runtime my-app --jfr -- java -jar app.jar",
         "",
         "Run 'spice survey <type> --help' for per-subcommand details.",

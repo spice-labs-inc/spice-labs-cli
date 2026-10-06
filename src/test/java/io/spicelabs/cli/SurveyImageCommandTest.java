@@ -4,14 +4,21 @@
 package io.spicelabs.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import picocli.CommandLine;
 
 /**
  * Guards the delegation boundary: {@code survey image} must pull an OCI layout and then hand
@@ -130,5 +137,121 @@ class SurveyImageCommandTest {
           .count();
       assertTrue(after == 0, "layout dirs must be cleaned up after the run, got " + after);
     }
+  }
+
+  /**
+   * {@code survey inventory <subject> docker://<image>} runs this survey: the same pull, the
+   * inventory command's subject and options, and no alias notice.
+   */
+  @Test
+  void inventoryWithDockerInputRunsTheImageSurvey() throws Exception {
+    String[] pulled = new String[1];
+    SurveyImageCommand[] used = new SurveyImageCommand[1];
+    SurveyInventoryCommand inventory = new SurveyInventoryCommand() {
+      @Override
+      SurveyImageCommand newImageCommand() {
+        used[0] = new SurveyImageCommand() {
+          @Override
+          void pull(String ref, Path layoutDir) throws Exception {
+            pulled[0] = ref;
+            Files.createDirectories(layoutDir.resolve("layout.oci"));
+          }
+
+          @Override
+          int survey(String ref, Path layoutDir) {
+            return 0;
+          }
+        };
+        return used[0];
+      }
+    };
+    inventory.subject = "my-app";
+    inventory.source = new SurveyInput("docker://nginx:1.27");
+    inventory.output = tempDir;
+    inventory.noUpload = true;
+    inventory.threads = 3;
+
+    PrintStream savedErr = System.err;
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
+    int rc;
+    try {
+      rc = inventory.call();
+    } finally {
+      System.setErr(savedErr);
+    }
+
+    assertEquals(0, rc);
+    assertEquals("docker.io/library/nginx:1.27", pulled[0]);
+    assertEquals("my-app", used[0].effectiveSubject(pulled[0]));
+    assertEquals(3, used[0].threads);
+    assertTrue(used[0].noUpload);
+    assertEquals(tempDir, used[0].output);
+    assertNull(used[0].maxRecords, "an unset --max-records leaves the configured value in charge");
+    assertFalse(err.toString(StandardCharsets.UTF_8).contains("will be removed"), err.toString(StandardCharsets.UTF_8));
+  }
+
+  @Test
+  void inventoryUploadOnlyWithAnImageIsRefusedWithoutPulling() throws Exception {
+    SurveyInventoryCommand inventory = new SurveyInventoryCommand() {
+      @Override
+      SurveyImageCommand newImageCommand() {
+        throw new AssertionError("nothing may be pulled");
+      }
+    };
+    inventory.subject = "my-app";
+    inventory.source = new SurveyInput("docker://nginx:1.27");
+    inventory.uploadOnly = true;
+    assertEquals(1, inventory.call());
+  }
+
+  @Test
+  void typedDirectlyTheAliasNamesTheCommandThatReplacesIt() {
+    SurveyImageCommand cmd = new SurveyImageCommand();
+    cmd.image = "nginx:1.27";
+    assertEquals("Note: spice survey image will be removed. Use: spice survey inventory nginx:1.27 docker://nginx:1.27",
+        cmd.replacementNotice());
+    cmd.subject = "my-nginx";
+    assertEquals("Note: spice survey image will be removed. Use: spice survey inventory my-nginx docker://nginx:1.27",
+        cmd.replacementNotice());
+  }
+
+  @Test
+  void theAliasPrintsItsNoticeOnStderrOnce() throws Exception {
+    SurveyImageCommand cmd = new SurveyImageCommand() {
+      @Override
+      void pull(String ref, Path layoutDir) throws Exception {
+        Files.createDirectories(layoutDir.resolve("layout.oci"));
+      }
+
+      @Override
+      int survey(String ref, Path layoutDir) {
+        return 0;
+      }
+    };
+    cmd.image = "nginx";
+    cmd.output = tempDir;
+    PrintStream savedErr = System.err;
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
+    try {
+      assertEquals(0, cmd.call());
+    } finally {
+      System.setErr(savedErr);
+    }
+    String printed = err.toString(StandardCharsets.UTF_8);
+    assertEquals(1, printed.lines().filter(l -> l.contains("will be removed")).count(), printed);
+    assertTrue(printed.contains("Use: spice survey inventory nginx docker://nginx"), printed);
+  }
+
+  @Test
+  void theAliasIsHiddenFromHelp() {
+    CommandLine root = SpiceLabsCLI.newCommandLine();
+    CommandLine survey = root.getSubcommands().get("survey");
+    assertTrue(survey.getSubcommands().containsKey("image"), "the alias still runs");
+    assertTrue(survey.getSubcommands().get("image").getCommandSpec().usageMessage().hidden());
+    String help = survey.getUsageMessage();
+    assertFalse(help.lines().anyMatch(l -> l.trim().startsWith("image")), help);
+    assertTrue(help.contains("docker://nginx:1.27"), help);
   }
 }

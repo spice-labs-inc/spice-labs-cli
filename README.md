@@ -97,29 +97,38 @@ this repository is.
 
 ### Image Survey
 
-Scan an OCI or Docker container image pulled by name — no need to export it to disk first.
-The image is pulled with [`oras`](https://oras.land) (baked into the container image) into an
-OCI image layout, then surveyed with the same engine as inventory:
+Survey an OCI or Docker container image straight from its registry, with no need to export it
+to disk first. Give the image as the input of an inventory survey, with the `docker://` prefix:
 
 ```bash
-spice survey image <image> [--subject <label>]
+spice survey inventory <subject> docker://<image>
 ```
 
-- **`image`** — OCI or Docker image reference (`name[:tag][@digest]`)
-- **`--subject <label>`** — label identifying the system being surveyed. Defaults to the
-  image reference itself, so `spice survey image nginx` tags the run as
-  `docker.io/library/nginx:latest`.
+- **`<subject>`**: label identifying the system being surveyed
+- **`docker://<image>`**: OCI or Docker image reference (`name[:tag][@digest]`)
+
+The image is pulled with [`oras`](https://oras.land) (baked into the container image) into an
+OCI image layout, then surveyed with the same engine as a folder, so every inventory option
+applies except `--upload-only`.
 
 Bare names are expanded to their fully-qualified form: `nginx` becomes
 `docker.io/library/nginx:latest`, and a missing tag defaults to `latest`. A host is preserved
 (`ghcr.io/spice-labs-inc/grinder:0.1.0` stays as given). The artifact cutoff applies the same
-way it does to an inventory survey.
+way it does to a folder.
 
-Registry credentials come from the host's Docker config: when pulling a private image, the
-wrapper mounts `$DOCKER_CONFIG` (or `~/.docker`) read-only into the container and oras reads
-it from there. If you've `docker login`ed to the registry on this machine, no extra setup is
-needed. Set `DOCKER_CONFIG` to point at an alternate config file location if your credentials
-live elsewhere.
+An input that is not a file or folder but reads as an image (`nginx:1.27`, `ghcr.io/acme/app`)
+fails with the `docker://` form to use instead.
+
+Registry credentials come from the host's Docker login. For a `docker://` input the wrapper
+mounts `$DOCKER_CONFIG` (or `~/.docker`) read-only into the container and oras reads it from
+there. When that config keeps the login in a credential helper (`credsStore` or `credHelpers`,
+as Docker Desktop does), the wrapper asks the helper for that one registry's login and mounts
+a temporary config holding only it, removed when the run ends. If you've `docker login`ed to
+the registry on this machine, no extra setup is needed. Set `DOCKER_CONFIG` to point at an
+alternate config file location if your credentials live elsewhere.
+
+`spice survey image <image> [--subject <label>]`, the earlier form, still runs and prints the
+`docker://` form to use instead; it will be removed.
 
 ### Runtime Survey
 
@@ -159,11 +168,10 @@ spice survey inventory my-app ./build/output
 spice survey inventory my-app ./artifacts/my-app.tar
 spice survey inventory my-app ./build/output --no-upload
 
-# Image survey — pull and scan an image by name
-spice survey image nginx
-spice survey image ghcr.io/spice-labs-inc/grinder:0.1.0 --no-upload
-spice survey image ubuntu@sha256:<digest> --no-upload --output ./out
-spice survey image nginx --subject my-nginx
+# Image survey: pull and survey an image from its registry
+spice survey inventory my-nginx docker://nginx
+spice survey inventory grinder docker://ghcr.io/spice-labs-inc/grinder:0.1.0 --no-upload
+spice survey inventory ubuntu docker://ubuntu@sha256:<digest> --no-upload --output ./out
 
 # Runtime survey — instrument a Java application
 spice survey runtime my-app --jfr -- java -jar app.jar
@@ -244,19 +252,7 @@ variable, or the flag — which is how to answer "why is it doing that?" without
 
 ### Image Survey
 
-| Option            | Description                                                 | Default                     |
-| ----------------- | ----------------------------------------------------------- | --------------------------- |
-| `--subject`       | Label identifying the system being surveyed                 | the image reference         |
-| `--no-upload`     | Survey only, skip upload                                    | `false`                     |
-| `--output`        | Output directory for the pulled layout                      | system temp                 |
-| `--tag-json`      | Additional JSON metadata for tags                           | _(none)_                    |
-| `--log-level`     | `debug` \| `info` \| `warn` \| `error`                      | `info`                      |
-| `--log-file`      | Path to log file (output appended to both console and file) | _(none)_                    |
-| `--threads`       | Number of threads to use                                    | half of available CPU cores |
-| `--max-records`   | Max records to process per batch                            | `5000`                      |
-| `--chunk-size`    | Target chunk size in MB for uploads                         | `64`                        |
-| `--analysis-args` | Additional analysis args in key=value format                | _(none)_                    |
-| `--upload-args`   | Additional upload args in key=value format                  | _(none)_                    |
+A `docker://` input takes the inventory survey options above, except `--upload-only`.
 
 ### Runtime Survey
 

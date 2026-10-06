@@ -39,6 +39,23 @@ class WrapperParityTest {
    */
   Path manifestFile;
 
+  /** Everything the last wrapper run printed, stdout and stderr together. */
+  String lastOutput = "";
+
+  private static final String MOCK_DOCKER = String.join("\n",
+      "#!/bin/bash",
+      "echo \"$@\" > ARGS_FILE",
+      "if [ -n \"${MOCK_DOCKER_CONFIG_COPY:-}\" ]; then",
+      "  prev=''",
+      "  for a in \"$@\"; do",
+      "    if [ \"$prev\" = -v ]; then",
+      "      case \"$a\" in *:/mnt/spice/docker-config:ro) cp \"${a%:/mnt/spice/docker-config:ro}/config.json\" \"$MOCK_DOCKER_CONFIG_COPY\" ;; esac",
+      "    fi",
+      "    prev=\"$a\"",
+      "  done",
+      "fi",
+      "");
+
   @BeforeAll
   static void setup() {
     projectDir = Path.of(System.getProperty("user.dir"));
@@ -235,6 +252,195 @@ class WrapperParityTest {
         "the bare ref must pass through untouched: " + args);
   }
 
+  // ── survey inventory docker://<image> ──────────────────────────────────────
+
+  /** The image goes through untouched: never mounted, never refused as a missing path. */
+  @Test
+  void surveyInventoryDockerInputPassesThrough() throws Exception {
+    Path emptyCfg = Files.createTempDirectory("parity-dockercfg-empty");
+
+    String args = assertParityOrBashOnly(Map.of("DOCKER_CONFIG", emptyCfg.toString()),
+        "survey", "inventory", "my-app", "docker://ghcr.io/acme/app:1.0", "--no-upload");
+
+    assertTrue(args.contains("survey inventory my-app docker://ghcr.io/acme/app:1.0 --no-upload"), args);
+  }
+
+  /** `nginx:1.27` where a path belongs reaches the CLI, which explains docker://. */
+  @Test
+  void surveyInventoryImageLookingInputReachesTheCli() throws Exception {
+    String args = assertParityOrBashOnly("survey", "inventory", "my-app", "nginx:1.27", "--no-upload");
+
+    assertTrue(args.contains("survey inventory my-app nginx:1.27 --no-upload"), args);
+  }
+
+  /** A config.json with the login inline is mounted as it is, and no helper is asked. */
+  @Test
+  void dockerLoginInlineIsMountedAsItIs() throws Exception {
+    Path cfgDir = dockerConfig(
+        "{\"auths\":{\"ghcr.io\":{\"auth\":\"aW5saW5lOng=\"}},\"credsStore\":\"fake\"}");
+
+    for (String args : withHelper(cfgDir, "survey", "inventory", "my-app", "docker://ghcr.io/acme/app:1.0")) {
+      assertTrue(args.contains(cfgDir.toAbsolutePath() + ":/mnt/spice/docker-config:ro"), args);
+    }
+    assertEquals("", Files.readString(helperLog).trim(), "no helper may be asked");
+  }
+
+  /** Docker Desktop's credsStore: the helper's login is handed over for this registry only. */
+  @Test
+  void dockerLoginFromCredsStoreIsHandedOverAndRemoved() throws Exception {
+    Path cfgDir = dockerConfig("{\"auths\":{\"ghcr.io\":{}},\"credsStore\":\"fake\"}");
+
+    withHelper(cfgDir, "survey", "inventory", "my-app", "docker://ghcr.io/acme/app:1.0", "--no-upload");
+
+    assertEquals(Map.of("ghcr.io", Map.of("auth", base64("ghuser:gh-s3cret"))), handedOverAuths());
+  }
+
+  /** credHelpers names the helper for one registry, ahead of credsStore. */
+  @Test
+  void dockerLoginFromCredHelpersWinsOverCredsStore() throws Exception {
+    Path cfgDir = dockerConfig(
+        "{\"credsStore\":\"not-installed\",\"credHelpers\":{\"ghcr.io\":\"fake\"}}");
+
+    withHelper(cfgDir, "survey", "inventory", "my-app", "docker://ghcr.io/acme/app:1.0");
+
+    assertEquals(Map.of("ghcr.io", Map.of("auth", base64("ghuser:gh-s3cret"))), handedOverAuths());
+  }
+
+  /** Docker Hub images are logged in under Docker Hub's key, however they are written. */
+  @Test
+  void dockerHubUsesItsLegacyKey() throws Exception {
+    Path cfgDir = dockerConfig("{\"credsStore\":\"fake\"}");
+    String hub = "https://index.docker.io/v1/";
+
+    withHelper(cfgDir, "survey", "inventory", "my-app", "docker://nginx:1.27");
+    assertEquals(Map.of(hub, Map.of("auth", base64("hubuser:hub-s3cret"))), handedOverAuths());
+
+    withHelper(cfgDir, "survey", "inventory", "my-app", "docker://docker.io/library/nginx:1.27");
+    assertEquals(Map.of(hub, Map.of("auth", base64("hubuser:hub-s3cret"))), handedOverAuths());
+  }
+
+  /** A helper that answers with username <token> holds an identity token. */
+  @Test
+  void anIdentityTokenIsHandedOverAsOne() throws Exception {
+    Path cfgDir = dockerConfig("{\"credsStore\":\"fake\"}");
+
+    withHelper(cfgDir, "survey", "inventory", "my-app", "docker://tok.example.com/acme/app:1.0");
+
+    assertEquals(Map.of("tok.example.com", Map.of("identitytoken", "tok-s3cret")), handedOverAuths());
+  }
+
+  /** The older `survey image` spelling gets the same login, its reference found past options. */
+  @Test
+  void theSurveyImageAliasUsesTheHelperToo() throws Exception {
+    Path cfgDir = dockerConfig("{\"credsStore\":\"fake\"}");
+
+    withHelper(cfgDir, "survey", "image", "--subject", "my-app", "ghcr.io/acme/app:1.0");
+
+    assertEquals(Map.of("ghcr.io", Map.of("auth", base64("ghuser:gh-s3cret"))), handedOverAuths());
+  }
+
+  /** No helper installed: today's mount, so public images still work. */
+  @Test
+  void aMissingHelperFallsBackToTheConfigAsItIs() throws Exception {
+    Path cfgDir = dockerConfig("{\"credsStore\":\"not-installed\"}");
+
+    for (String args : withHelper(cfgDir, "survey", "inventory", "my-app", "docker://ghcr.io/acme/app:1.0")) {
+      assertTrue(args.contains(cfgDir.toAbsolutePath() + ":/mnt/spice/docker-config:ro"), args);
+    }
+  }
+
+  /** A helper that knows nothing about the registry: today's mount as well. */
+  @Test
+  void aHelperWithNoLoginFallsBackToTheConfigAsItIs() throws Exception {
+    Path cfgDir = dockerConfig("{\"credsStore\":\"fake\"}");
+
+    for (String args : withHelper(cfgDir, "survey", "inventory", "my-app", "docker://quay.io/acme/app:1.0")) {
+      assertTrue(args.contains(cfgDir.toAbsolutePath() + ":/mnt/spice/docker-config:ro"), args);
+    }
+  }
+
+  private Path helperLog;
+  private Path handedOver;
+
+  private static Path dockerConfig(String json) throws Exception {
+    Path dir = Files.createTempDirectory("parity-dockercfg");
+    Files.writeString(dir.resolve("config.json"), json);
+    return dir;
+  }
+
+  /**
+   * Run both wrappers with {@code docker-credential-fake} on PATH, checking parity, that the
+   * secret never reaches the output, and that a temporary login is gone once the run ends.
+   * Returns the normalized docker args of each run.
+   */
+  private java.util.List<String> withHelper(Path cfgDir, String... cliArgs) throws Exception {
+    Path helperDir = Files.createTempDirectory("parity-helper");
+    helperLog = helperDir.resolve("asked.log");
+    Files.writeString(helperLog, "");
+    handedOver = helperDir.resolve("handed-over.json");
+    Path helper = helperDir.resolve("docker-credential-fake");
+    Files.writeString(helper, FAKE_HELPER.replace("LOG_FILE", helperLog.toString()));
+    helper.toFile().setExecutable(true);
+    Map<String, String> env = Map.of(
+        "DOCKER_CONFIG", cfgDir.toString(),
+        "PATH", helperDir.toString(),
+        "MOCK_DOCKER_CONFIG_COPY", handedOver.toString());
+
+    java.util.List<String> runs = new java.util.ArrayList<>();
+    String bashHandedOver = null;
+    for (String shell : hasPwsh ? new String[] {"bash", "pwsh"} : new String[] {"bash"}) {
+      Files.deleteIfExists(handedOver);
+      String raw = runWrapper(shell, env, cliArgs);
+      assertFalse(lastOutput.contains("s3cret") || raw.contains("s3cret"),
+          shell + ": the secret must never be printed or passed as an argument");
+      var mounted = java.util.regex.Pattern.compile("-v (\\S+):/mnt/spice/docker-config:ro").matcher(raw);
+      assertTrue(mounted.find(), shell + ": the docker config is mounted: " + raw);
+      if (!Path.of(mounted.group(1)).equals(cfgDir.toAbsolutePath()) && !Path.of(mounted.group(1)).equals(cfgDir)) {
+        assertFalse(Files.exists(Path.of(mounted.group(1))),
+            shell + ": the temporary login must be removed when the run ends");
+      }
+      String copy = Files.exists(handedOver) ? Files.readString(handedOver) : null;
+      if (bashHandedOver == null) {
+        bashHandedOver = copy;
+      } else if (copy != null) {
+        assertEquals(new com.fasterxml.jackson.databind.ObjectMapper().readTree(bashHandedOver),
+            new com.fasterxml.jackson.databind.ObjectMapper().readTree(copy),
+            "both wrappers hand over the same login");
+      }
+      runs.add(normalizeDockerArgs(raw));
+    }
+    if (runs.size() == 2) {
+      assertEquals(runs.get(0), runs.get(1), "Bash and PowerShell wrappers produced different docker args");
+    }
+    return runs;
+  }
+
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> handedOverAuths() throws Exception {
+    Map<String, Object> config = new com.fasterxml.jackson.databind.ObjectMapper()
+        .readValue(Files.readString(handedOver), Map.class);
+    assertEquals(java.util.Set.of("auths"), config.keySet(), "only the one login is handed over");
+    return (Map<String, Object>) config.get("auths");
+  }
+
+  private static String base64(String s) {
+    return java.util.Base64.getEncoder().encodeToString(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+
+  /** A credential helper that knows three registries and logs what it was asked. */
+  private static final String FAKE_HELPER = String.join("\n",
+      "#!/bin/bash",
+      "[ \"$1\" = get ] || exit 1",
+      "IFS= read -r registry || true",
+      "echo \"$registry\" >> 'LOG_FILE'",
+      "case \"$registry\" in",
+      "  https://index.docker.io/v1/) echo '{\"ServerURL\":\"https://index.docker.io/v1/\",\"Username\":\"hubuser\",\"Secret\":\"hub-s3cret\"}' ;;",
+      "  ghcr.io) echo '{\"ServerURL\":\"ghcr.io\",\"Username\":\"ghuser\",\"Secret\":\"gh-s3cret\"}' ;;",
+      "  tok.example.com) echo '{\"ServerURL\":\"tok.example.com\",\"Username\":\"<token>\",\"Secret\":\"tok-s3cret\"}' ;;",
+      "  *) echo 'credentials not found in native keychain'; exit 1 ;;",
+      "esac",
+      "");
+
   @Test
   void version() throws Exception {
     assertParityOrBashOnly("--version");
@@ -397,6 +603,9 @@ class WrapperParityTest {
     while (m.find()) {
       volumes.add(m.group(1));
     }
+    // A temporary registry login gets a random directory name; only its place matters.
+    volumes.replaceAll(v -> v.contains("spice-docker-config") && v.endsWith(":/mnt/spice/docker-config:ro")
+        ? "<temporary-login>:/mnt/spice/docker-config:ro" : v);
     java.util.Collections.sort(volumes);
 
     return "VOLUMES=" + String.join(",", volumes) + " ARGS=" + cliArgs;
@@ -415,17 +624,11 @@ class WrapperParityTest {
     Path mockBin = Files.createTempDirectory("mock-docker-" + shell);
     Path argsFile = Files.createTempFile("docker-args-" + shell, ".txt");
 
-    // Create mock docker that captures args
-    if (shell.equals("bash")) {
-      Files.writeString(mockBin.resolve("docker"),
-          "#!/bin/bash\necho \"$@\" > " + argsFile + "\n");
-      mockBin.resolve("docker").toFile().setExecutable(true);
-    } else {
-      // For pwsh tests on Linux, we still need a bash mock docker
-      Files.writeString(mockBin.resolve("docker"),
-          "#!/bin/bash\necho \"$@\" > " + argsFile + "\n");
-      mockBin.resolve("docker").toFile().setExecutable(true);
-    }
+    // Mock docker that captures args (pwsh on Linux uses the same bash mock). With
+    // MOCK_DOCKER_CONFIG_COPY set it also keeps the docker config it was handed, which a
+    // temporary registry login only lives as long as the run.
+    Files.writeString(mockBin.resolve("docker"), MOCK_DOCKER.replace("ARGS_FILE", argsFile.toString()));
+    mockBin.resolve("docker").toFile().setExecutable(true);
 
     ProcessBuilder pb;
     if (shell.equals("bash")) {
@@ -455,7 +658,11 @@ class WrapperParityTest {
     // Tests supply their manifest explicitly instead.
     pb.environment().put("SPICE_SKIP_MANIFEST_REFRESH", "1");
     for (Map.Entry<String, String> e : extraEnv.entrySet()) {
-      pb.environment().put(e.getKey(), e.getValue());
+      if (e.getKey().equals("PATH")) {
+        pb.environment().put("PATH", e.getValue() + ":" + pb.environment().get("PATH"));
+      } else {
+        pb.environment().put(e.getKey(), e.getValue());
+      }
     }
     if (manifestFile != null) {
       pb.environment().put("SPICE_PATH_MANIFEST", manifestFile.toString());
@@ -463,7 +670,7 @@ class WrapperParityTest {
     pb.redirectErrorStream(true);
 
     Process p = pb.start();
-    String output = new String(p.getInputStream().readAllBytes());
+    lastOutput = new String(p.getInputStream().readAllBytes());
     p.waitFor();
 
     return Files.readString(argsFile).trim();
