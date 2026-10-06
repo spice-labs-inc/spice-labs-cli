@@ -101,11 +101,16 @@ Survey an OCI or Docker container image straight from its registry, with no need
 to disk first. Give the image as the input of an inventory survey, with the `docker://` prefix:
 
 ```bash
-spice survey inventory <subject> docker://<image>
+spice survey inventory [<subject>] docker://<image>
 ```
 
-- **`<subject>`**: label identifying the system being surveyed
-- **`docker://<image>`**: OCI or Docker image reference (`name[:tag][@digest]`)
+- **`<subject>`**: label identifying the system being surveyed. Optional for an image: it
+  defaults to the repository name without tag or digest, so every version of an image is one
+  subject (`docker://ghcr.io/acme/web:2.4.1` gives `ghcr.io/acme/web`; Docker Hub drops
+  `docker.io/` and, for official images, `library/`, so `docker://nginx:1.27` gives `nginx`).
+  A file or folder always needs a subject.
+- **`docker://<image>`**: OCI or Docker image reference (`name[:tag][@digest]`); `oci://<image>` is
+  the same registry pull, the spelling Helm and Flux use
 
 The image is pulled with [`oras`](https://oras.land) (baked into the container image) into an
 OCI image layout, then surveyed with the same engine as a folder, so every inventory option
@@ -117,9 +122,11 @@ Bare names are expanded to their fully-qualified form: `nginx` becomes
 way it does to a folder.
 
 An input that is not a file or folder but reads as an image (`nginx:1.27`, `ghcr.io/acme/app`)
-fails with the `docker://` form to use instead.
+fails with the `docker://` form to use instead. Other prefixes (`oci:`, `oci-archive:`,
+`docker-archive:` and the like) are refused. A saved image folder (an OCI layout) needs no
+prefix: survey it like any other folder, `spice survey inventory my-app ./saved-image`.
 
-Registry credentials come from the host's Docker login. For a `docker://` input the wrapper
+Registry credentials come from the host's Docker login. For a `docker://` or `oci://` input the wrapper
 mounts `$DOCKER_CONFIG` (or `~/.docker`) read-only into the container and oras reads it from
 there. When that config keeps the login in a credential helper (`credsStore` or `credHelpers`,
 as Docker Desktop does), the wrapper asks the helper for that one registry's login and mounts
@@ -127,8 +134,8 @@ a temporary config holding only it, removed when the run ends. If you've `docker
 the registry on this machine, no extra setup is needed. Set `DOCKER_CONFIG` to point at an
 alternate config file location if your credentials live elsewhere.
 
-`spice survey image <image> [--subject <label>]`, the earlier form, still runs and prints the
-`docker://` form to use instead; it will be removed.
+`spice survey image <image> [--subject <label>]`, the earlier form, still runs (its subject
+defaults the same way) and prints the `docker://` form to use instead; it will be removed.
 
 ### Runtime Survey
 
@@ -169,7 +176,8 @@ spice survey inventory my-app ./artifacts/my-app.tar
 spice survey inventory my-app ./build/output --no-upload
 
 # Image survey: pull and survey an image from its registry
-spice survey inventory my-nginx docker://nginx
+spice survey inventory docker://nginx:1.27
+spice survey inventory web-store oci://ghcr.io/acme/web:2.4.1
 spice survey inventory grinder docker://ghcr.io/spice-labs-inc/grinder:0.1.0 --no-upload
 spice survey inventory ubuntu docker://ubuntu@sha256:<digest> --no-upload --output ./out
 
@@ -252,7 +260,7 @@ variable, or the flag — which is how to answer "why is it doing that?" without
 
 ### Image Survey
 
-A `docker://` input takes the inventory survey options above, except `--upload-only`.
+A `docker://` or `oci://` input takes the inventory survey options above, except `--upload-only`.
 
 ### Runtime Survey
 

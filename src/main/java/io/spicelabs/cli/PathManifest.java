@@ -215,7 +215,7 @@ public final class PathManifest {
         type = aux[0];
       }
     }
-    // A survey input is a host path, or a docker:// image the wrappers pass through as a URL.
+    // A survey input is a host path, or a docker:// or oci:// image the wrappers pass through as a URL.
     return Path.class.isAssignableFrom(type) || File.class.isAssignableFrom(type)
         || SurveyInput.class.isAssignableFrom(type);
   }

@@ -79,6 +79,7 @@ class EditionGateTest {
     CommandLine cmd = cli(BULK_ONLY);
     assertFalse(cmd.getSubcommands().containsKey("survey"));
     assertNotEquals(0, cmd.execute("survey", "inventory", "s", "docker://nginx:1.27", "--no-upload"));
+    assertNotEquals(0, cli(BULK_ONLY).execute("survey", "inventory", "s", "oci://nginx:1.27", "--no-upload"));
     assertNotEquals(0, cli(BULK_ONLY).execute("survey", "image", "nginx:1.27", "--no-upload"));
   }
 

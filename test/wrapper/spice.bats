@@ -707,6 +707,30 @@ handed_over() { tr -d ' \n' < "$TEST_TMPDIR/copy/config.json"; }
   assert_arg "docker://ghcr.io/acme/app:1.0"
 }
 
+@test "oci:// input passes through to the CLI untouched" {
+  run "$WRAPPER" survey inventory myapp oci://ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 0 ]
+  assert_arg "oci://ghcr.io/acme/app:1.0"
+}
+
+@test "registry login: oci:// input gets the helper login too" {
+  make_fake_helper
+  use_docker_config '{"credsStore":"fake"}'
+  run "$WRAPPER" survey inventory myapp oci://ghcr.io/acme/app:1.0 --no-upload
+  [ "$status" -eq 0 ]
+  [ "$(handed_over)" = "{\"auths\":{\"ghcr.io\":{\"auth\":\"$(printf 'ghuser:gh-s3cret' | base64)\"}}}" ]
+  [ -z "$(ls -A "$TEST_TMPDIR/tmp")" ]
+}
+
+@test "image alone (no subject) passes through and gets the helper login" {
+  make_fake_helper
+  use_docker_config '{"credsStore":"fake"}'
+  run "$WRAPPER" survey inventory docker://ghcr.io/acme/web:2.4.1 --no-upload
+  [ "$status" -eq 0 ]
+  assert_arg "docker://ghcr.io/acme/web:2.4.1"
+  [ "$(handed_over)" = "{\"auths\":{\"ghcr.io\":{\"auth\":\"$(printf 'ghuser:gh-s3cret' | base64)\"}}}" ]
+}
+
 @test "image-looking input reaches the CLI instead of the missing-path error" {
   run "$WRAPPER" survey inventory myapp nginx:1.27 --no-upload
   [ "$status" -eq 0 ]

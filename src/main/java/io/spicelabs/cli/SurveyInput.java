@@ -28,16 +28,20 @@ import picocli.CommandLine.ITypeConverter;
  * What {@code spice survey inventory} surveys: a file or folder on disk, or a container image
  * in a registry, named with the {@code docker://} prefix (the containers-transports name).
  *
- * <p>The wrappers mount this argument as a host path, and pass a {@code docker://} value
- * through untouched like any other URL (see {@link PathManifest#isPathType}).
+ * <p>{@code oci://} is accepted as the same registry pull (the name Helm and Flux use for it).
+ * A saved image folder (an OCI layout) needs no prefix: it is surveyed as a folder.
+ *
+ * <p>The wrappers mount this argument as a host path, and pass a {@code docker://} or
+ * {@code oci://} value through untouched like any other URL (see {@link PathManifest#isPathType}).
  */
 final class SurveyInput {
 
   static final String DOCKER_PREFIX = "docker://";
+  static final String OCI_PREFIX = "oci://";
 
   /** Other containers-transports names, refused by name rather than read as a path. */
   private static final Set<String> OTHER_TRANSPORTS = Set.of(
-      "oci", "oci-archive", "docker-archive", "docker-daemon", "containers-storage", "dir", "sif");
+      "oci", "oci-layout", "oci-archive", "docker-archive", "docker-daemon", "containers-storage", "dir", "sif");
 
   private static final Pattern URL_SCHEME = Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*)://");
   private static final Pattern TRANSPORT = Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):");
@@ -53,22 +57,30 @@ final class SurveyInput {
   }
 
   boolean isImage() {
-    return raw.startsWith(DOCKER_PREFIX);
+    return prefix() != null;
   }
 
-  /** The image reference after {@code docker://}. */
+  private String prefix() {
+    if (raw.startsWith(DOCKER_PREFIX)) {
+      return DOCKER_PREFIX;
+    }
+    return raw.startsWith(OCI_PREFIX) ? OCI_PREFIX : null;
+  }
+
+  /** The image reference after {@code docker://} or {@code oci://}. */
   String image() {
-    String ref = raw.substring(DOCKER_PREFIX.length());
+    String prefix = prefix();
+    String ref = raw.substring(prefix.length());
     if (ref.isBlank()) {
       throw new IllegalArgumentException(
-          "docker:// needs an image name, for example docker://nginx:1.27");
+          prefix + " needs an image name, for example " + prefix + "nginx:1.27");
     }
     return ref;
   }
 
   /**
-   * The file or folder to survey. A value that names neither an existing path nor a
-   * {@code docker://} image is refused with what to type instead.
+   * The file or folder to survey. A value that names neither an existing path nor an
+   * image ({@code docker://} or {@code oci://}) is refused with what to type instead.
    */
   Path path() {
     Path path = null;
@@ -92,6 +104,10 @@ final class SurveyInput {
         throw new IllegalArgumentException(
             "No such file or folder: " + raw + ". To survey a container image, use " + DOCKER_PREFIX + ref);
       }
+      if (name.equals("oci") || name.equals("oci-layout")) {
+        throw new IllegalArgumentException(unsupportedPrefix(transport.group(1) + ":").getMessage()
+            + ". To survey a saved image folder (an OCI layout), give the folder's path with no prefix");
+      }
       if (OTHER_TRANSPORTS.contains(name)) {
         throw unsupportedPrefix(transport.group(1) + ":");
       }
@@ -106,8 +122,34 @@ final class SurveyInput {
   private IllegalArgumentException unsupportedPrefix(String prefix) {
     return new IllegalArgumentException(
         "No such file or folder: " + raw + ". The prefix " + prefix + " is not supported; "
-            + "to survey a container image from a registry, use docker://<image>, "
+            + "to survey a container image from a registry, use docker://<image> or oci://<image>, "
             + "for example docker://nginx:1.27");
+  }
+
+  /**
+   * The subject an image survey gets when none is given: the repository name without tag or
+   * digest, so every version of an image is one subject. Docker Hub drops its host, and its
+   * official images their {@code library/} too: {@code nginx:1.27} gives {@code nginx},
+   * {@code user/app:2} gives {@code user/app}, {@code localhost:5000/app:1} keeps its port.
+   */
+  static String defaultSubject(String image) {
+    String ref = ImageReference.normalize(image);
+    int at = ref.indexOf('@');
+    if (at >= 0) {
+      ref = ref.substring(0, at);
+    } else {
+      int colon = ref.lastIndexOf(':');
+      if (colon > ref.lastIndexOf('/')) {
+        ref = ref.substring(0, colon);
+      }
+    }
+    for (String hub : new String[] {"docker.io/", "index.docker.io/"}) {
+      if (ref.startsWith(hub)) {
+        ref = ref.substring(hub.length());
+        return ref.startsWith("library/") ? ref.substring("library/".length()) : ref;
+      }
+    }
+    return ref;
   }
 
   /**

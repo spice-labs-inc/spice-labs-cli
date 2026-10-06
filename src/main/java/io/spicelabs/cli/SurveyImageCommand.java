@@ -63,7 +63,7 @@ public class SurveyImageCommand implements java.util.concurrent.Callable<Integer
       names = "--subject",
       paramLabel = "LABEL",
       description =
-          "Label identifying the system being surveyed (default: the image reference)"
+          "Label identifying the system being surveyed (default: the repository name without tag or digest)"
   )
   String subject;
 
@@ -113,9 +113,9 @@ public class SurveyImageCommand implements java.util.concurrent.Callable<Integer
 
   /** The one line the alias prints: that it goes away, and the command to use instead. */
   String replacementNotice() {
-    String label = subject != null && !subject.isBlank() ? subject : image;
+    String label = subject != null && !subject.isBlank() ? subject + " " : "";
     return "Note: spice survey image will be removed. Use: spice survey inventory "
-        + label + " " + SurveyInput.DOCKER_PREFIX + image;
+        + label + SurveyInput.DOCKER_PREFIX + image;
   }
 
   /** Pull and survey, logging a failure and returning 1 rather than throwing. */
@@ -190,15 +190,15 @@ public class SurveyImageCommand implements java.util.concurrent.Callable<Integer
   }
 
   /**
-   * The survey label. Defaults to the normalized image reference so {@code survey image
-   * nginx} tags the run with {@code docker.io/library/nginx:latest} unless the caller
-   * overrides it with {@code --subject}.
+   * The survey label. Defaults to the repository name without tag or digest
+   * ({@link SurveyInput#defaultSubject}), so every version of an image is one subject, unless
+   * the caller sets {@code --subject}.
    */
   String effectiveSubject(String ref) {
     if (subject != null && !subject.isBlank()) {
       return subject;
     }
-    return ref;
+    return SurveyInput.defaultSubject(ref);
   }
 
   /**

@@ -66,13 +66,13 @@ class SurveyImageCommandTest {
         "survey must receive the same layout dir pull populated");
   }
 
-  /** Without {@code --subject}, the survey is tagged with the normalized image ref. */
+  /** Without {@code --subject}, the survey is tagged with the repository name, whatever the tag. */
   @Test
-  void subjectDefaultsToImageRef() {
+  void subjectDefaultsToTheRepositoryName() {
     SurveyImageCommand cmd = new SurveyImageCommand();
     cmd.image = "nginx";
-    assertEquals("docker.io/library/nginx:latest",
-        cmd.effectiveSubject("docker.io/library/nginx:latest"));
+    assertEquals("nginx", cmd.effectiveSubject("docker.io/library/nginx:latest"));
+    assertEquals("ghcr.io/acme/web", cmd.effectiveSubject("ghcr.io/acme/web:2.4.1"));
   }
 
   /** {@code --subject} overrides the ref-derived tag. */
@@ -209,7 +209,7 @@ class SurveyImageCommandTest {
   void typedDirectlyTheAliasNamesTheCommandThatReplacesIt() {
     SurveyImageCommand cmd = new SurveyImageCommand();
     cmd.image = "nginx:1.27";
-    assertEquals("Note: spice survey image will be removed. Use: spice survey inventory nginx:1.27 docker://nginx:1.27",
+    assertEquals("Note: spice survey image will be removed. Use: spice survey inventory docker://nginx:1.27",
         cmd.replacementNotice());
     cmd.subject = "my-nginx";
     assertEquals("Note: spice survey image will be removed. Use: spice survey inventory my-nginx docker://nginx:1.27",
@@ -241,7 +241,7 @@ class SurveyImageCommandTest {
     }
     String printed = err.toString(StandardCharsets.UTF_8);
     assertEquals(1, printed.lines().filter(l -> l.contains("will be removed")).count(), printed);
-    assertTrue(printed.contains("Use: spice survey inventory nginx docker://nginx"), printed);
+    assertTrue(printed.contains("Use: spice survey inventory docker://nginx"), printed);
   }
 
   @Test
@@ -253,5 +253,34 @@ class SurveyImageCommandTest {
     String help = survey.getUsageMessage();
     assertFalse(help.lines().anyMatch(l -> l.trim().startsWith("image")), help);
     assertTrue(help.contains("docker://nginx:1.27"), help);
+  }
+
+  @Test
+  void inventoryWithOciInputRunsTheSameImageSurvey() throws Exception {
+    String[] pulled = new String[1];
+    SurveyInventoryCommand inventory = new SurveyInventoryCommand() {
+      @Override
+      SurveyImageCommand newImageCommand() {
+        return new SurveyImageCommand() {
+          @Override
+          void pull(String ref, Path layoutDir) throws Exception {
+            pulled[0] = ref;
+            Files.createDirectories(layoutDir.resolve("layout.oci"));
+          }
+
+          @Override
+          int survey(String ref, Path layoutDir) {
+            return 0;
+          }
+        };
+      }
+    };
+    inventory.subject = "my-app";
+    inventory.source = new SurveyInput("oci://ghcr.io/acme/app:1.0");
+    inventory.output = tempDir;
+    inventory.noUpload = true;
+
+    assertEquals(0, inventory.call());
+    assertEquals("ghcr.io/acme/app:1.0", pulled[0]);
   }
 }

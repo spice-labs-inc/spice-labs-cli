@@ -265,6 +265,37 @@ class WrapperParityTest {
     assertTrue(args.contains("survey inventory my-app docker://ghcr.io/acme/app:1.0 --no-upload"), args);
   }
 
+  @Test
+  void surveyInventoryOciInputPassesThrough() throws Exception {
+    Path emptyCfg = Files.createTempDirectory("parity-dockercfg-empty");
+
+    String args = assertParityOrBashOnly(Map.of("DOCKER_CONFIG", emptyCfg.toString()),
+        "survey", "inventory", "my-app", "oci://ghcr.io/acme/app:1.0", "--no-upload");
+
+    assertTrue(args.contains("survey inventory my-app oci://ghcr.io/acme/app:1.0 --no-upload"), args);
+  }
+
+  /** An image with no subject before it: the CLI derives one, the wrappers just pass it on. */
+  @Test
+  void anImageAloneGetsItsLoginToo() throws Exception {
+    Path cfgDir = dockerConfig("{\"credsStore\":\"fake\"}");
+
+    for (String args : withHelper(cfgDir, "survey", "inventory", "docker://ghcr.io/acme/web:2.4.1", "--no-upload")) {
+      assertTrue(args.contains("ARGS=survey inventory docker://ghcr.io/acme/web:2.4.1 --no-upload"), args);
+    }
+    assertEquals(Map.of("ghcr.io", Map.of("auth", base64("ghuser:gh-s3cret"))), handedOverAuths());
+  }
+
+  /** oci:// is the same registry pull, so it gets the same login. */
+  @Test
+  void dockerLoginFromCredsStoreForAnOciInput() throws Exception {
+    Path cfgDir = dockerConfig("{\"credsStore\":\"fake\"}");
+
+    withHelper(cfgDir, "survey", "inventory", "my-app", "oci://ghcr.io/acme/app:1.0", "--no-upload");
+
+    assertEquals(Map.of("ghcr.io", Map.of("auth", base64("ghuser:gh-s3cret"))), handedOverAuths());
+  }
+
   /** `nginx:1.27` where a path belongs reaches the CLI, which explains docker://. */
   @Test
   void surveyInventoryImageLookingInputReachesTheCli() throws Exception {

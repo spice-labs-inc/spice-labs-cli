@@ -982,6 +982,27 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain 'docker://ghcr.io/acme/app:1.0'
     }
 
+    It 'passes an oci:// input through untouched' {
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'oci://ghcr.io/acme/app:1.0', '--no-upload')
+      $r.ExitCode | Should -Be 0
+      $r.ContainerArgs | Should -Contain 'oci://ghcr.io/acme/app:1.0'
+    }
+
+    It 'hands over the helper login for an oci:// input too' {
+      Set-DockerConfig '{"credsStore":"fake"}'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'oci://ghcr.io/acme/app:1.0', '--no-upload')
+      (Get-HandedOverAuths).'ghcr.io'.auth | Should -Be (ConvertTo-Base64 'ghuser:gh-s3cret')
+      Test-Path -LiteralPath (Get-MountedDockerConfig $r) | Should -BeFalse
+    }
+
+    It 'passes an image alone (no subject) through and hands over its login' {
+      Set-DockerConfig '{"credsStore":"fake"}'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'docker://ghcr.io/acme/web:2.4.1', '--no-upload')
+      $r.ExitCode | Should -Be 0
+      $r.ContainerArgs | Should -Contain 'docker://ghcr.io/acme/web:2.4.1'
+      (Get-HandedOverAuths).'ghcr.io'.auth | Should -Be (ConvertTo-Base64 'ghuser:gh-s3cret')
+    }
+
     It 'lets an image-looking input reach the CLI instead of the missing-path error' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', 'nginx:1.27', '--no-upload')
       $r.ExitCode | Should -Be 0

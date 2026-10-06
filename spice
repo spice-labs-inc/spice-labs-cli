@@ -1085,7 +1085,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ] \
 fi
 
 # ── Image survey detection (must happen before general arg parsing) ────────
-# `survey inventory <subject> docker://<image>` (and the older `survey image`)
+# `survey inventory <subject> docker://<image>` (or oci://, and the older `survey image`)
 # pulls the image with oras inside the container; oras reads the Docker
 # credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json) for
 # registry auth, so the host's credentials must ride into the container.
@@ -1098,7 +1098,10 @@ AUTH_IMAGE_REF=""
   skip_next=0
   for arg in "$@"; do
     if [ "$in_survey_type" = "inventory" ]; then
-      case "$arg" in docker://*) IS_IMAGE_SURVEY=1; AUTH_IMAGE_REF="${arg#docker://}"; break ;; esac
+      case "$arg" in
+        docker://*) IS_IMAGE_SURVEY=1; AUTH_IMAGE_REF="${arg#docker://}"; break ;;
+        oci://*) IS_IMAGE_SURVEY=1; AUTH_IMAGE_REF="${arg#oci://}"; break ;;
+      esac
       continue
     fi
     if [ "$in_survey_type" = "image" ]; then

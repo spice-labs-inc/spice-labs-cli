@@ -987,7 +987,7 @@ for ($i = 0; $i -lt $args.Count - 1; $i++) {
 }
 
 # ── Image survey detection + docker-config mount ────────────────────────────
-# `survey inventory <subject> docker://<image>` (and the older `survey image`)
+# `survey inventory <subject> docker://<image>` (or oci://, and the older `survey image`)
 # pulls the image with oras inside the container; oras reads the Docker
 # credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json) for
 # registry auth, so the host's credentials must ride into the container.
@@ -1012,6 +1012,7 @@ for ($i = 0; $i -lt $args.Count - 1; $i++) {
     for ($j = $i + 2; $j -lt $args.Count; $j++) {
       $a = "$($args[$j])"
       if ($a.StartsWith('docker://')) { $isImageSurvey = $true; $authImageRef = $a.Substring(9); break }
+      if ($a.StartsWith('oci://')) { $isImageSurvey = $true; $authImageRef = $a.Substring(6); break }
     }
     break
   }

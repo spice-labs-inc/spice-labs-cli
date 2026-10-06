@@ -51,8 +51,10 @@ import io.spicelabs.goatrodeo.GoatRodeo;
 import io.spicelabs.goatrodeo.GoatRodeoBuilder;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
+import picocli.CommandLine.Spec;
 
 /**
  * Survey artifact inventory and optionally upload ADGs.
@@ -60,21 +62,28 @@ import picocli.CommandLine.Parameters;
  * Usage:
  *   spice survey inventory &lt;subject&gt; &lt;input&gt; [options]
  *
- * <p>The input is a file or folder, or {@code docker://<image>} for a container image in a
- * registry, which is pulled and surveyed by {@link SurveyImageCommand}.
+ * <p>The input is a file or folder, or {@code docker://<image>} ({@code oci://<image>} is the
+ * same) for a container image in a registry, which is pulled and surveyed by
+ * {@link SurveyImageCommand}.
  */
 @Command(
     name = "inventory",
     description = "Survey artifact inventory and upload ADGs to Spice Labs",
     mixinStandardHelpOptions = true,
+    customSynopsis = {
+        "spice survey inventory [OPTIONS] <subject> <input>",
+        "       spice survey inventory [OPTIONS] [<subject>] (docker|oci)://<image>"
+    },
     footer = {
         "",
         "Examples:",
         "  # Survey a directory of artifacts and upload",
         "  spice survey inventory my-app ./build/libs",
         "",
-        "  # Survey a container image from a registry",
-        "  spice survey inventory my-app docker://nginx:1.27",
+        "  # Survey a container image from a registry; the subject defaults to the",
+        "  # repository name (here ghcr.io/acme/web)",
+        "  spice survey inventory docker://ghcr.io/acme/web:2.4.1",
+        "  spice survey inventory web-store oci://ghcr.io/acme/web:2.4.1",
         "",
         "  # Survey a single file, skip upload, write output to ./out",
         "  spice survey inventory my-app ./app.jar --no-upload --output ./out",
@@ -93,14 +102,25 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
   private static final Logger log = LoggerFactory.getLogger(SurveyInventoryCommand.class);
 
-  @Parameters(index = "0", description = "Label identifying the system being surveyed")
+  @Spec
+  CommandSpec spec;
+
+  // Both positionals are optional to picocli so an image can come alone; call() requires
+  // a subject and an input otherwise.
+  @Parameters(
+      index = "0",
+      arity = "0..1",
+      paramLabel = "<subject>",
+      description = "Label identifying the system being surveyed; optional before a docker:// or oci:// image, which defaults it to the image's repository name"
+  )
   String subject;
 
   @Parameters(
       index = "1",
+      arity = "0..1",
       paramLabel = "<input>",
       converter = SurveyInput.Converter.class,
-      description = "Path to artifacts (directory or single file), or docker://<image> for a container image in a registry"
+      description = "Path to artifacts (directory or single file), or docker://<image> or oci://<image> for a container image in a registry"
   )
   SurveyInput source;
 
@@ -157,7 +177,15 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
   @Override
   public Integer call() throws Exception {
-    if (input == null && source != null && source.isImage()) {
+    if (input == null && source == null) {
+      if (subject != null && new SurveyInput(subject).isImage()) {
+        source = new SurveyInput(subject);
+        subject = null;
+      } else {
+        throw missingPositionals();
+      }
+    }
+    if (input == null && source.isImage()) {
       return surveyImage();
     }
     try {
@@ -186,8 +214,8 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
   }
 
   /**
-   * A {@code docker://} input: pull the image and survey it exactly as {@code survey image}
-   * does, with this command's subject and options.
+   * A {@code docker://} or {@code oci://} input: pull the image and survey it exactly as
+   * {@code survey image} does, with this command's subject and options.
    */
   int surveyImage() throws Exception {
     String ref;
@@ -216,6 +244,21 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     image.goatRodeoArgsRaw = goatRodeoArgsRaw;
     image.gingerArgsRaw = gingerArgsRaw;
     return image.execute();
+  }
+
+  /** The error picocli gave when both positionals were required, which they are for a path. */
+  private RuntimeException missingPositionals() {
+    String message = subject == null
+        ? "Missing required parameters: '<subject>', '<input>'"
+        : "Missing required parameter: '<input>'";
+    if (spec == null) {
+      return new IllegalArgumentException(message);
+    }
+    List<CommandLine.Model.ArgSpec> missing = new ArrayList<>(spec.positionalParameters());
+    if (subject != null) {
+      missing.remove(0);
+    }
+    return new CommandLine.MissingParameterException(spec.commandLine(), missing, message);
   }
 
   /** Seam for tests, which replace the pull. */
