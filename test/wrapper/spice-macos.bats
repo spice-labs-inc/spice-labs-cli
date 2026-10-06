@@ -333,7 +333,7 @@ docs_setup() {
   mv "$MOCK_BIN/docker" "$MOCK_BIN/docker-image"
   cat > "$MOCK_BIN/docker" <<'MOCK'
 #!/bin/bash
-echo "$*" >> "$TEST_TMPDIR/docker-runs.txt"
+[ "$1" = "info" ] || echo "$*" >> "$TEST_TMPDIR/docker-runs.txt"
 if [ "${NO_GUIDE:-0}" = "1" ] && [[ " $* " == *" --html "* ]]; then
   echo "ERROR ❌ This build of spice carries no user guide."
   exit 1
