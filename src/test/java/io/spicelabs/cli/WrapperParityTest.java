@@ -42,8 +42,15 @@ class WrapperParityTest {
   /** Everything the last wrapper run printed, stdout and stderr together. */
   String lastOutput = "";
 
+  /** The exit code of the last wrapper run. */
+  int lastExit;
+
   private static final String MOCK_DOCKER = String.join("\n",
       "#!/bin/bash",
+      "if [ \"$1\" = info ]; then",
+      "  [ \"${MOCK_DOCKER_OSTYPE:-linux}\" = error ] && exit 1",
+      "  echo \"${MOCK_DOCKER_OSTYPE:-linux}\"; exit 0",
+      "fi",
       "echo \"$@\" > ARGS_FILE",
       "if [ -n \"${MOCK_DOCKER_CONFIG_COPY:-}\" ]; then",
       "  prev=''",
@@ -472,6 +479,28 @@ class WrapperParityTest {
       "esac",
       "");
 
+  // ── Docker running Windows containers ──────────────────────────────────────
+
+  /** A daemon running Windows containers cannot run the Linux image: stop before docker run. */
+  @Test
+  void windowsContainersStopWithTheReason() throws Exception {
+    for (String shell : hasPwsh ? new String[] {"bash", "pwsh"} : new String[] {"bash"}) {
+      String args = runWrapper(shell, Map.of("MOCK_DOCKER_OSTYPE", "windows"), "survey", "inventory", "my-app", "/etc");
+      assertEquals("", args, shell + ": docker run must not be reached");
+      assertTrue(lastOutput.contains("Docker on this machine runs Windows containers. The Surveyor CLI runs in a "
+          + "Linux container: switch Docker Desktop to Linux containers (right-click the Docker icon, Switch to "
+          + "Linux containers), or use a machine whose Docker runs Linux containers."), shell + ": " + lastOutput);
+      assertEquals(1, lastExit, shell);
+    }
+  }
+
+  /** A docker info that fails (daemon not running) changes nothing: Docker reports as before. */
+  @Test
+  void aFailingDockerInfoChangesNothing() throws Exception {
+    String args = assertParityOrBashOnly(Map.of("MOCK_DOCKER_OSTYPE", "error"), "--version");
+    assertTrue(args.contains("--version"), args);
+  }
+
   @Test
   void version() throws Exception {
     assertParityOrBashOnly("--version");
@@ -702,7 +731,7 @@ class WrapperParityTest {
 
     Process p = pb.start();
     lastOutput = new String(p.getInputStream().readAllBytes());
-    p.waitFor();
+    lastExit = p.waitFor();
 
     return Files.readString(argsFile).trim();
   }

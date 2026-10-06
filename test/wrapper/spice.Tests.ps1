@@ -38,6 +38,13 @@ class MockDocker {
   }
   static int Main(string[] args) {
     if (args.Length > 0 && args[0] == "pull") return 0;
+    if (args.Length > 0 && args[0] == "info") {
+      var os = Environment.GetEnvironmentVariable("MOCK_DOCKER_OSTYPE");
+      if (string.IsNullOrEmpty(os)) os = "linux";
+      if (os == "error") return 1;
+      Console.WriteLine(os);
+      return 0;
+    }
     // Detect runtime survey calls by --entrypoint
     string entrypoint = null;
     string workDir = null;
@@ -327,6 +334,10 @@ exit $exitCode
     Set-Content -Path $mockDockerSh -Value @"
 #!/bin/bash
 if [ "`$1" = 'pull' ]; then exit 0; fi
+if [ "`$1" = 'info' ]; then
+  [ "`${MOCK_DOCKER_OSTYPE:-linux}" = error ] && exit 1
+  echo "`${MOCK_DOCKER_OSTYPE:-linux}"; exit 0
+fi
 
 # Detect runtime survey Docker calls by --entrypoint
 _entrypoint=""
@@ -1067,6 +1078,34 @@ Describe 'spice.ps1 wrapper' {
     }
   }
 
+  # ── Docker running Windows containers ──────────────────────────────────────
+
+  Context 'Docker running Windows containers' {
+    AfterEach { Remove-Item env:MOCK_DOCKER_OSTYPE -ErrorAction SilentlyContinue }
+
+    It 'stops with the reason before docker run when Docker runs Windows containers' {
+      $env:MOCK_DOCKER_OSTYPE = 'windows'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 1
+      ($r.Stderr -join "`n") | Should -Match ([regex]::Escape('Docker on this machine runs Windows containers. The Surveyor CLI runs in a Linux container: switch Docker Desktop to Linux containers (right-click the Docker icon, Switch to Linux containers), or use a machine whose Docker runs Linux containers.'))
+      $r.DockerRunArgs | Should -BeNullOrEmpty
+    }
+
+    It 'runs as before when docker info answers linux' {
+      $env:MOCK_DOCKER_OSTYPE = 'linux'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.ContainerArgs | Should -Contain 'inventory'
+    }
+
+    It 'runs as before when docker info fails' {
+      $env:MOCK_DOCKER_OSTYPE = 'error'
+      $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir)
+      $r.ExitCode | Should -Be 0
+      $r.ContainerArgs | Should -Contain 'inventory'
+    }
+  }
+
   Context 'Exit code' {
     It 'non-zero exit code propagated' {
       $r = Invoke-SpiceWrapper -Arguments @('survey', 'inventory', 'myapp', $script:InputDir) -DockerFlags '-e TEST_EXIT_CODE=42'
@@ -1512,7 +1551,7 @@ P spice/survey/inventory 1 value path exists
       $kept = Join-Path $script:MockBinDir 'docker-image'
       $runs = Join-Path $script:TestDir 'docker-runs.txt'
       Move-Item $real $kept
-      Set-Content -Path $real -Value "#!/bin/bash`necho `"`$*`" >> '$runs'`nif [[ `" `$* `" == *`" --html `"* ]]; then echo 'ERROR no guide'; exit 1; fi`nexec '$kept' `"`$@`"`n"
+      Set-Content -Path $real -Value "#!/bin/bash`nif [ `"`$1`" = info ]; then exec '$kept' `"`$@`"; fi`necho `"`$*`" >> '$runs'`nif [[ `" `$* `" == *`" --html `"* ]]; then echo 'ERROR no guide'; exit 1; fi`nexec '$kept' `"`$@`"`n"
       chmod +x $real
       try {
         $r = Invoke-SpiceWrapper -Arguments @('docs', '--browser', 'nope')

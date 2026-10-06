@@ -799,6 +799,39 @@ handed_over() { tr -d ' \n' < "$TEST_TMPDIR/copy/config.json"; }
   [ -z "$(ls -A "$TEST_TMPDIR/tmp")" ]
 }
 
+# ── Docker running Windows containers ────────────────────────────────────────
+
+# A docker on PATH that answers `docker info` with the given OS type and hands
+# everything else to the real docker.
+use_docker_ostype() {
+  mkdir -p "$TEST_TMPDIR/osbin"
+  cat > "$TEST_TMPDIR/osbin/docker" <<SHIM
+#!/bin/bash
+if [ "\$1" = info ]; then
+  [ "$1" = error ] && exit 1
+  echo "$1"; exit 0
+fi
+exec "$(command -v docker)" "\$@"
+SHIM
+  chmod +x "$TEST_TMPDIR/osbin/docker"
+  export PATH="$TEST_TMPDIR/osbin:$PATH"
+}
+
+@test "windows containers: stops with the reason before docker run" {
+  use_docker_ostype windows
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Docker on this machine runs Windows containers. The Surveyor CLI runs in a Linux container: switch Docker Desktop to Linux containers (right-click the Docker icon, Switch to Linux containers), or use a machine whose Docker runs Linux containers."* ]]
+  [[ "$output" != *"SPICE_TEST_BEGIN"* ]]
+}
+
+@test "windows containers: a failing docker info changes nothing" {
+  use_docker_ostype error
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SPICE_TEST_BEGIN"* ]]
+}
+
 # ── Runtime survey orchestration ─────────────────────────────────────────
 
 @test "runtime survey: missing command after -- fails" {

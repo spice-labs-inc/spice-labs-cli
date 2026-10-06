@@ -736,6 +736,23 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
+# The CLI image is a Linux image. Docker Desktop in Windows-containers mode, Docker Engine
+# on Windows Server and GitHub's Windows runners cannot run it, and their pull error says
+# nothing useful. `docker info` is local; when it fails (daemon not running) or answers
+# nothing, the run goes on and Docker reports the problem as before.
+function Get-DockerOSType {
+  $ErrorActionPreference = 'Continue'
+  try {
+    $out = @(docker info --format '{{.OSType}}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $out.Count -eq 0) { return '' }
+    return "$($out[0])".Trim()
+  } catch { return '' }
+}
+if ((Get-DockerOSType) -eq 'windows') {
+  Write-Stderr "[X] Docker on this machine runs Windows containers. The Surveyor CLI runs in a Linux container: switch Docker Desktop to Linux containers (right-click the Docker icon, Switch to Linux containers), or use a machine whose Docker runs Linux containers."
+  exit 1
+}
+
 $debugMode = $false
 foreach ($arg in $args) {
   if ($arg -match '(?i)^--log-level=(debug|trace|all)$') { $debugMode = $true; break }
