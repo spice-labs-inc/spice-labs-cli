@@ -350,6 +350,18 @@ function Mf-Mount($hostDir, $containerDir) {
   if ($containerDir -eq (Convert-ToDockerPath $hostDir)) { $script:MfIdentityDirs += $hostDir }
 }
 
+# Whether a value that is not a path reads as a container image reference: a tag,
+# a digest or a registry host first, and nothing written as a path. Matches
+# SurveyInput.looksLikeImage.
+function Mf-LooksLikeImage($value) {
+  if (-not $value -or $value -match '^[/.~]' -or $value -match '[\\ ]' -or $value -match '^[A-Za-z]:') { return $false }
+  if ($value -match '[@:]') { return $true }
+  $slash = $value.IndexOf('/')
+  if ($slash -le 0) { return $false }
+  $first = $value.Substring(0, $slash)
+  return ($first.Contains('.') -or $first -ieq 'localhost')
+}
+
 # Resolve one path argument for use inside the container, adding whatever bind
 # mount it needs, and return the container-side path.
 function Mount-Path($value, $create, $mustExist) {
@@ -364,6 +376,9 @@ function Mount-Path($value, $create, $mustExist) {
   $isDir = Test-Path -LiteralPath $value -PathType Container
   if (Test-Path -LiteralPath $value) {
     if ($isDir) { $dir = $value } else { $dir = Split-Path -Parent $value }
+  } elseif ($mustExist -and (Mf-LooksLikeImage $value)) {
+    # `nginx:1.27` where a path belongs: the CLI explains how to name an image.
+    return $value
   } elseif ($mustExist) {
     [Console]::Error.WriteLine("ERROR ❌ Input path does not exist: $value")
     [Console]::Error.WriteLine("INFO  Use --help for usage information.")
@@ -972,24 +987,112 @@ for ($i = 0; $i -lt $args.Count - 1; $i++) {
 }
 
 # ── Image survey detection + docker-config mount ────────────────────────────
-# `survey image` pulls the image with oras inside the container; oras reads the
-# Docker credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json)
-# for registry auth, so the host's credentials must ride into the container.
+# `survey inventory <subject> docker://<image>` (or oci://, and the older `survey image`)
+# pulls the image with oras inside the container; oras reads the Docker
+# credential file (DOCKER_CONFIG/config.json, else ~/.docker/config.json) for
+# registry auth, so the host's credentials must ride into the container.
 $isImageSurvey = $false
+$authImageRef = $null
 for ($i = 0; $i -lt $args.Count - 1; $i++) {
   if ($args[$i] -eq 'survey' -and $args[$i + 1] -eq 'image') {
     $isImageSurvey = $true
+    for ($j = $i + 2; $j -lt $args.Count; $j++) {
+      $a = "$($args[$j])"
+      if ($a -like '--*=*') { continue }
+      if ($a.StartsWith('-')) {
+        if (Mf-TakesValue "$($script:MfRoot)/survey/image" $a) { $j++ }
+        continue
+      }
+      $authImageRef = $a
+      break
+    }
     break
   }
+  if ($args[$i] -eq 'survey' -and $args[$i + 1] -eq 'inventory') {
+    for ($j = $i + 2; $j -lt $args.Count; $j++) {
+      $a = "$($args[$j])"
+      if ($a.StartsWith('docker://')) { $isImageSurvey = $true; $authImageRef = $a.Substring(9); break }
+      if ($a.StartsWith('oci://')) { $isImageSurvey = $true; $authImageRef = $a.Substring(6); break }
+    }
+    break
+  }
+}
+
+# The key Docker's config.json and credential helpers use for an image's registry.
+function Get-DockerRegistryKey($ref) {
+  $slash = $ref.IndexOf('/')
+  if ($slash -gt 0) {
+    $first = $ref.Substring(0, $slash)
+    if ($first.Contains('.') -or $first.Contains(':') -or $first -eq 'localhost') {
+      if ($first -in @('docker.io', 'index.docker.io', 'registry-1.docker.io')) { return 'https://index.docker.io/v1/' }
+      return $first
+    }
+  }
+  return 'https://index.docker.io/v1/'
+}
+
+# Docker Desktop keeps logins in a credential helper (credsStore or credHelpers), and
+# config.json then holds no secret oras can read inside the container. Ask the helper
+# here and hand the container a config with just this registry's login. Any problem
+# returns $null and leaves today's mount in place: public images still work, private
+# ones fail in oras.
+function New-DockerAuthFromHelper($configFile, $key) {
+  try { $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json } catch { return $null }
+  if (-not $cfg) { return $null }
+  if ($cfg.auths -and ($cfg.auths.PSObject.Properties.Name -contains $key)) {
+    $entry = $cfg.auths.$key
+    if ($entry -and ($entry.auth -or $entry.identitytoken)) { return $null }
+  }
+  $helper = $null
+  if ($cfg.credHelpers -and ($cfg.credHelpers.PSObject.Properties.Name -contains $key)) { $helper = $cfg.credHelpers.$key }
+  if (-not $helper) { $helper = $cfg.credsStore }
+  if (-not $helper -or $helper -notmatch '^[A-Za-z0-9._-]+$') { return $null }
+  $command = Get-Command "docker-credential-$helper" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $command) { return $null }
+  try {
+    $out = ($key | & $command.Source get 2>$null) -join ''
+  } catch { return $null }
+  if ($LASTEXITCODE -ne 0 -or -not $out) { return $null }
+  try { $creds = $out | ConvertFrom-Json } catch { return $null }
+  if (-not $creds.Secret) { return $null }
+  if ($creds.Username -eq '<token>') {
+    $login = [ordered]@{ identitytoken = $creds.Secret }
+  } else {
+    $pair = [Text.Encoding]::UTF8.GetBytes("$($creds.Username):$($creds.Secret)")
+    $login = [ordered]@{ auth = [Convert]::ToBase64String($pair) }
+  }
+  $json = @{ auths = @{ $key = $login } } | ConvertTo-Json -Depth 4 -Compress
+  $dir = Join-Path ([System.IO.Path]::GetTempPath()) "spice-docker-config-$([guid]::NewGuid().ToString('N'))"
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  try {
+    if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+      # Only the current user may read it: inheritance off, one full-control rule.
+      $acl = New-Object System.Security.AccessControl.DirectorySecurity
+      $acl.SetAccessRuleProtection($true, $false)
+      $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+      $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($me, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+      $acl.AddAccessRule($rule)
+      Set-Acl -LiteralPath $dir -AclObject $acl
+    } else {
+      & chmod 700 $dir
+    }
+    [System.IO.File]::WriteAllText((Join-Path $dir 'config.json'), $json, (New-Object System.Text.UTF8Encoding $false))
+  } catch {
+    Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+    return $null
+  }
+  return $dir
 }
 
 # Mount the host's docker config dir read-only when it exists. Skip silently when
 # absent — public registries need nothing; private ones then fail inside oras
 # with a clear auth error instead of a missing-mount one.
 $dockerAuthArgs = @()
+$dockerConfigFile = $null
 if ($isImageSurvey) {
   $dockerConfigHost = if ($env:DOCKER_CONFIG) { $env:DOCKER_CONFIG } else { Join-Path $HOME '.docker' }
-  if (Test-Path (Join-Path $dockerConfigHost 'config.json')) {
+  $dockerConfigFile = Join-Path $dockerConfigHost 'config.json'
+  if (Test-Path $dockerConfigFile) {
     $dockerAuthArgs += "-v"; $dockerAuthArgs += "$dockerConfigHost`:/mnt/spice/docker-config:ro"
     $dockerAuthArgs += "-e"; $dockerAuthArgs += "DOCKER_CONFIG=/mnt/spice/docker-config"
   }
@@ -1265,6 +1368,15 @@ $envArgs += "-e"; $envArgs += "SPICE_PATH_MAP"
 $dockerFlags = @()
 if ($env:SPICE_DOCKER_FLAGS) { $dockerFlags = $env:SPICE_DOCKER_FLAGS -split '\s+' }
 
+# Asked after every check that can end the run, so the temporary login is always removed.
+$dockerConfigTemp = $null
+if ($dockerAuthArgs.Count -gt 0 -and $authImageRef) {
+  $dockerConfigTemp = New-DockerAuthFromHelper $dockerConfigFile (Get-DockerRegistryKey $authImageRef)
+  if ($dockerConfigTemp) {
+    $dockerAuthArgs = @('-v', "$dockerConfigTemp`:/mnt/spice/docker-config:ro", '-e', 'DOCKER_CONFIG=/mnt/spice/docker-config')
+  }
+}
+
 $dockerRun = @('run', '--rm') + $userFlag + $pullFlag + $dockerFlags + @(
   '--network', $script:SpiceDockerNetwork) + $dockerAuthArgs + $volumes + $workdirFlag + @(
   '-e', "SPICE_PASS=$spicePass", '-e', "SPICE_LICENSE=$spiceLicense") + $envArgs + @("$imageRef")
@@ -1309,5 +1421,11 @@ if ($docsBrowser) {
   $dockerArgs = @($dockerArgs | ForEach-Object { if ($_ -eq '--html') { '--markdown' } else { $_ } })
 }
 
-& docker @dockerRun @dockerArgs
-exit $LASTEXITCODE
+$runExit = 1
+try {
+  & docker @dockerRun @dockerArgs
+  $runExit = $LASTEXITCODE
+} finally {
+  if ($dockerConfigTemp) { Remove-Item -LiteralPath $dockerConfigTemp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+exit $runExit

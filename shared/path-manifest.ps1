@@ -276,6 +276,18 @@ function Mf-Mount($hostDir, $containerDir) {
   if ($containerDir -eq (Convert-ToDockerPath $hostDir)) { $script:MfIdentityDirs += $hostDir }
 }
 
+# Whether a value that is not a path reads as a container image reference: a tag,
+# a digest or a registry host first, and nothing written as a path. Matches
+# SurveyInput.looksLikeImage.
+function Mf-LooksLikeImage($value) {
+  if (-not $value -or $value -match '^[/.~]' -or $value -match '[\\ ]' -or $value -match '^[A-Za-z]:') { return $false }
+  if ($value -match '[@:]') { return $true }
+  $slash = $value.IndexOf('/')
+  if ($slash -le 0) { return $false }
+  $first = $value.Substring(0, $slash)
+  return ($first.Contains('.') -or $first -ieq 'localhost')
+}
+
 # Resolve one path argument for use inside the container, adding whatever bind
 # mount it needs, and return the container-side path.
 function Mount-Path($value, $create, $mustExist) {
@@ -290,6 +302,9 @@ function Mount-Path($value, $create, $mustExist) {
   $isDir = Test-Path -LiteralPath $value -PathType Container
   if (Test-Path -LiteralPath $value) {
     if ($isDir) { $dir = $value } else { $dir = Split-Path -Parent $value }
+  } elseif ($mustExist -and (Mf-LooksLikeImage $value)) {
+    # `nginx:1.27` where a path belongs: the CLI explains how to name an image.
+    return $value
   } elseif ($mustExist) {
     [Console]::Error.WriteLine("ERROR ❌ Input path does not exist: $value")
     [Console]::Error.WriteLine("INFO  Use --help for usage information.")

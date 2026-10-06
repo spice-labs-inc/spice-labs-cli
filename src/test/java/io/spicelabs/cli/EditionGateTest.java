@@ -73,6 +73,16 @@ class EditionGateTest {
     // picocli reports the unmatched `survey` through the CLI's handler (System.err).
   }
 
+  /** An image survey is an inventory survey: gone with inventory surveys, in either spelling. */
+  @Test
+  void edition_bulkOnly_imageSurvey_isRefused() {
+    CommandLine cmd = cli(BULK_ONLY);
+    assertFalse(cmd.getSubcommands().containsKey("survey"));
+    assertNotEquals(0, cmd.execute("survey", "inventory", "s", "docker://nginx:1.27", "--no-upload"));
+    assertNotEquals(0, cli(BULK_ONLY).execute("survey", "inventory", "s", "oci://nginx:1.27", "--no-upload"));
+    assertNotEquals(0, cli(BULK_ONLY).execute("survey", "image", "nginx:1.27", "--no-upload"));
+  }
+
   @Test
   void edition_noRuntime_surveyRuntime_isUnknownSurveyType() {
     CommandLine cmd = cli(NO_RUNTIME);
