@@ -29,6 +29,7 @@ setup() {
 #!/bin/bash
 # If this is a "pull" command, silently succeed
 if [ "$1" = "pull" ]; then exit 0; fi
+if [ "$1" = "info" ]; then echo linux; exit 0; fi
 # For "run", echo all args to the capture file and to stdout
 echo "$@" > "${DOCKER_ARGS_FILE:-/dev/null}"
 # Produce structured output like the real test container
@@ -145,6 +146,7 @@ teardown() {
   cat > "$MOCK_BIN/docker" <<'MOCK'
 #!/bin/bash
 if [ "$1" = "pull" ]; then exit 0; fi
+if [ "$1" = "info" ]; then echo linux; exit 0; fi
 printf '\033[32mGREEN\033[0m\n'
 printf '\033[31mRED\033[0m\n'
 exit 0
@@ -285,6 +287,7 @@ MOCK
   cat > "$MOCK_BIN/docker" <<'MOCK'
 #!/bin/bash
 if [ "$1" = "pull" ]; then exit 0; fi
+if [ "$1" = "info" ]; then echo linux; exit 0; fi
 # For runtime survey, just echo the args
 echo "$@" > "${DOCKER_ARGS_FILE:-/dev/null}"
 # Simulate successful extraction
@@ -330,7 +333,7 @@ docs_setup() {
   mv "$MOCK_BIN/docker" "$MOCK_BIN/docker-image"
   cat > "$MOCK_BIN/docker" <<'MOCK'
 #!/bin/bash
-echo "$*" >> "$TEST_TMPDIR/docker-runs.txt"
+[ "$1" = "info" ] || echo "$*" >> "$TEST_TMPDIR/docker-runs.txt"
 if [ "${NO_GUIDE:-0}" = "1" ] && [[ " $* " == *" --html "* ]]; then
   echo "ERROR ❌ This build of spice carries no user guide."
   exit 1

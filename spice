@@ -813,6 +813,14 @@ if ! command -v docker &>/dev/null; then
   exit 1
 fi
 
+# The CLI image is a Linux image; a daemon running Windows containers (Git Bash or WSL
+# talking to Docker Desktop in Windows-containers mode) cannot run it. `docker info` is
+# local; when it fails or answers nothing, the run goes on and Docker reports as before.
+if [ "$(docker info --format '{{.OSType}}' 2>/dev/null | head -n 1 | tr -d '\r[:space:]')" = "windows" ]; then
+  echo "❌ Docker on this machine runs Windows containers. The Surveyor CLI runs in a Linux container: switch Docker Desktop to Linux containers (right-click the Docker icon, Switch to Linux containers), or use a machine whose Docker runs Linux containers." >&2
+  exit 1
+fi
+
 DEBUG_MODE=0
 for arg in "$@"; do
   arg_lower=$(echo "$arg" | tr '[:upper:]' '[:lower:]')
