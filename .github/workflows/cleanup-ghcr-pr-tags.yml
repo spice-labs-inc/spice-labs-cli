@@ -69,15 +69,8 @@ jobs:
 
           # spice-labs-cli is published under the repo scope (ghcr.io/spice-labs-inc/spice-labs-cli)
           # and its deps cache image under ghcr.io/spice-labs-inc/spice-labs-cli/cache.
-          # The IT and IT Pro images (org scope) also carry
-          # ephemeral pr-/sha- tags from PR builds, so they need pruning too, as do
-          # the packages they were published as before the editions were renamed.
           delete_old_versions "spice-labs-cli" "repo"
           delete_old_versions "spice-labs-cli%2Fcache" "repo"
-          delete_old_versions "spice-labs-cli-it" "org"
-          delete_old_versions "spice-labs-cli-itpro" "org"
-          delete_old_versions "spice-labs-cli-enterprise" "org"
-          delete_old_versions "spice-labs-cli-federal" "org"
 
           echo "Cleanup complete"
 

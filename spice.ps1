@@ -664,6 +664,7 @@ $script:SpiceDockerNetwork = if ($env:SPICE_DOCKER_NETWORK) { $env:SPICE_DOCKER_
 # --features otpro → OT Pro image (allspice; airgapped; no runtime surveys)
 # --features it    → IT image (allspice + sassafras)
 # --features itpro → IT Pro image (IT + report_cli + rogues gallery)
+# (the edition images are published by surveyor-build)
 # Strip the flag so it is not forwarded to the CLI container.
 
 $features = ""
