@@ -2,18 +2,18 @@
 # Build the spice-labs-cli Docker images locally.
 #
 # Uses BuildKit. Builds the OSS `spice` image by default, then layers the
-# enterprise and federal images on top. Pass a target name as $1 to build
-# only one stage (deps, builder, spice, test, enterprise, federal).
+# IT and IT Pro images on top. Pass a target name as $1 to build
+# only one stage (deps, builder, spice, test, it, itpro).
 #
 # Images are tagged:
 #   ghcr.io/spice-labs-inc/spice-labs-cli:dev
-#   ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:dev
-#   ghcr.io/spice-labs-inc/spice-labs-cli-federal:dev
+#   ghcr.io/spice-labs-inc/spice-labs-cli-it:dev
+#   ghcr.io/spice-labs-inc/spice-labs-cli-itpro:dev
 #
 # The Dockerfile's builder stage resolves spice-bom + spice-plugin-api from
 # GitHub Packages (spice-labs-inc/spice-bom, spice-labs-inc/spice-plugin-api).
 #
-# The enterprise/federal images layer the allspice image on top of the OSS
+# The IT/IT Pro images layer the allspice image on top of the OSS
 # image. The allspice repo MUST be checked out beside this repo (../allspice)
 # and its Docker image built first (../allspice/docker_build.sh).
 #
@@ -33,8 +33,8 @@ TARGET="${1:-all}"
 export DOCKER_BUILDKIT=1
 
 OSS_IMAGE="ghcr.io/spice-labs-inc/spice-labs-cli"
-ENTERPRISE_IMAGE="ghcr.io/spice-labs-inc/spice-labs-cli-enterprise"
-FEDERAL_IMAGE="ghcr.io/spice-labs-inc/spice-labs-cli-federal"
+IT_IMAGE="ghcr.io/spice-labs-inc/spice-labs-cli-it"
+ITPRO_IMAGE="ghcr.io/spice-labs-inc/spice-labs-cli-itpro"
 TAG="dev"
 # allspice has no semver release yet; pr-2 is the interim tag. For local dev,
 # use the most recently built local allspice image if one exists. Otherwise fall
@@ -84,30 +84,30 @@ build_oss() {
   echo "✅ Built ${OSS_IMAGE}:${TAG}"
 }
 
-build_enterprise() {
-  echo "📦 Building enterprise image: ${ENTERPRISE_IMAGE}:${TAG}"
+build_it() {
+  echo "📦 Building IT image: ${IT_IMAGE}:${TAG}"
   docker build \
-    -f Dockerfile.enterprise \
+    -f Dockerfile.it \
     --build-arg SPICE_IMAGE="${OSS_IMAGE}" \
     --build-arg SPICE_TAG="${TAG}" \
     --build-arg ALLSPICE_IMAGE="${ALLSPICE_IMAGE}" \
     --build-arg ALLSPICE_TAG="${ALLSPICE_TAG}" \
-    -t "${ENTERPRISE_IMAGE}:${TAG}" \
+    -t "${IT_IMAGE}:${TAG}" \
     .
-  echo "✅ Built ${ENTERPRISE_IMAGE}:${TAG}"
+  echo "✅ Built ${IT_IMAGE}:${TAG}"
 }
 
-build_federal() {
-  echo "📦 Building federal image: ${FEDERAL_IMAGE}:${TAG}"
+build_itpro() {
+  echo "📦 Building IT Pro image: ${ITPRO_IMAGE}:${TAG}"
   docker build \
-    -f Dockerfile.federal \
+    -f Dockerfile.itpro \
     --build-arg SPICE_IMAGE="${OSS_IMAGE}" \
     --build-arg SPICE_TAG="${TAG}" \
     --build-arg ALLSPICE_IMAGE="${ALLSPICE_IMAGE}" \
     --build-arg ALLSPICE_TAG="${ALLSPICE_TAG}" \
-    -t "${FEDERAL_IMAGE}:${TAG}" \
+    -t "${ITPRO_IMAGE}:${TAG}" \
     .
-  echo "✅ Built ${FEDERAL_IMAGE}:${TAG}"
+  echo "✅ Built ${ITPRO_IMAGE}:${TAG}"
 }
 
 # --- dispatch ----------------------------------------------------------------
@@ -115,33 +115,33 @@ build_federal() {
 case "${TARGET}" in
   all)
     build_oss
-    build_enterprise
-    build_federal
+    build_it
+    build_itpro
     echo ""
     echo "🎉 All images built:"
     echo "   ${OSS_IMAGE}:${TAG}"
-    echo "   ${ENTERPRISE_IMAGE}:${TAG}"
-    echo "   ${FEDERAL_IMAGE}:${TAG}"
+    echo "   ${IT_IMAGE}:${TAG}"
+    echo "   ${ITPRO_IMAGE}:${TAG}"
     ;;
   spice|deps|builder|test)
-    # Raw Dockerfile targets (no enterprise/federal layering)
+    # Raw Dockerfile targets (no IT/IT Pro layering)
     docker build \
       ${SECRET_FLAGS[@]+${SECRET_FLAGS[@]}} \
       -t "${OSS_IMAGE}:${TAG}" \
       --target "${TARGET}" \
       . && echo "Successfully built ${OSS_IMAGE}:${TAG} (target: ${TARGET})"
     ;;
-  enterprise)
+  it)
     build_oss
-    build_enterprise
+    build_it
     ;;
-  federal)
+  itpro)
     build_oss
-    build_federal
+    build_itpro
     ;;
   *)
     echo "Unknown target: ${TARGET}"
-    echo "Usage: $0 [all|spice|deps|builder|test|enterprise|federal]"
+    echo "Usage: $0 [all|spice|deps|builder|test|it|itpro]"
     exit 1
     ;;
 esac

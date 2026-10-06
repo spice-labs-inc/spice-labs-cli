@@ -46,10 +46,10 @@ teardown() {
   rm -f "$PWD/default-marker.txt"
 }
 
-# Remove stale enterprise/federal tags so they don't leak into local dev
+# Remove stale IT/IT Pro tags so they don't leak into local dev
 teardown_file() {
-  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest 2>/dev/null || true
-  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest 2>/dev/null || true
+  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-it:latest 2>/dev/null || true
+  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest 2>/dev/null || true
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -147,7 +147,7 @@ MANIFEST
 }
 
 # Point the wrapper at a manifest describing the `registry` plugin, standing in for
-# what the enterprise image reports. The wrapper has no built-in knowledge of these
+# what the IT image reports. The wrapper has no built-in knowledge of these
 # commands — that is the point — so a test exercising them must supply the manifest,
 # just as the real image does.
 use_registry_manifest() {
@@ -227,63 +227,63 @@ MANIFEST
   assert_arg "--help"
 }
 
-@test "--features enterprise switches to enterprise image and strips flag" {
-  # Unset SPICE_IMAGE so --features can select the enterprise image.
+@test "--features it switches to IT image and strips flag" {
+  # Unset SPICE_IMAGE so --features can select the IT image.
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-it:latest"
 
-  run "$WRAPPER" --features enterprise survey inventory myapp "$TEST_TMPDIR/input"
+  run "$WRAPPER" --features it survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
   refute_arg "--features"
-  refute_arg "enterprise"
+  refute_arg "it"
 }
 
-@test "--features=enterprise switches to enterprise image and strips flag" {
+@test "--features=it switches to IT image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-it:latest"
 
-  run "$WRAPPER" --features=enterprise survey inventory myapp "$TEST_TMPDIR/input"
+  run "$WRAPPER" --features=it survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
   refute_arg "--features"
-  refute_arg "enterprise"
+  refute_arg "it"
 }
 
-@test "SPICE_IMAGE env overrides --features enterprise" {
-  SPICE_IMAGE="spice-wrapper-test" run "$WRAPPER" --features enterprise survey inventory myapp "$TEST_TMPDIR/input"
+@test "SPICE_IMAGE env overrides --features it" {
+  SPICE_IMAGE="spice-wrapper-test" run "$WRAPPER" --features it survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
 }
 
-@test "--features ot switches to ot image and strips flag" {
+@test "--features otpro switches to OT Pro image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest"
 
-  run "$WRAPPER" --features ot registry discover
+  run "$WRAPPER" --features otpro registry discover
   [ "$status" -eq 0 ]
   assert_arg "registry"
   assert_arg "discover"
   refute_arg "--features"
-  refute_arg "ot"
+  refute_arg "otpro"
 }
 
-@test "--features=ot switches to ot image and strips flag" {
+@test "--features=otpro switches to OT Pro image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest"
 
-  run "$WRAPPER" --features=ot registry discover
+  run "$WRAPPER" --features=otpro registry discover
   [ "$status" -eq 0 ]
   assert_arg "registry"
   assert_arg "discover"
   refute_arg "--features"
-  refute_arg "ot"
+  refute_arg "otpro"
 }
 
 @test "runtime survey: refused when the image manifest has no survey runtime" {
@@ -334,30 +334,30 @@ MANIFEST
   assert_arg "inventory"
 }
 
-@test "--features federal switches to federal image and strips flag" {
+@test "--features itpro switches to IT Pro image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest"
 
-  run "$WRAPPER" --features federal survey inventory myapp "$TEST_TMPDIR/input"
+  run "$WRAPPER" --features itpro survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
   refute_arg "--features"
-  refute_arg "federal"
+  refute_arg "itpro"
 }
 
-@test "--features=federal switches to federal image and strips flag" {
+@test "--features=itpro switches to IT Pro image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest"
 
-  run "$WRAPPER" --features=federal survey inventory myapp "$TEST_TMPDIR/input"
+  run "$WRAPPER" --features=itpro survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
   assert_arg "survey"
   assert_arg "inventory"
   assert_arg "myapp"
   refute_arg "--features"
-  refute_arg "federal"
+  refute_arg "itpro"
 }
 
 # ── Registry command (same-path mounts) ──────────────────────────────────────

@@ -178,7 +178,7 @@ public class SpiceLabsCLI implements Runnable {
             return offending.getCommandSpec().exitCodeOnInvalidInput();
           }
           // Case 1: `spice static ...` (without `survey`) — the user forgot the
-          // `survey` parent or used a type that requires enterprise/federal.
+          // `survey` parent or used a type that requires IT/IT Pro.
           if (isTopLevel(cmd, offending) && isKnownSurveyType(first)) {
             System.err.println("❌ Unknown command: " + first);
             System.err.println("   Run 'spice survey --help' for available types.");
@@ -224,7 +224,7 @@ public class SpiceLabsCLI implements Runnable {
     return root == offending;
   }
 
-  /** Known survey type names, including those only available in enterprise/federal. */
+  /** Known survey type names, including those only available in IT/IT Pro. */
   private static final java.util.Set<String> KNOWN_SURVEY_TYPES =
       java.util.Set.of("inventory", "runtime", "static", "image");
 

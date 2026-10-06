@@ -341,7 +341,7 @@ exit 0
   }
 
   # Write a manifest describing the `registry` plugin, standing in for what the
-  # enterprise image reports. The wrapper has no built-in knowledge of these
+  # IT image reports. The wrapper has no built-in knowledge of these
   # commands — that is the point — so a test exercising them must supply the
   # manifest, just as the real image does. Mirrors use_registry_manifest in
   # spice.bats; keep the two in step.
@@ -577,51 +577,51 @@ Describe 'spice.ps1 wrapper' {
       $r.ContainerArgs | Should -Contain '--help'
     }
 
-    It '--features enterprise switches to enterprise image and strips flag' {
-      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+    It '--features it switches to IT image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'it', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-it:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
-      $r.ContainerArgs | Should -Not -Contain 'enterprise'
+      $r.ContainerArgs | Should -Not -Contain 'it'
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
     }
 
-    It '--features=enterprise switches to enterprise image and strips flag' {
-      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+    It '--features=it switches to IT image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=it', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-it:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
-      $r.ContainerArgs | Should -Not -Contain 'enterprise'
+      $r.ContainerArgs | Should -Not -Contain 'it'
     }
 
-    It 'SPICE_IMAGE env overrides --features enterprise' {
-      $r = Invoke-SpiceWrapper -SpiceImage 'spice-wrapper-custom' -Arguments @('--features', 'enterprise', 'survey', 'inventory', 'myapp', $script:InputDir)
+    It 'SPICE_IMAGE env overrides --features it' {
+      $r = Invoke-SpiceWrapper -SpiceImage 'spice-wrapper-custom' -Arguments @('--features', 'it', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
       $r.DockerRunArgs | Should -Contain 'spice-wrapper-custom'
-      $r.DockerRunArgs | Should -Not -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest'
+      $r.DockerRunArgs | Should -Not -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-it:latest'
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
     }
 
-    It '--features ot switches to ot image and strips flag' {
-      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'ot', 'registry', 'discover')
+    It '--features otpro switches to OT Pro image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'otpro', 'registry', 'discover')
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
-      $r.ContainerArgs | Should -Not -Contain 'ot'
+      $r.ContainerArgs | Should -Not -Contain 'otpro'
       $r.ContainerArgs | Should -Contain 'registry'
       $r.ContainerArgs | Should -Contain 'discover'
     }
 
-    It '--features=ot switches to ot image and strips flag' {
-      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=ot', 'registry', 'discover')
+    It '--features=otpro switches to OT Pro image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=otpro', 'registry', 'discover')
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
-      $r.ContainerArgs | Should -Not -Contain 'ot'
+      $r.ContainerArgs | Should -Not -Contain 'otpro'
     }
 
     It 'SPICE_DOCKER_NETWORK replaces the default host network' {
@@ -642,23 +642,23 @@ Describe 'spice.ps1 wrapper' {
       $r.DockerRunArgs | Should -Contain 'host'
     }
 
-    It '--features federal switches to federal image and strips flag' {
-      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'federal', 'survey', 'inventory', 'myapp', $script:InputDir)
+    It '--features itpro switches to IT Pro image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'itpro', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
-      $r.ContainerArgs | Should -Not -Contain 'federal'
+      $r.ContainerArgs | Should -Not -Contain 'itpro'
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
     }
 
-    It '--features=federal switches to federal image and strips flag' {
-      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=federal', 'survey', 'inventory', 'myapp', $script:InputDir)
+    It '--features=itpro switches to IT Pro image and strips flag' {
+      $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=itpro', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
-      $r.ContainerArgs | Should -Not -Contain 'federal'
+      $r.ContainerArgs | Should -Not -Contain 'itpro'
     }
   }
 

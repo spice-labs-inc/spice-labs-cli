@@ -187,14 +187,14 @@ jobs:
           git-sha: ${{ github.sha }}
           registry-password: ${{ github.token }}
 
-  build-image-enterprise:
-    name: Build and publish enterprise image
+  build-image-it:
+    name: Build and publish IT image
     needs: build-image-spice
-    # The enterprise image layers the spice wrapper onto the allspice asset
-    # image (pinned by digest in Dockerfile.enterprise), so it only needs the
-    # spice source (Dockerfile.enterprise + wrapper scripts), not the deps cache.
+    # The IT image layers the spice wrapper onto the allspice asset
+    # image (pinned by digest in Dockerfile.it), so it only needs the
+    # spice source (Dockerfile.it + wrapper scripts), not the deps cache.
     concurrency:
-      group: build-image-${{ github.event.pull_request.number }}-enterprise
+      group: build-image-${{ github.event.pull_request.number }}-it
       cancel-in-progress: true
     runs-on: ubuntu-24.04
     permissions:
@@ -216,15 +216,15 @@ jobs:
           registry: ghcr.io
           # The GITHUB_TOKEN has packages:write for this repo and can read
           # org-scoped internal packages (allspice). The PAT was previously
-          # used but lacks write:packages for pushing the enterprise image.
+          # used but lacks write:packages for pushing the IT image.
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Build and publish enterprise image
+      - name: Build and publish IT image
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile.enterprise
+          file: Dockerfile.it
           platforms: ${{ env.PLATFORMS }}
           push: true
           provenance: mode=max
@@ -233,16 +233,16 @@ jobs:
             SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
             SPICE_TAG=pr-${{ github.event.number }}
           tags: |
-            ghcr.io/${{ env.OWNER }}/spice-labs-cli-enterprise:pr-${{ github.event.number }}
+            ghcr.io/${{ env.OWNER }}/spice-labs-cli-it:pr-${{ github.event.number }}
 
-  build-image-federal:
-    name: Build and publish federal image
+  build-image-itpro:
+    name: Build and publish IT Pro image
     needs: build-image-spice
-    # The federal image extends the enterprise image with report_cli and the
-    # rogues gallery for CBOM generation. Same allspice base as enterprise
-    # (pinned by digest in Dockerfile.federal).
+    # The IT Pro image extends the IT image with report_cli and the
+    # rogues gallery for CBOM generation. Same allspice base as the IT image
+    # (pinned by digest in Dockerfile.itpro).
     concurrency:
-      group: build-image-${{ github.event.pull_request.number }}-federal
+      group: build-image-${{ github.event.pull_request.number }}-itpro
       cancel-in-progress: true
     runs-on: ubuntu-24.04
     permissions:
@@ -265,11 +265,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Build and publish federal image
+      - name: Build and publish IT Pro image
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile.federal
+          file: Dockerfile.itpro
           platforms: ${{ env.PLATFORMS }}
           push: true
           provenance: mode=max
@@ -278,7 +278,7 @@ jobs:
             SPICE_IMAGE=ghcr.io/${{ env.OWNER }}/spice-labs-cli
             SPICE_TAG=pr-${{ github.event.number }}
           tags: |
-            ghcr.io/${{ env.OWNER }}/spice-labs-cli-federal:pr-${{ github.event.number }}
+            ghcr.io/${{ env.OWNER }}/spice-labs-cli-itpro:pr-${{ github.event.number }}
 
   export-otel:
     name: Export OpenTelemetry traces
@@ -287,7 +287,7 @@ jobs:
       - format
       - test
       - build-image-spice
-      - build-image-enterprise
+      - build-image-it
     if: always()
     runs-on: ubuntu-24.04
     permissions:

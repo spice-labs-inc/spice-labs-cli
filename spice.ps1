@@ -661,9 +661,9 @@ $script:SpiceDockerNetwork = if ($env:SPICE_DOCKER_NETWORK) { $env:SPICE_DOCKER_
 
 # ── Feature flag parsing (must happen before Docker checks / image pull) ──────
 #
-# --features ot         → OT Pro image (allspice; airgapped; no runtime surveys)
-# --features enterprise → enterprise image (allspice + sassafras)
-# --features federal     → federal image (enterprise + report_cli + rogues gallery)
+# --features otpro → OT Pro image (allspice; airgapped; no runtime surveys)
+# --features it    → IT image (allspice + sassafras)
+# --features itpro → IT Pro image (IT + report_cli + rogues gallery)
 # Strip the flag so it is not forwarded to the CLI container.
 
 $features = ""
@@ -685,9 +685,9 @@ foreach ($arg in $args) {
 }
 if (-not $env:SPICE_IMAGE) {
   switch ($features) {
-    "ot"         { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-ot:latest" }
-    "enterprise" { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-enterprise:latest" }
-    "federal"    { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-federal:latest" }
+    "otpro" { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest" }
+    "it"    { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-it:latest" }
+    "itpro" { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest" }
   }
 }
 $args = $parsedArgs
@@ -740,7 +740,7 @@ if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
     if (-not $localExists) {
       Write-Error "[X] Image $imageRef not found locally either."
       Write-Stderr "   The image may not exist yet, or you may not have access."
-      Write-Stderr "   For enterprise/federal features, ensure --features matches an available image."
+      Write-Stderr "   For otpro/it/itpro features, ensure --features matches an available image."
       exit 1
     }
     Write-Stderr "   Using local copy."
