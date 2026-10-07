@@ -317,20 +317,12 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
 
     // Resolve output directory
     if (output == null) {
-      String userHome = System.getProperty("user.home");
-      Path base;
-      if (userHome != null && !userHome.isBlank() && !userHome.equals("/")) {
-        base = Paths.get(userHome, ".spicelabs");
-      } else {
-        Path varTmp = Paths.get("/var/tmp", ".spicelabs");
-        if (Files.isDirectory(Paths.get("/var/tmp")) || Files.exists(Paths.get("/var/tmp"))) {
-          base = varTmp;
-          log.warn("user.home not available, using /var/tmp/.spicelabs");
-        } else {
-          base = Paths.get("/tmp", ".spicelabs");
-          log.warn("user.home and /var/tmp not available, using /tmp/.spicelabs");
-        }
-      }
+      Path base =
+          defaultOutputBase(
+              System.getProperty("user.home"),
+              System.getenv("HOME"),
+              Files.isDirectory(Paths.get("/var/tmp")));
+      log.debug("No --output; survey results go under {}", base);
       Files.createDirectories(base);
       output = base;
     }
@@ -675,6 +667,21 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
     } catch (Exception e) {
       log.warn("Failed to decode SPICE_PASS: {}", e.getMessage());
     }
+  }
+
+  /**
+   * Where survey results go without {@code --output}: {@code .spicelabs} in the home folder.
+   * A container run as a uid the image does not know (the wrapper's {@code --user}, CI runners)
+   * has no passwd entry, so Java falls back to {@code $HOME}, which Docker sets to {@code /};
+   * such a run uses a temporary folder instead, which is expected there and not worth a warning.
+   */
+  static Path defaultOutputBase(String userHome, String envHome, boolean varTmpExists) {
+    for (String home : new String[] {userHome, envHome}) {
+      if (home != null && !home.isBlank() && !home.equals("/") && !home.equals("?")) {
+        return Paths.get(home, ".spicelabs");
+      }
+    }
+    return Paths.get(varTmpExists ? "/var/tmp" : "/tmp", ".spicelabs");
   }
 
   private static void validateTagJson(String value) {

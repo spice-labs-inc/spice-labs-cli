@@ -333,4 +333,21 @@ class SurveyInventoryCommandTest {
 
     assertEquals("INFO", Logging.level(command.resolveSettings()));
   }
+
+  @Test
+  void defaultOutputBaseUsesTheHomeFolderThenHomeThenATemporaryFolder() {
+    assertEquals(Path.of("/home/dani/.spicelabs"),
+        SurveyInventoryCommand.defaultOutputBase("/home/dani", "/somewhere/else", true),
+        "a real user.home wins, so existing results stay where they were");
+    assertEquals(Path.of("/home/runner/.spicelabs"),
+        SurveyInventoryCommand.defaultOutputBase("?", "/home/runner", true),
+        "no passwd entry: $HOME is next");
+    assertEquals(Path.of("/var/tmp/.spicelabs"),
+        SurveyInventoryCommand.defaultOutputBase("/", "/", true),
+        "a container as an unknown uid has user.home and $HOME of /");
+    assertEquals(Path.of("/var/tmp/.spicelabs"),
+        SurveyInventoryCommand.defaultOutputBase(null, " ", true));
+    assertEquals(Path.of("/tmp/.spicelabs"),
+        SurveyInventoryCommand.defaultOutputBase("/", null, false));
+  }
 }
