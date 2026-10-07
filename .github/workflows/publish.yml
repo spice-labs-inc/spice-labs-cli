@@ -32,6 +32,26 @@ jobs:
       thread-ts: ${{ steps.release-notification.outputs.thread-ts }}
       channel-id: ${{ steps.release-notification.outputs.channel-id }}
     steps:
+      # A published release becomes Latest before its files exist, and
+      # install.spicelabs.io and the wrapper's update check follow Latest. Point
+      # Latest back at the newest release that has its files until this one does.
+      - name: Keep the previous release as Latest until this one has its files
+        if: ${{ !github.event.release.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          latest=$(gh api "repos/$REPO/releases/latest" --jq .tag_name)
+          if [ "$latest" = "$TAG" ]; then
+            previous=$(gh api "repos/$REPO/releases?per_page=30" --jq "[.[] | select(.draft | not) | select(.prerelease | not) | select(.tag_name != \"$TAG\") | select(any(.assets[]; .name == \"install.sh\"))][0].tag_name // empty")
+            if [ -n "$previous" ]; then
+              gh release edit "$previous" -R "$REPO" --latest
+              echo "Latest stays $previous until $TAG has its files."
+            fi
+          fi
+
       - name: Notify release
         id: release-notification
         uses: spice-labs-inc/action-release-notification@v3.3
@@ -106,6 +126,12 @@ jobs:
             install.sh
             install.ps1
             cli-docs.json
+
+      - name: Mark this release as Latest now that it has its files
+        if: ${{ !github.event.release.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ github.event.release.tag_name }}" -R "${{ github.repository }}" --latest
 
   # Its own job so a Maven Central failure never holds back the release files
   # (install.spicelabs.io serves the latest release's install.sh) or the image.
