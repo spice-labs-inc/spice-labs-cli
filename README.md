@@ -419,7 +419,7 @@ java -jar target/spice-labs-cli-*-fat.jar survey inventory my-app ./path --no-up
 
 ## 🚀 Releasing
 
-1. Create a GitHub Release with a tag such as `v2.0.0`. This triggers CI to build the JAR, publish to GitHub Packages and Maven Central, and push the Docker image.
+1. Create a GitHub Release with a tag such as `v2.0.0`. This triggers CI to build the JAR, publish to GitHub Packages and Maven Central, and push the Docker image. Untick "Set as the latest release" when you create it: CI marks the release Latest once its files (`install.sh`, `spice`, ...) are attached, so `install.spicelabs.io` and the wrapper's update check never point at a release without files. If it was left ticked, CI's first step sets the previous release back as Latest until the files are attached.
 2. Verify the release on [Maven Central](https://central.sonatype.com) (propagation takes ~40 minutes).
 
 ---
