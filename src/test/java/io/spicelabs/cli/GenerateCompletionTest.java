@@ -97,4 +97,21 @@ class GenerateCompletionTest {
     assertTrue(out.contains("runtime"), "should include the `survey runtime` subcommand");
     assertTrue(out.contains("decode"), "should include the `pass decode` subcommand");
   }
+
+  @Test
+  void powershellCompletion_listsEveryBuiltInCommandInHelpOrder() {
+    String out = run("generate-powershell-completion").out();
+    assertTrue(out.contains("$SpiceCompletions = [ordered]@{"), "the table keeps its order in every session");
+    int last = -1;
+    // The built-in commands, as --help lists them; plugin commands come from their own fragments.
+    for (Class<?> c : SpiceLabsCLI.class.getAnnotation(CommandLine.Command.class).subcommands()) {
+      CommandLine.Command command = c.getAnnotation(CommandLine.Command.class);
+      if (command == null || command.hidden() || command.name().startsWith("generate-")) {
+        continue;
+      }
+      int at = out.indexOf("\n  " + command.name() + " = @{");
+      assertTrue(at > last, "`" + command.name() + "` should be listed, after the commands before it in --help");
+      last = at;
+    }
+  }
 }
