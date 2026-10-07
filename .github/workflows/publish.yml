@@ -17,7 +17,7 @@ env:
 
 jobs:
   publish_jars:
-    name: Publish CLI JARs to GitHub Packages and Maven Central
+    name: Publish CLI JARs to GitHub Packages and the release files
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -25,6 +25,7 @@ jobs:
       id-token: write
     outputs:
       version: ${{ steps.validate.outputs.VERSION }}
+      auto-publish: ${{ steps.validate.outputs.auto_publish }}
       successor-ok: ${{ steps.validate.outputs.successor_ok }}
       previous: ${{ steps.validate.outputs.previous }}
       expected: ${{ steps.validate.outputs.expected }}
@@ -93,18 +94,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
 
-      - name: Build and publish all jars to Maven Central
-        id: build-jars-maven-central
-        run: |
-          mvn --batch-mode clean deploy -P maven-central \
-            -Dcentral.autoPublish=${{ steps.validate.outputs.auto_publish }}
-        env:
-          GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
-
       - name: Write the CLI's command model for the Spice Labs MCP
         run: java -jar target/spice-labs-cli-*-fat.jar docs --json > cli-docs.json
 
@@ -117,6 +106,65 @@ jobs:
             install.sh
             install.ps1
             cli-docs.json
+
+  # Its own job so a Maven Central failure never holds back the release files
+  # (install.spicelabs.io serves the latest release's install.sh) or the image.
+  publish_central:
+    name: Publish CLI JARs to Maven Central
+    runs-on: ubuntu-24.04
+    needs: publish_jars
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout with LFS
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up JDK 21 and Maven Central signing
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
+          server-id: github
+          server-username: SpicyGrzl
+          server-password: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+          gpg-private-key: ${{ secrets.MAVEN_CENTRAL_GPG_PRIVATE_KEY }}
+          gpg-passphrase: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
+
+      - name: Write settings.xml for GitHub + Maven Central
+        uses: ./.github/actions/maven-settings
+        with:
+          github-username: SpicyGrzl
+          github-token: ${{ secrets.GH_TOKEN }}
+          central-username: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          central-password: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          active-profile: github
+
+      - name: Update version in pom.xml using Maven plugin
+        run: mvn --batch-mode versions:set -DnewVersion=${{ needs.publish_jars.outputs.version }} -DgenerateBackupPoms=false
+
+      - name: Build and publish all jars to Maven Central
+        run: |
+          mvn --batch-mode clean deploy -P maven-central \
+            -Dcentral.autoPublish=${{ needs.publish_jars.outputs.auto-publish }}
+        env:
+          GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          GPG_PASSPHRASE: ${{ secrets.MAVEN_CENTRAL_GPG_PASSPHRASE }}
+
+      - name: Keep the Central bundle for inspection
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: central-bundle
+          path: target/central-publishing/central-bundle.zip
+          if-no-files-found: ignore
 
   docker_image:
     name: Build and Push Docker Image (Docker Hub + GHCR)
@@ -191,10 +239,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # Its own job rather than a step inside publish_jars: failing inside
-  # publish_jars would block docker_image, which does not depend on Maven
-  # Central and is freely retaggable. It should still ship while the Central deployment waits for a decision. This job
-  # exists to turn the run red -- `mvn deploy` succeeds even when the
+  # This job exists to turn the run red -- `mvn deploy` succeeds even when the
   # deployment is only staged, so without it the run would go green with
   # nothing on Maven Central.
   confirm_central_release:
@@ -232,7 +277,7 @@ jobs:
 
   notify:
     name: Notify deployment result
-    needs: [publish_jars, docker_image, confirm_central_release]
+    needs: [publish_jars, publish_central, docker_image, confirm_central_release]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -241,6 +286,7 @@ jobs:
         shell: bash
         run: |
           JAR_STATUS="${{ needs.publish_jars.result }}"
+          CENTRAL_STATUS="${{ needs.publish_central.result }}"
           DOCKER_STATUS="${{ needs.docker_image.result }}"
           SUCCESSOR_OK="${{ needs.publish_jars.outputs.successor-ok }}"
 
@@ -252,14 +298,15 @@ jobs:
             echo "overall_status=failure" >> "$GITHUB_OUTPUT"
             echo "message=⚠️ Awaiting manual confirmation in the Maven Central Portal." >> "$GITHUB_OUTPUT"
             echo "workflow_name=${{ github.workflow }} — AWAITING MANUAL CONFIRMATION in the Maven Central Portal" >> "$GITHUB_OUTPUT"
-          elif [ "$JAR_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ]; then
+          elif [ "$JAR_STATUS" == "success" ] && [ "$CENTRAL_STATUS" == "success" ] && [ "$DOCKER_STATUS" == "success" ]; then
             echo "overall_status=success" >> "$GITHUB_OUTPUT"
             echo "message=✅ All components deployed successfully!" >> "$GITHUB_OUTPUT"
             echo "workflow_name=${{ github.workflow }}" >> "$GITHUB_OUTPUT"
           else
             echo "overall_status=failure" >> "$GITHUB_OUTPUT"
             MESSAGE="❌ Deployment failed:"
-            [ "$JAR_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ JAR publishing failed." || MESSAGE="$MESSAGE ✅ JAR publishing succeeded."
+            [ "$JAR_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ GitHub Packages and release files failed." || MESSAGE="$MESSAGE ✅ GitHub Packages and release files published."
+            [ "$CENTRAL_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ Maven Central failed." || MESSAGE="$MESSAGE ✅ Maven Central published."
             [ "$DOCKER_STATUS" != "success" ] && MESSAGE="$MESSAGE ❌ Docker build/push failed." || MESSAGE="$MESSAGE ✅ Docker build/push succeeded."
             echo "message=$MESSAGE" >> "$GITHUB_OUTPUT"
             echo "workflow_name=${{ github.workflow }}" >> "$GITHUB_OUTPUT"
@@ -281,6 +328,7 @@ jobs:
     name: Export OpenTelemetry traces
     needs:
       - publish_jars
+      - publish_central
       - docker_image
       - notify
     if: always()
