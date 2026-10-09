@@ -53,11 +53,11 @@
              so no version changes. ancho is not among them: it is injected via
              -javaagent and never on the CLI's own classpath. -->
         <commons-lang3.version>3.19.0</commons-lang3.version>
-        <coordinates.version>1.1.0</coordinates.version>
+        <coordinates.version>1.3.1</coordinates.version>
         <ginger-j.version>0.4.6</ginger-j.version>
-        <goatrodeo.version>0.18.0</goatrodeo.version>
+        <goatrodeo.version>0.19.0</goatrodeo.version>
         <java-jwt.version>4.4.0</java-jwt.version>
-        <logback.version>1.5.38</logback.version>
+        <logback.version>1.6.5</logback.version>
         <picocli.version>4.7.6</picocli.version>
         <slf4j.version>2.0.17</slf4j.version>
         <spice-plugin-api.version>2.1.1</spice-plugin-api.version>

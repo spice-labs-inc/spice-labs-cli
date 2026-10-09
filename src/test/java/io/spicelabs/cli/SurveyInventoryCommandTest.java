@@ -27,6 +27,7 @@ import io.spicelabs.config.Origin;
 import io.spicelabs.config.Resolution;
 import io.spicelabs.config.Resolver;
 import io.spicelabs.ginger.Ginger;
+import io.spicelabs.goatrodeo.GoatRodeo;
 
 /**
  * Guards the encrypt-only gate: encrypt-only runs never contact a server, so the command
@@ -129,6 +130,26 @@ class SurveyInventoryCommandTest {
                     Origin.defaultValue())));
 
     assertTrue(thrown.getMessage().contains("chunk_size_mb"), thrown.getMessage());
+  }
+
+  @Test
+  void anAnalysisSettingGoatRodeoRejectsIsAnError() {
+    // Goat Rodeo reports a rejected key as a value, not an exception, so it must be checked
+    // here; ignored, the setting would silently not apply.
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+    IllegalArgumentException thrown =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> command.applyAnalysisSettings(
+                GoatRodeo.builder(), Map.of("no_such_setting", 1L)));
+
+    assertTrue(thrown.getMessage().contains("no_such_setting"), thrown.getMessage());
+  }
+
+  @Test
+  void anAnalysisSettingGoatRodeoAcceptsIsApplied() {
+    SurveyInventoryCommand command = new SurveyInventoryCommand();
+    command.applyAnalysisSettings(GoatRodeo.builder(), Map.of("threads", 3L));
   }
 
   @Test

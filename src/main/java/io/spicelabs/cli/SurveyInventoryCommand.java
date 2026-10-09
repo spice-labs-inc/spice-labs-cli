@@ -55,6 +55,7 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
+import scala.util.Either;
 
 /**
  * Survey artifact inventory and optionally upload ADGs.
@@ -516,10 +517,7 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
       // The [analysis] group, handed over without spice knowing what is in it — the
       // analysis engine owns that schema and rejects a key it does not have, which is why
       // this command carries no list of the engine's settings.
-      Map<String, Object> analysis = settings.group("analysis");
-      if (!analysis.isEmpty()) {
-        builder.withConfiguration(analysis, "analysis");
-      }
+      applyAnalysisSettings(builder, settings.group("analysis"));
 
       if (tagJson != null && !tagJson.isBlank()) {
         builder.withTagJson(tagJson);
@@ -796,6 +794,20 @@ public class SurveyInventoryCommand implements java.util.concurrent.Callable<Int
                       + "paths named on the command line, so a file named anywhere else would be "
                       + "written inside the container and lost.");
             });
+  }
+
+  /**
+   * Hands the {@code [analysis]} group to Goat Rodeo, which owns its schema. A key or value it
+   * rejects stops the run with Goat Rodeo's message, naming the key, rather than being dropped.
+   */
+  void applyAnalysisSettings(GoatRodeoBuilder builder, Map<String, Object> analysis) {
+    if (analysis.isEmpty()) {
+      return;
+    }
+    Either<String, GoatRodeoBuilder> configured = builder.withConfiguration(analysis, "analysis");
+    if (configured.isLeft()) {
+      throw new IllegalArgumentException(configured.swap().toOption().get());
+    }
   }
 
   /**
