@@ -79,6 +79,7 @@ final class LicenseGate {
   /** Install the gate on {@code cmd}, checking {@code context}'s credential against {@code edition}. */
   static void apply(CommandLine cmd, Edition edition, DefaultSpiceContext context) {
     cmd.setExecutionStrategy(parseResult -> {
+      UserAgent.command(path(parseResult));
       Integer helped = CommandLine.executeHelpRequest(parseResult);
       if (helped != null) {
         return helped;

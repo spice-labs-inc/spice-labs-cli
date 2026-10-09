@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -89,5 +90,27 @@ class SurveyRegistrationTest {
 
   private static String b64(String json) {
     return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+  }
+
+  @Test
+  void register_userAgent_namesTheCommand() throws Exception {
+    server.enqueue(new MockResponse()
+        .setResponseCode(201)
+        .setBody("{\"parent_id\":\"" + UUID.randomUUID()
+            + "\",\"submission_timestamp\":\"2026-05-20T12:00:00Z\"}"));
+    String pass = passWithUploadServer(server.url("/api/v1/project/p/bundle/upload").toString());
+    Edition.install(Edition.UNRESTRICTED);
+    UserAgent.command(List.of("survey", "inventory"));
+    try {
+      SurveyRegistration.register(pass, "INVENTORY_SURVEY", "my-subject", null);
+    } finally {
+      UserAgent.command(List.of());
+      Edition.install(null);
+    }
+
+    RecordedRequest req = server.takeRequest(2, TimeUnit.SECONDS);
+    assertNotNull(req);
+    assertTrue(req.getHeader("User-Agent").matches("spice-labs-cli/\\S+ \\(command survey inventory\\)"),
+        req.getHeader("User-Agent"));
   }
 }
