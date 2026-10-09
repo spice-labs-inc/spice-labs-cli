@@ -36,6 +36,19 @@ if ($logFile -and -not $env:__SPICE_LOGGING_ACTIVE) {
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalHash = Get-FileHash -Path $ScriptPath -Algorithm SHA256 | Select-Object -ExpandProperty Hash
 
+# Marker recording when the remote half last ran, so the check runs at most
+# once a day. Best-effort: an unwritable location must never break a command.
+# Same platform rules as the path-manifest cache (SPICE_CACHE_DIR wins).
+if ($env:SPICE_CACHE_DIR) {
+  $UpdateCheckMarker = Join-Path $env:SPICE_CACHE_DIR 'script-update-check'
+} elseif ($IsWindows -and $env:LOCALAPPDATA) {
+  $UpdateCheckMarker = Join-Path (Join-Path $env:LOCALAPPDATA 'spice') 'script-update-check'
+} else {
+  $base = $env:XDG_CACHE_HOME
+  if (-not $base) { $base = Join-Path $HOME '.cache' }
+  $UpdateCheckMarker = Join-Path (Join-Path $base 'spice') 'script-update-check'
+}
+
 # The remote half of this check runs after the image is pulled, where the
 # edition is known -- see "Script update check (remote half)" below.
 
@@ -791,6 +804,11 @@ if ($env:SPICE_LABS_CLI_SKIP_PULL -eq "1") {
 # a network that blackholes rather than refuses: without it a dropped SYN costs
 # the full kernel retry window before every command. The check is advisory, so
 # giving up early is cheap.
+#
+# The check is also rate-limited to once a day -- by the script's own mtime (a
+# fresh install already has what the updater ships) and by a marker file left
+# behind after each check. Both are advisory too: a marker we cannot write just
+# means the check runs again next time.
 
 function Test-SpiceEditionAirgapped($ref) {
   # The label is stamped from editions.json at build time, so this does not
@@ -806,22 +824,46 @@ function Test-SpiceEditionAirgapped($ref) {
   return ($label -eq "true")
 }
 
+# True when the remote check is due -- see the cadence note above. Falls open on
+# any stat error; the fetch below is still wrapped in try/catch.
+function Test-UpdateCheckDue {
+  foreach ($p in @($ScriptPath, $UpdateCheckMarker)) {
+    try {
+      $age = (Get-Date) - (Get-Item -LiteralPath $p -ErrorAction Stop).LastWriteTime
+      if ($age -lt [TimeSpan]::FromDays(1)) { return $false }
+    } catch { }
+  }
+  return $true
+}
+
 $ReleaseInfo = $null
-if ($env:SPICE_LABS_CLI_SKIP_PULL -ne "1" -and -not (Test-SpiceEditionAirgapped $imageRef)) {
+if ($env:SPICE_LABS_CLI_SKIP_PULL -ne "1" -and -not (Test-SpiceEditionAirgapped $imageRef) -and (Test-UpdateCheckDue)) {
   try {
     $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest" -Headers @{ 'User-Agent' = 'spice-updater' } -TimeoutSec 5
   } catch {
     # Silently ignore update check failures (no network, rate limited, etc.)
   }
-}
-if ($ReleaseInfo) {
-  $Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
-  if ($Asset -and $Asset.digest) {
-    $RemoteHash = $Asset.digest -replace "sha256:", ""
-    if ($LocalHash -ne $RemoteHash) {
-      Write-Stderr "[!] A newer version of this script is available. Run:"
-      Write-Stderr "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
+  if ($ReleaseInfo) {
+    $Asset = $ReleaseInfo.assets | Where-Object { $_.name -eq "spice.ps1" }
+    if ($Asset -and $Asset.digest) {
+      $RemoteHash = $Asset.digest -replace "sha256:", ""
+      if ($LocalHash -ne $RemoteHash) {
+        Write-Stderr "[!] A newer version of this script is available. Run:"
+        Write-Stderr "    irm -UseBasicParsing -Uri https://install.spicelabs.io | iex"
+      }
     }
+  }
+  # Record that the check ran, whatever its outcome: a host that cannot reach
+  # GitHub should not re-pay the timeout on every command. Best-effort -- an
+  # unwritable location must never throw.
+  try {
+    $markerDir = Split-Path -Parent $UpdateCheckMarker
+    if (-not (Test-Path -LiteralPath $markerDir)) {
+      New-Item -ItemType Directory -Path $markerDir -Force -ErrorAction Stop | Out-Null
+    }
+    [System.IO.File]::WriteAllText($UpdateCheckMarker, [DateTime]::UtcNow.ToString("o"))
+  } catch {
+    # Silently ignore (no permission, read-only filesystem, etc.)
   }
 }
 

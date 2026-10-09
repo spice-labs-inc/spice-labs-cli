@@ -28,6 +28,11 @@ else
   LOCAL_HASH=$(shasum -a 256 "$SCRIPT_PATH" | awk '{print $1}')
 fi
 
+# Marker recording when the remote half last ran, so the check runs at most
+# once a day. Best-effort: an unwritable location must never break a command.
+# Same platform rules as the path-manifest cache (SPICE_CACHE_DIR wins).
+UPDATE_CHECK_MARKER="${SPICE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/spice}/script-update-check"
+
 # The remote half of this check runs after the image is pulled, where the
 # edition is known -- see "Script update check (remote half)" below.
 
@@ -872,6 +877,11 @@ fi
 # costs the full kernel retry window (~130s measured) before every single
 # command. The check is advisory, so giving up early is cheap -- the worst case
 # is not being told about an update until the next run.
+#
+# The check is also rate-limited to once a day -- by the script's own mtime (a
+# fresh install already has what the updater ships) and by a marker file left
+# behind after each check. Both are advisory too: a marker we cannot write just
+# means the check runs again next time.
 
 # The label is stamped from editions.json at build time, so this does not
 # duplicate the edition list. An image without it (an ordinary spice-labs-cli
@@ -882,7 +892,25 @@ spice_edition_is_airgapped() {
         2>/dev/null)" = "true" ]
 }
 
-if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ] && ! spice_edition_is_airgapped; then
+# Whether the remote check is due. Two suppressions, each "within the last
+# day": a script written this day is a fresh install that already has whatever
+# the updater ships, and the marker (recorded at the top of the script) makes
+# the daily cadence hold even on hosts that run spice constantly. find -mmin
+# +1440 (GNU and BSD) prints the path only when it is older than a day; an
+# empty result means the file counts as fresh.
+spice_update_check_due() {
+  local p
+  for p in "$SCRIPT_PATH" "$UPDATE_CHECK_MARKER"; do
+    if [ -e "$p" ] && ! find "$p" -mmin +1440 2>/dev/null | grep -q .; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ] \
+   && ! spice_edition_is_airgapped \
+   && spice_update_check_due; then
   REMOTE_HASH=$(
     curl -fsSL --connect-timeout 2 --max-time 5 \
       https://api.github.com/repos/spice-labs-inc/spice-labs-cli/releases/latest 2>/dev/null |
@@ -900,6 +928,13 @@ if [ "${SPICE_LABS_CLI_SKIP_PULL:-0}" != "1" ] && ! spice_edition_is_airgapped; 
   if [[ -n "$REMOTE_HASH" && "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
     echo "⚠️  A newer version of this script is available. Run:" >&2
     echo "    curl -sSfL https://install.spicelabs.io | bash" >&2
+  fi
+  # Record that the check ran, whatever its outcome: a host that cannot reach
+  # GitHub should not re-pay the timeout on every command. Best-effort -- a
+  # read-only cache (or none) must not break the wrapper, so failures are
+  # ignored.
+  if mkdir -p "$(dirname "$UPDATE_CHECK_MARKER")" 2>/dev/null; then
+    date -u +%Y-%m-%dT%H:%M:%SZ >"$UPDATE_CHECK_MARKER" 2>/dev/null || true
   fi
 fi
 

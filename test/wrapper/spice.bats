@@ -1288,3 +1288,61 @@ MANIFEST
   assert_mount "$TEST_TMPDIR/cached"
   ! container_mounts | grep -qxF "$TEST_TMPDIR/out"
 }
+
+# ── Script update check cadence ────
+
+@test "script update check runs at most once a day" {
+  # Backdate the wrapper: a fresh checkout would suppress the check via the
+  # script's own mtime, and the cadence could not be observed. The fixed date
+  # is portable (touch -t) and safely older than a day.
+  touch -t 202401010000 "$WRAPPER"
+
+  # A fake curl answers the release API and logs each call, so the test can tell
+  # whether the remote check actually ran. The digest differs from the wrapper's
+  # own, so an executed check prints the update warning.
+  local call_log="$TEST_TMPDIR/curl-calls.log"
+  mkdir -p "$TEST_TMPDIR/bin"
+  cat > "$TEST_TMPDIR/bin/curl" <<'CURL'
+#!/usr/bin/env bash
+echo "${@}" >> "$CURL_CALL_LOG"
+printf '%s\n' '{"name": "spice", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+CURL
+  chmod +x "$TEST_TMPDIR/bin/curl"
+  export CURL_CALL_LOG="$call_log"
+  export PATH="$TEST_TMPDIR/bin:$PATH"
+
+  # The update-check gate needs the pull gate open; the pull itself falls back
+  # to the local test image, so the runs stay fully offline.
+  unset SPICE_LABS_CLI_SKIP_PULL
+  export XDG_CACHE_HOME="$TEST_TMPDIR/xdg-cache"
+  local marker="$XDG_CACHE_HOME/spice/script-update-check"
+  pushd "$TEST_TMPDIR" > /dev/null
+
+  # Run 1: due (old script, no marker) -> warning + marker recorded.
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"A newer version of this script is available"* ]]
+  [ -s "$marker" ]
+  [ "$(wc -l < "$call_log")" -eq 1 ]
+  local marker_content
+  marker_content="$(cat "$marker")"
+
+  # Run 2: the fresh marker suppresses the check entirely.
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"A newer version of this script is available"* ]]
+  [ "$(wc -l < "$call_log")" -eq 1 ]
+  [ "$(cat "$marker")" = "$marker_content" ]
+
+  # Run 3: a script written within the last day suppresses the check even with
+  # no marker at all.
+  rm -f "$marker"
+  touch "$WRAPPER"
+  run "$WRAPPER" survey inventory myapp "$TEST_TMPDIR/input"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"A newer version of this script is available"* ]]
+  [ "$(wc -l < "$call_log")" -eq 1 ]
+  [ ! -e "$marker" ]
+
+  popd > /dev/null
+}
