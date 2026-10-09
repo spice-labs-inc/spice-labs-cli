@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 
 import io.spicelabs.coordinates.Coordinates;
 import io.spicelabs.ginger.Ginger;
+import picocli.CommandLine.Command;
 
 /**
  * Internal entry point used by the wrapper script to parse JFR recordings
@@ -36,7 +37,9 @@ public class RuntimeCollect {
         // way; doing it here means "one context, built at startup" holds for every way into
         // the CLI, instead of holding for `SpiceLabsCLI` and happening to work here.
         DefaultSpiceContext context = DefaultSpiceContext.create();
-        UserAgent.command(List.of("survey", "runtime"));
+        UserAgent.command(List.of(
+                SurveyCommand.class.getAnnotation(Command.class).name(),
+                SurveyRuntimeCommand.class.getAnnotation(Command.class).name()));
 
         // This entry point never passes through SpiceLabsCLI's command line, so the license
         // gate installed there does not see it: the wrapper runs this class directly for every
