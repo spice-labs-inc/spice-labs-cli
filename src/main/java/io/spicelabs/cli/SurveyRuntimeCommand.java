@@ -218,6 +218,7 @@ public class SurveyRuntimeCommand implements Callable<Integer> {
                         log.debug("Downloading probe config from server...");
                         boolean downloaded = Ginger.builder()
                                 .jwt(spicePass)
+                                .userAgent(UserAgent.value())
                                 .downloadRuntimeConfig(probeConfigPath);
                         if (!downloaded) {
                             log.warn("\u26A0\uFE0F  Failed to download probe config. Falling back to native-only mode.");

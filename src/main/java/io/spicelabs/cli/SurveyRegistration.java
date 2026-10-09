@@ -42,7 +42,7 @@ final class SurveyRegistration {
     }
 
     UUID idempotencyKey = UUID.randomUUID();
-    String userAgent = "spice-labs-cli/" + SpiceLabsCLI.VersionProvider.getVersionString();
+    String userAgent = UserAgent.value();
 
     DirectUploadService.InitSurveyRequest request =
         new DirectUploadService.InitSurveyRequest(jobType, subject, jsonTags);
