@@ -50,10 +50,14 @@ spice survey inventory <subject> <input>
 #### Artifact cutoff
 
 Some Spice Passes carry an **artifact cutoff**. When yours does, artifacts published after that
-instant are out of scope: they are left out of the survey, along with anything that transitively
-contains them. The cutoff applies to the inventory analysis and to the discovery analysis
-contributed by the [`allspice`](https://github.com/spice-labs-inc/allspice) plugin, so one pass
-scopes the whole run the same way.
+instant are out of scope, and are left out of the survey. A file on disk has no server to say
+when it was published, so the dates inside it decide: a jar, wheel, tarball or other archive
+holding any entry dated after the cutoff is left out whole. A file whose dates can't be read,
+or that isn't an archive, is surveyed. Archives inside archives aren't opened. The cutoff
+applies to the inventory analysis and to the discovery analysis contributed by the
+[`allspice`](https://github.com/spice-labs-inc/allspice) plugin, through the same
+[spice-probe](https://github.com/spice-labs-inc/spice-probe) library, so one pass scopes the
+whole run the same way.
 
 There is no flag to set, widen or override it — it follows the pass. To see whether yours carries
 one, run `spice pass decode` and look for **Artifact Cutoff**. When a cutoff is in force, every
@@ -61,6 +65,7 @@ run says so:
 
 ```
 Ignoring artifacts published after 2026-01-01T00:00:00Z
+Excluding lib/app-2.0.jar: it holds an entry dated 2026-03-01T09:14:00Z, after the cutoff
 ```
 
 A pass with no cutoff surveys everything.

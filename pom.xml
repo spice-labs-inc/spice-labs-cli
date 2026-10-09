@@ -102,6 +102,12 @@
             <artifactId>spice-config</artifactId>
             <version>1.0.0</version>
         </dependency>
+        <!-- Reads the dates inside an input file, for the artifact cutoff. -->
+        <dependency>
+            <groupId>io.spicelabs</groupId>
+            <artifactId>spice-probe</artifactId>
+            <version>0.1.0</version>
+        </dependency>
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
