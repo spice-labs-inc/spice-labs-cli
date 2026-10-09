@@ -104,9 +104,13 @@ widen a scope the pass had deliberately narrowed.
 ### The `x-cutoff` claim
 
 A pass may carry an **artifact cutoff** — artifacts published after that instant are out of
-scope for the whole run, along with anything that transitively contains them. It already
-constrains the built-in inventory analysis; a plugin that analyses or discovers artifacts is
-expected to honour it too, so that one pass scopes the run consistently.
+scope for the whole run. It already constrains the built-in inventory analysis, which leaves
+out any input file holding an entry dated after the cutoff; a plugin that analyses or
+discovers artifacts is expected to honour it too, so that one pass scopes the run
+consistently. Prefer a date the server gives for an artifact; for a file with none, use
+[spice-probe](https://github.com/spice-labs-inc/spice-probe)
+(`ArchiveDates.entryAfter(path, cutoff)`), as the CLI and Allspice do, so the rule is the same
+everywhere.
 
 The SPI hands over the raw claim rather than an interpretation, so read it like this:
 
