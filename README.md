@@ -381,7 +381,7 @@ collects `plugins/<name>/dist/**/*.jar`):
 
 ```bash
 ln -s /path/to/a-plugin plugins/a-plugin
-mvn -DskipTests package
+./mvnw -DskipTests package
 ```
 
 - **Authoring a plugin:** see [`docs/PLUGINS.md`](docs/PLUGINS.md).
@@ -395,7 +395,7 @@ Requirements: JDK 21+, Maven 3.6+
 ```bash
 git clone https://github.com/spice-labs-inc/spice-labs-cli.git
 cd spice-labs-cli
-mvn clean package -DskipTests
+./mvnw clean package -DskipTests
 ```
 
 To build with a plugin included (e.g. `allspice`'s `registry`), symlink it into `plugins/`
