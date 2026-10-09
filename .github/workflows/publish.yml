@@ -104,11 +104,11 @@ jobs:
           active-profile: github
 
       - name: Update version in pom.xml using Maven plugin
-        run: mvn --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
+        run: ./mvnw --batch-mode versions:set -DnewVersion=${{ steps.validate.outputs.VERSION }} -DgenerateBackupPoms=false
 
       - name: Build and publish all jars to GitHub Packages
         id: build-jars-github
-        run: mvn --batch-mode clean deploy -P github
+        run: ./mvnw --batch-mode clean deploy -P github
         env:
           GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -171,11 +171,16 @@ jobs:
           active-profile: github
 
       - name: Update version in pom.xml using Maven plugin
-        run: mvn --batch-mode versions:set -DnewVersion=${{ needs.publish_jars.outputs.version }} -DgenerateBackupPoms=false
+        run: ./mvnw --batch-mode versions:set -DnewVersion=${{ needs.publish_jars.outputs.version }} -DgenerateBackupPoms=false
 
+      # Maven comes from the wrapper (mvnw, .mvn/wrapper), pinned to 3.9.15, not from the runner image.
+      # Maven 3.10 (ubuntu-24.04 since 2026-10-04) writes local-repository bookkeeping
+      # (maven-metadata-local.xml, _remote.repositories) into central-publishing's staging
+      # directory, the plugin bundles it, and Central rejects the deployment: "Bundle has
+      # content that does NOT have a .pom file". spice-probe lost three versions to it.
       - name: Build and publish all jars to Maven Central
         run: |
-          mvn --batch-mode clean deploy -P maven-central \
+          ./mvnw --batch-mode clean deploy -P maven-central \
             -Dcentral.autoPublish=${{ needs.publish_jars.outputs.auto-publish }}
         env:
           GH_USERNAME: ${{ secrets.GH_USERNAME_SG }}

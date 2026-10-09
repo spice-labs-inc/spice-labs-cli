@@ -57,7 +57,7 @@
         <ginger-j.version>0.4.3</ginger-j.version>
         <goatrodeo.version>0.18.0</goatrodeo.version>
         <java-jwt.version>4.4.0</java-jwt.version>
-        <logback.version>1.5.18</logback.version>
+        <logback.version>1.5.38</logback.version>
         <picocli.version>4.7.6</picocli.version>
         <slf4j.version>2.0.17</slf4j.version>
         <spice-plugin-api.version>2.1.1</spice-plugin-api.version>
