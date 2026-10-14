@@ -714,9 +714,9 @@ foreach ($arg in $args) {
 }
 if (-not $env:SPICE_IMAGE) {
   switch ($features) {
-    "otpro" { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest" }
-    "it"    { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-it:latest" }
-    "itpro" { $imageRef = "ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest" }
+    "otpro" { $imageRef = "ghcr.io/spice-labs-inc/surveyor-otpro:latest" }
+    "it"    { $imageRef = "ghcr.io/spice-labs-inc/surveyor-it:latest" }
+    "itpro" { $imageRef = "ghcr.io/spice-labs-inc/surveyor-itpro:latest" }
   }
 }
 $args = $parsedArgs

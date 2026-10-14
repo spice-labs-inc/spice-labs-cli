@@ -2,7 +2,7 @@ name: Publish The Spice Labs Surveyor CLI Container Images
 
 # Publishing IS the release. A GitHub Release (vX.Y.Z tag, published) triggers
 # the full build graph: JARs -> Maven Central + GHP, OSS image -> Docker Hub +
-# GHCR. The edition images (spice-labs-cli-otpro, -it, -itpro) are published by
+# GHCR. The edition images (surveyor-otpro, -it, -itpro) are published by
 # surveyor-build, not here. survey.yml runs after this workflow via workflow_run
 # (by name) to survey the published artifacts, so the workflow name above must
 # not change without updating that trigger.

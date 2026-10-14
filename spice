@@ -762,13 +762,13 @@ done
 if [ -z "${SPICE_IMAGE:-}" ]; then
   case "${FEATURES}" in
   otpro)
-    IMAGE_REF="ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest"
+    IMAGE_REF="ghcr.io/spice-labs-inc/surveyor-otpro:latest"
     ;;
   it)
-    IMAGE_REF="ghcr.io/spice-labs-inc/spice-labs-cli-it:latest"
+    IMAGE_REF="ghcr.io/spice-labs-inc/surveyor-it:latest"
     ;;
   itpro)
-    IMAGE_REF="ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest"
+    IMAGE_REF="ghcr.io/spice-labs-inc/surveyor-itpro:latest"
     ;;
   esac
 fi
