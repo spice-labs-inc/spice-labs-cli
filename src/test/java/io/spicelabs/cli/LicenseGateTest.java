@@ -201,6 +201,13 @@ class LicenseGateTest {
     assertTrue(out.toString().contains("complete"), out.toString());
   }
 
+  /** Refused, it would exit with the gate's code and log why; the guide is read before there is a license. */
+  @Test
+  void unlicensed_docs_stillRuns() {
+    assertEquals(0, cli(LICENSED, null).execute("docs", "--commands"));
+    assertEquals("", loggedText());
+  }
+
   @Test
   void unlicensed_config_stillRuns() {
     assertEquals(0, cli(LICENSED, null).execute("config"));
@@ -215,7 +222,7 @@ class LicenseGateTest {
   @Test
   void exemptList_coversWhatTheWrapperAndInstallersInvoke() throws Exception {
     List<String> scripts = List.of("spice", "install.sh", "install.ps1", "spice.ps1");
-    for (String command : List.of("path-manifest", "generate-completion", "generate-powershell-completion")) {
+    for (String command : List.of("docs", "path-manifest", "generate-completion", "generate-powershell-completion")) {
       boolean invoked = false;
       for (String script : scripts) {
         Path file = Path.of(script);

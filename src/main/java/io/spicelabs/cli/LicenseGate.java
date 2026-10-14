@@ -62,6 +62,8 @@ final class LicenseGate {
   /**
    * Command paths, root omitted, that run without a license. An empty path is the bare root.
    * Kept as a set of joined paths so the test can compare it against what the wrapper calls.
+   * {@code docs} is among them: the guide explains how to get and set a Spice License, so it
+   * has to be readable before there is one.
    */
   static final Set<String> EXEMPT = Set.of(
       "",
@@ -70,6 +72,7 @@ final class LicenseGate {
       "pass decode",
       "config",
       "config explain",
+      "docs",
       "path-manifest",
       "generate-completion",
       "generate-powershell-completion");
