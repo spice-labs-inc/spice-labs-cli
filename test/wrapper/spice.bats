@@ -48,8 +48,8 @@ teardown() {
 
 # Remove stale IT/IT Pro tags so they don't leak into local dev
 teardown_file() {
-  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-it:latest 2>/dev/null || true
-  docker rmi ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest 2>/dev/null || true
+  docker rmi ghcr.io/spice-labs-inc/surveyor-it:latest 2>/dev/null || true
+  docker rmi ghcr.io/spice-labs-inc/surveyor-itpro:latest 2>/dev/null || true
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ MANIFEST
 @test "--features it switches to IT image and strips flag" {
   # Unset SPICE_IMAGE so --features can select the IT image.
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-it:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/surveyor-it:latest"
 
   run "$WRAPPER" --features it survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
@@ -243,7 +243,7 @@ MANIFEST
 
 @test "--features=it switches to IT image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-it:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/surveyor-it:latest"
 
   run "$WRAPPER" --features=it survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
@@ -264,7 +264,7 @@ MANIFEST
 
 @test "--features otpro switches to OT Pro image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/surveyor-otpro:latest"
 
   run "$WRAPPER" --features otpro registry discover
   [ "$status" -eq 0 ]
@@ -276,7 +276,7 @@ MANIFEST
 
 @test "--features=otpro switches to OT Pro image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/surveyor-otpro:latest"
 
   run "$WRAPPER" --features=otpro registry discover
   [ "$status" -eq 0 ]
@@ -336,7 +336,7 @@ MANIFEST
 
 @test "--features itpro switches to IT Pro image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/surveyor-itpro:latest"
 
   run "$WRAPPER" --features itpro survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]
@@ -349,7 +349,7 @@ MANIFEST
 
 @test "--features=itpro switches to IT Pro image and strips flag" {
   unset SPICE_IMAGE
-  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest"
+  docker tag "$TEST_IMAGE" "ghcr.io/spice-labs-inc/surveyor-itpro:latest"
 
   run "$WRAPPER" --features=itpro survey inventory myapp "$TEST_TMPDIR/input"
   [ "$status" -eq 0 ]

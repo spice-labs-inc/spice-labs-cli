@@ -658,7 +658,7 @@ Describe 'spice.ps1 wrapper' {
     It '--features it switches to IT image and strips flag' {
       $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'it', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-it:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/surveyor-it:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
       $r.ContainerArgs | Should -Not -Contain 'it'
       $r.ContainerArgs | Should -Contain 'survey'
@@ -669,7 +669,7 @@ Describe 'spice.ps1 wrapper' {
     It '--features=it switches to IT image and strips flag' {
       $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=it', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-it:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/surveyor-it:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
       $r.ContainerArgs | Should -Not -Contain 'it'
     }
@@ -678,7 +678,7 @@ Describe 'spice.ps1 wrapper' {
       $r = Invoke-SpiceWrapper -SpiceImage 'spice-wrapper-custom' -Arguments @('--features', 'it', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
       $r.DockerRunArgs | Should -Contain 'spice-wrapper-custom'
-      $r.DockerRunArgs | Should -Not -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-it:latest'
+      $r.DockerRunArgs | Should -Not -Contain 'ghcr.io/spice-labs-inc/surveyor-it:latest'
       $r.ContainerArgs | Should -Contain 'survey'
       $r.ContainerArgs | Should -Contain 'inventory'
       $r.ContainerArgs | Should -Contain 'myapp'
@@ -687,7 +687,7 @@ Describe 'spice.ps1 wrapper' {
     It '--features otpro switches to OT Pro image and strips flag' {
       $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'otpro', 'registry', 'discover')
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/surveyor-otpro:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
       $r.ContainerArgs | Should -Not -Contain 'otpro'
       $r.ContainerArgs | Should -Contain 'registry'
@@ -697,7 +697,7 @@ Describe 'spice.ps1 wrapper' {
     It '--features=otpro switches to OT Pro image and strips flag' {
       $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=otpro', 'registry', 'discover')
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-otpro:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/surveyor-otpro:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
       $r.ContainerArgs | Should -Not -Contain 'otpro'
     }
@@ -723,7 +723,7 @@ Describe 'spice.ps1 wrapper' {
     It '--features itpro switches to IT Pro image and strips flag' {
       $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features', 'itpro', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/surveyor-itpro:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
       $r.ContainerArgs | Should -Not -Contain 'itpro'
       $r.ContainerArgs | Should -Contain 'survey'
@@ -734,7 +734,7 @@ Describe 'spice.ps1 wrapper' {
     It '--features=itpro switches to IT Pro image and strips flag' {
       $r = Invoke-SpiceWrapper -SpiceImage $null -Arguments @('--features=itpro', 'survey', 'inventory', 'myapp', $script:InputDir)
       $r.ExitCode | Should -Be 0
-      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/spice-labs-cli-itpro:latest'
+      $r.DockerRunArgs | Should -Contain 'ghcr.io/spice-labs-inc/surveyor-itpro:latest'
       $r.ContainerArgs | Should -Not -Contain '--features'
       $r.ContainerArgs | Should -Not -Contain 'itpro'
     }
