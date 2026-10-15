@@ -80,8 +80,18 @@ class MockDocker {
       Console.WriteLine("done");
       return 0;
     }
-    // Phase 4: RuntimeCollect
-    if (entrypoint == "java") return 0;
+    // Phases 0 and 4 and the probe download: RuntimeCollect. MOCK_RUNTIME_COLLECT_DIR keeps
+    // what each call was given, in <mode>.txt (check-license, download-probes or collect).
+    if (entrypoint == "java") {
+      var rcDir = Environment.GetEnvironmentVariable("MOCK_RUNTIME_COLLECT_DIR");
+      int main = Array.IndexOf(args, "io.spicelabs.cli.RuntimeCollect");
+      if (!string.IsNullOrEmpty(rcDir) && main >= 0) {
+        var rc = args.Skip(main + 1).ToArray();
+        string mode = rc.Length > 0 && rc[0].StartsWith("--") ? rc[0].Substring(2) : "collect";
+        File.WriteAllLines(Path.Combine(rcDir, mode + ".txt"), rc);
+      }
+      return 0;
+    }
     // Write all args to capture file
     var af = Environment.GetEnvironmentVariable("DOCKER_ARGS_FILE");
     if (!string.IsNullOrEmpty(af)) File.WriteAllLines(af, args);
@@ -363,8 +373,18 @@ if [ "`$_entrypoint" = "sh" ] && [ -n "`$_vol_host" ] && [ -d "`$_vol_host" ]; t
   exit 0
 fi
 
-# Phase 4: RuntimeCollect (--entrypoint java) — just succeed
+# Phases 0 and 4 and the probe download: RuntimeCollect (--entrypoint java) — succeed,
+# keeping what each call was given (mirrors the C# mock)
 if [ "`$_entrypoint" = "java" ]; then
+  if [ -n "`${MOCK_RUNTIME_COLLECT_DIR:-}" ]; then
+    _rc=0; _mode=collect; _out=()
+    for _arg in "`$@"; do
+      [ "`$_rc" = 1 ] && _out+=("`$_arg")
+      [ "`$_arg" = io.spicelabs.cli.RuntimeCollect ] && _rc=1
+    done
+    case "`${_out[0]:-}" in --*) _mode="`${_out[0]#--}" ;; esac
+    printf '%s\n' "`${_out[@]}" > "`$MOCK_RUNTIME_COLLECT_DIR/`$_mode.txt"
+  fi
   exit 0
 fi
 
@@ -1395,6 +1415,49 @@ if (`$jto -match 'settings=([^,]+)') {
         $workdir | Should -Not -BeNullOrEmpty
         (Join-Path $workdir.FullName 'spice-jfr.jfc') | Should -Exist
       } finally {
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
+      }
+    }
+
+    It 'hands --log-level and --chunk-size (<Form>) to the license check and the parse + upload step' -TestCases @(
+      @{ Form = 'separate'; Options = @('--log-level', 'debug', '--chunk-size', '8') }
+      @{ Form = 'equals'; Options = @('--log-level=debug', '--chunk-size=8') }
+    ) {
+      param($Form, $Options)
+      $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-opts-$Form-$PID"
+      $rcDir = Join-Path $script:TestDir "rc-$Form"
+      New-Item -ItemType Directory -Path $rcDir -Force | Out-Null
+      $cmd = New-TestScript -Name "noop-opts-$Form" -WinBody '' -UnixBody 'true'
+      $env:MOCK_RUNTIME_COLLECT_DIR = $rcDir
+      try {
+        $r = Invoke-SpiceWrapper -Arguments (@('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir) + $Options + @('--', $cmd))
+        $r.ExitCode | Should -Be 0
+        foreach ($call in @('check-license', 'collect')) {
+          $given = @(Get-Content (Join-Path $rcDir "$call.txt"))
+          $given[[array]::IndexOf($given, '--log-level') + 1] | Should -Be 'debug'
+          $given[[array]::IndexOf($given, '--chunk-size') + 1] | Should -Be '8'
+        }
+        @(Get-Content (Join-Path $rcDir 'collect.txt'))[0] | Should -Be 'myapp'
+      } finally {
+        Remove-Item env:MOCK_RUNTIME_COLLECT_DIR -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
+      }
+    }
+
+    It 'passes no --log-level or --chunk-size when none was given' {
+      $outdir = Join-Path (Join-Path $HOME '.spicelabs') "test-rt-noopts-$PID"
+      $rcDir = Join-Path $script:TestDir 'rc-none'
+      New-Item -ItemType Directory -Path $rcDir -Force | Out-Null
+      $cmd = New-TestScript -Name 'noop-noopts' -WinBody '' -UnixBody 'true'
+      $env:MOCK_RUNTIME_COLLECT_DIR = $rcDir
+      try {
+        $r = Invoke-SpiceWrapper -Arguments @('survey', 'runtime', 'myapp', '--jfr', '--no-upload', '--output', $outdir, '--', $cmd)
+        $given = @(Get-Content (Join-Path $rcDir 'collect.txt'))
+        $given | Should -Contain '--no-upload'
+        $given | Should -Not -Contain '--log-level'
+        $given | Should -Not -Contain '--chunk-size'
+      } finally {
+        Remove-Item env:MOCK_RUNTIME_COLLECT_DIR -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force $outdir -ErrorAction SilentlyContinue
       }
     }
