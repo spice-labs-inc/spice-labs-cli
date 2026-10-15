@@ -1261,6 +1261,8 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   RT_SUBJECT=""
   RT_OUTPUT_PATH=""
   RT_ANCHOR=""
+  RT_LOG_LEVEL=""
+  RT_CHUNK_SIZE=""
   RT_NO_UPLOAD=0
   RT_NATIVE_ONLY=0
   RT_KEEP_RECORDING=0
@@ -1316,6 +1318,30 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
       continue
     fi
 
+    # Capture --log-level and --chunk-size values (for the parse + upload step in the container)
+    if [[ "$arg" == --log-level=* ]]; then
+      RT_LOG_LEVEL="${arg#--log-level=}"
+      continue
+    elif [[ "$rt_prev" == "--log-level" ]]; then
+      RT_LOG_LEVEL="$arg"
+      rt_prev=""
+      continue
+    elif [[ "$arg" == "--log-level" ]]; then
+      rt_prev="$arg"
+      continue
+    fi
+    if [[ "$arg" == --chunk-size=* ]]; then
+      RT_CHUNK_SIZE="${arg#--chunk-size=}"
+      continue
+    elif [[ "$rt_prev" == "--chunk-size" ]]; then
+      RT_CHUNK_SIZE="$arg"
+      rt_prev=""
+      continue
+    elif [[ "$arg" == "--chunk-size" ]]; then
+      rt_prev="$arg"
+      continue
+    fi
+
     # Handle value-consuming flags
     if [ -n "$rt_prev" ]; then
       RT_CLI_ARGS+=("$rt_prev" "$arg")
@@ -1362,6 +1388,10 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
     exit 1
   fi
 
+  RT_OPTION_ARGS=()
+  [ -n "$RT_LOG_LEVEL" ] && RT_OPTION_ARGS+=("--log-level" "$RT_LOG_LEVEL")
+  [ -n "$RT_CHUNK_SIZE" ] && RT_OPTION_ARGS+=("--chunk-size" "$RT_CHUNK_SIZE")
+
   # Create workdir under the output dir (or default location)
   RT_BASE="${RT_OUTPUT_PATH:-$HOME/.spicelabs/runtime-survey}"
   mkdir -p "$RT_BASE"
@@ -1377,7 +1407,8 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
       -e SPICE_LICENSE \
       "$IMAGE_REF" \
       -cp "${SPICE_LABS_CLI_JAR}" \
-      io.spicelabs.cli.RuntimeCollect --check-license >/dev/null; then
+      io.spicelabs.cli.RuntimeCollect --check-license \
+      ${RT_OPTION_ARGS[@]+"${RT_OPTION_ARGS[@]}"} >/dev/null; then
     rm -rf "$RT_WORKDIR"
     exit 1
   fi
@@ -1464,6 +1495,7 @@ if [ "$IS_RUNTIME_SURVEY" = "1" ]; then
   echo "📊 Analyzing recordings..." >&2
   RT_COLLECT_ARGS=("$RT_SUBJECT" "$RT_WORKDIR")
   [ "$RT_NO_UPLOAD" = "1" ] && RT_COLLECT_ARGS+=("--no-upload")
+  RT_COLLECT_ARGS+=(${RT_OPTION_ARGS[@]+"${RT_OPTION_ARGS[@]}"})
 
   RT_ANCHOR_MOUNT=()
   if [ -n "$RT_ANCHOR" ]; then

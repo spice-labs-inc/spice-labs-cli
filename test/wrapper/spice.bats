@@ -934,6 +934,82 @@ SCRIPT
   rm -rf "$outdir"
 }
 
+# A target that leaves a fake recording where JAVA_TOOL_OPTIONS points, so the
+# wrapper goes on to the parse + upload step (the mock image's java echoes its args).
+fake_recording_script() {
+  local script="$TEST_TMPDIR/fake-recording.sh"
+  cat > "$script" <<'SCRIPT'
+#!/bin/bash
+recpath=$(echo "$JAVA_TOOL_OPTIONS" | sed -n 's/.*filename=\([^ ,]*\).*/\1/p')
+echo "fake-jfr" > "$(dirname "$recpath")/recording-$$.jfr"
+SCRIPT
+  chmod +x "$script"
+  echo "$script"
+}
+
+# Assert that the container got an option immediately followed by its value
+assert_arg_pair() {
+  container_args | grep -A1 -xF -- "$1" | tail -n 1 | grep -qxF -- "$2" || {
+    echo "expected container args: $1 $2"
+    echo "actual args:"
+    container_args | sed 's/^/  /'
+    return 1
+  }
+}
+
+@test "runtime survey: --log-level and --chunk-size reach the parse + upload step" {
+  local script
+  script="$(fake_recording_script)"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload --log-level debug --chunk-size 8 -- "$script"
+  [ "$status" -eq 0 ]
+  assert_arg "io.spicelabs.cli.RuntimeCollect"
+  assert_arg "myapp"
+  assert_arg "--no-upload"
+  assert_arg_pair "--log-level" "debug"
+  assert_arg_pair "--chunk-size" "8"
+}
+
+@test "runtime survey: --log-level=X and --chunk-size=N reach the parse + upload step" {
+  local script
+  script="$(fake_recording_script)"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload --log-level=warn --chunk-size=16 -- "$script"
+  [ "$status" -eq 0 ]
+  assert_arg_pair "--log-level" "warn"
+  assert_arg_pair "--chunk-size" "16"
+  refute_arg "--log-level=warn"
+  refute_arg "--chunk-size=16"
+}
+
+@test "runtime survey: no --log-level or --chunk-size unless given" {
+  local script
+  script="$(fake_recording_script)"
+  run "$WRAPPER" survey runtime myapp --jfr --no-upload -- "$script"
+  [ "$status" -eq 0 ]
+  assert_arg "--no-upload"
+  refute_arg "--log-level"
+  refute_arg "--chunk-size"
+}
+
+@test "runtime survey: --log-level and --chunk-size reach the license check before the target runs" {
+  # The license check is the first java call; a container that refuses it stands in
+  # for a bad value, which must stop the run before the target command starts.
+  local mockbin="$TEST_TMPDIR/mockbin" seen="$TEST_TMPDIR/license-args" marker="$TEST_TMPDIR/ran"
+  mkdir -p "$mockbin"
+  cat > "$mockbin/docker" <<MOCK
+#!/bin/bash
+case " \$* " in
+  *" --check-license "*) printf '%s\n' "\$@" > "$seen"; exit 1 ;;
+esac
+exec "$(command -v docker)" "\$@"
+MOCK
+  chmod +x "$mockbin/docker"
+  PATH="$mockbin:$PATH" run "$WRAPPER" survey runtime myapp --jfr --log-level debug --chunk-size=0 -- touch "$marker"
+  [ "$status" -eq 1 ]
+  [ ! -e "$marker" ]
+  grep -A1 -xF -- "--log-level" "$seen" | tail -n 1 | grep -qxF debug
+  grep -A1 -xF -- "--chunk-size" "$seen" | tail -n 1 | grep -qxF 0
+}
+
 # ── Path edge cases ──────────────────────────────────────────────────────────
 
 @test "path with spaces: directory input" {

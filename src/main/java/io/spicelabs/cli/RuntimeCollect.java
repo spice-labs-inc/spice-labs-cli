@@ -17,6 +17,8 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
 import io.spicelabs.coordinates.Coordinates;
 import io.spicelabs.ginger.Ginger;
 import picocli.CommandLine.Command;
@@ -25,11 +27,67 @@ import picocli.CommandLine.Command;
  * Internal entry point used by the wrapper script to parse JFR recordings
  * and upload results. Not a user-facing command.
  *
- * <p>Usage: java -cp spice-labs-cli.jar io.spicelabs.cli.RuntimeCollect &lt;subject&gt; &lt;dir&gt; [--no-upload]
+ * <p>Usage: java -cp spice-labs-cli.jar io.spicelabs.cli.RuntimeCollect &lt;subject&gt; &lt;dir&gt;
+ * [--no-upload] [--anchor &lt;file&gt;] [--log-level &lt;level&gt;] [--chunk-size &lt;MB&gt;]
  */
 public class RuntimeCollect {
 
     private static final Logger log = LoggerFactory.getLogger(RuntimeCollect.class);
+
+    /** The options the wrapper hands on from {@code spice survey runtime}. */
+    record Options(boolean noUpload, Path anchor, Level logLevel, Integer chunkSizeMB) {}
+
+    static Options parseOptions(String[] args, int from) {
+        boolean noUpload = false;
+        Path anchor = null;
+        Level logLevel = LogLevelParser.parse(null);
+        Integer chunkSizeMB = null;
+        for (int i = from; i < args.length; i++) {
+            switch (args[i]) {
+                case "--no-upload" -> noUpload = true;
+                case "--anchor" -> {
+                    if (i + 1 < args.length) {
+                        anchor = Path.of(args[++i]);
+                    }
+                }
+                case "--log-level" -> logLevel = LogLevelParser.parse(value(args, ++i, "--log-level"));
+                case "--chunk-size" -> chunkSizeMB = chunkSize(value(args, ++i, "--chunk-size"));
+                default -> { }
+            }
+        }
+        return new Options(noUpload, anchor, logLevel, chunkSizeMB);
+    }
+
+    private static String value(String[] args, int i, String option) {
+        if (i >= args.length) {
+            throw new IllegalArgumentException(option + " needs a value");
+        }
+        return args[i];
+    }
+
+    private static Integer chunkSize(String raw) {
+        int mb;
+        try {
+            mb = Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            mb = 0;
+        }
+        if (mb < 1) {
+            throw new IllegalArgumentException(
+                    "Invalid --chunk-size '" + raw + "'. Expected a whole number of MB, 1 or more");
+        }
+        return mb;
+    }
+
+    private static Options parseOptionsOrExit(String[] args, int from) {
+        try {
+            return parseOptions(args, from);
+        } catch (IllegalArgumentException e) {
+            System.err.println("❌ " + e.getMessage());
+            System.exit(1);
+            return null;
+        }
+    }
 
     public static void main(String[] args) throws Exception {
         // This is an entry point in its own right, so it builds the run's context rather than
@@ -56,7 +114,10 @@ public class RuntimeCollect {
         // License check only: the wrapper runs this before a runtime survey starts, because in
         // Docker mode it runs the user's program under the agent itself and only reaches this
         // class afterwards. Refusing then would waste the whole run; refusing here does not.
+        // The wrapper passes the survey's options here too, so a bad value is refused before the
+        // target program runs rather than after.
         if (args.length >= 1 && "--check-license".equals(args[0])) {
+            parseOptionsOrExit(args, 1);
             System.exit(0);
         }
 
@@ -89,21 +150,19 @@ public class RuntimeCollect {
         }
 
         if (args.length < 2) {
-            System.err.println("Usage: RuntimeCollect <subject> <dir> [--no-upload]");
+            System.err.println("Usage: RuntimeCollect <subject> <dir> [--no-upload] [--anchor <file>]"
+                    + " [--log-level <level>] [--chunk-size <MB>]");
             System.exit(1);
         }
 
         String subject = args[0];
         Path dir = Path.of(args[1]);
-        boolean noUpload = false;
-        Path anchorPath = null;
-        for (int i = 2; i < args.length; i++) {
-            if ("--no-upload".equals(args[i])) {
-                noUpload = true;
-            } else if ("--anchor".equals(args[i]) && i + 1 < args.length) {
-                anchorPath = Path.of(args[++i]);
-            }
-        }
+        Options options = parseOptionsOrExit(args, 2);
+        boolean noUpload = options.noUpload();
+        Path anchorPath = options.anchor();
+        ((LoggerContext) LoggerFactory.getILoggerFactory())
+                .getLogger(Logger.ROOT_LOGGER_NAME)
+                .setLevel(options.logLevel());
 
         if (!Files.isDirectory(dir)) {
             log.error("Directory not found: {}", dir);
@@ -223,6 +282,9 @@ public class RuntimeCollect {
                     .submissionTimestamp(survey.submissionTimestamp())
                     .idempotencyKey(survey.idempotencyKey())
                     .userAgent(survey.userAgent());
+            if (options.chunkSizeMB() != null) {
+                ginger.targetChunkSizeMB(options.chunkSizeMB());
+            }
             if (analyzeProgress != null) {
                 analyzeProgress.building();
                 ginger.afterBundleWrapped(analyzeProgress::complete);

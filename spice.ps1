@@ -1164,6 +1164,8 @@ if ($isRuntimeSurvey) {
   $rtSubject = ""
   $rtOutputPath = ""
   $rtAnchor = ""
+  $rtLogLevel = ""
+  $rtChunkSize = ""
   $rtNoUpload = $false
   $rtNativeOnly = $false
   $rtKeepRecording = $false
@@ -1196,6 +1198,14 @@ if ($isRuntimeSurvey) {
     if ($arg -match '^--anchor=(.*)$') { $rtAnchor = $matches[1]; continue }
     elseif ($rtPrev -eq '--anchor') { $rtAnchor = $arg; $rtPrev = ""; continue }
     elseif ($arg -eq '--anchor') { $rtPrev = $arg; continue }
+
+    # Capture --log-level and --chunk-size values (for the parse + upload step in the container)
+    if ($arg -match '^--log-level=(.*)$') { $rtLogLevel = $matches[1]; continue }
+    elseif ($rtPrev -eq '--log-level') { $rtLogLevel = $arg; $rtPrev = ""; continue }
+    elseif ($arg -eq '--log-level') { $rtPrev = $arg; continue }
+    if ($arg -match '^--chunk-size=(.*)$') { $rtChunkSize = $matches[1]; continue }
+    elseif ($rtPrev -eq '--chunk-size') { $rtChunkSize = $arg; $rtPrev = ""; continue }
+    elseif ($arg -eq '--chunk-size') { $rtPrev = $arg; continue }
 
     # Handle value-consuming flags
     if ($rtPrev) {
@@ -1238,6 +1248,10 @@ if ($isRuntimeSurvey) {
     exit 1
   }
 
+  $rtOptionArgs = @()
+  if ($rtLogLevel) { $rtOptionArgs += @('--log-level', $rtLogLevel) }
+  if ($rtChunkSize) { $rtOptionArgs += @('--chunk-size', $rtChunkSize) }
+
   # Create workdir under the output dir (or default location)
   $rtBase = if ($rtOutputPath) { $rtOutputPath } else { Join-Path (Join-Path $HOME '.spicelabs') 'runtime-survey' }
   if (-not (Test-Path $rtBase)) { New-Item -ItemType Directory -Path $rtBase -Force | Out-Null }
@@ -1271,6 +1285,7 @@ if ($isRuntimeSurvey) {
   $lcArgs += @('-e', "SPICE_LICENSE=$spiceLicense")
   $lcArgs += @("$imageRef")
   $lcArgs += @('-cp', $jar, 'io.spicelabs.cli.RuntimeCollect', '--check-license')
+  $lcArgs += $rtOptionArgs
   & docker @lcArgs > $null
   if ($LASTEXITCODE -ne 0) {
     Remove-Item -Recurse -Force $rtWorkdir -ErrorAction SilentlyContinue
@@ -1344,6 +1359,7 @@ if ($isRuntimeSurvey) {
   Write-Stderr "Analyzing recordings..."
   $rtCollectArgs = @($rtSubject, $rtWorkdirDocker)
   if ($rtNoUpload) { $rtCollectArgs += '--no-upload' }
+  $rtCollectArgs += $rtOptionArgs
 
   $rtAnchorMount = @()
   if ($rtAnchor) {
