@@ -28,6 +28,12 @@ BLOCK_BEGIN="# >>> spice >>>"
 BLOCK_END="# <<< spice <<<"
 NL='
 '
+CR=$(printf '\r')
+BS=$(printf '\b')
+DEL=$(printf '\177')
+ESC=$(printf '\033')
+EOT=$(printf '\004')
+NAK=$(printf '\025')
 
 say() { printf '%s\n' "$*"; }
 die() { printf '❌ %s\n' "$*" >&2; exit 1; }
@@ -196,14 +202,49 @@ confirm() {
   done
 }
 
-# Reads a line without echoing it. Canonical mode is off as well, because it
-# limits a line to 1024 bytes on macOS, and a pasted credential can be longer.
-# Both change before the prompt appears, so nothing typed after it is echoed.
+# Reads a line, echoing a * for each character. Canonical mode is off, because
+# it limits a line to 1024 bytes on macOS and a pasted credential can be
+# longer, so editing keys are handled here: Backspace, and Ctrl-U to erase
+# everything. Echo and canonical mode change before the prompt appears, so
+# nothing typed after it is shown.
 ask_secret() {
   STTY_SAVED=$(stty -g </dev/tty)
   stty -echo -icanon min 1 time 0 </dev/tty
   printf '%s' "$1" >/dev/tty
-  IFS= read -r REPLY </dev/tty || REPLY=""
+  REPLY=""
+  as_done=0
+  while [ "$as_done" = 0 ]; do
+    # Whatever has been typed or pasted so far; x keeps trailing newlines
+    as_chunk=$(dd bs=4096 count=1 2>/dev/null </dev/tty; printf x)
+    as_chunk=${as_chunk%x}
+    [ -n "$as_chunk" ] || break
+    as_echo=""
+    while [ -n "$as_chunk" ]; do
+      as_rest=${as_chunk#?}
+      as_c=${as_chunk%"$as_rest"}
+      as_chunk=$as_rest
+      case "$as_c" in
+        "$NL"|"$CR"|"$EOT") as_done=1; break ;;
+        "$BS"|"$DEL")
+          if [ -n "$REPLY" ]; then
+            REPLY=${REPLY%?}
+            as_echo="$as_echo$BS $BS"
+          fi
+          ;;
+        "$NAK")
+          while [ -n "$REPLY" ]; do
+            REPLY=${REPLY%?}
+            as_echo="$as_echo$BS $BS"
+          done
+          ;;
+        # Drop the rest of an escape sequence, such as an arrow key
+        "$ESC") break ;;
+        [[:cntrl:]]) ;;
+        *) REPLY="$REPLY$as_c"; as_echo="$as_echo*" ;;
+      esac
+    done
+    printf '%s' "$as_echo" >/dev/tty
+  done
   stty "$STTY_SAVED" </dev/tty
   STTY_SAVED=""
   printf '\n' >/dev/tty
@@ -237,7 +278,7 @@ choose_credential() {
   done
 
   while :; do
-    ask_secret "Paste your $cc_name (hidden), or the path to a file containing it: "
+    ask_secret "Paste your $cc_name, or the path to a file containing it: "
     cc_input=$REPLY
     case "$cc_input" in
       "~"/*) cc_input="$HOME/${cc_input#"~/"}" ;;
