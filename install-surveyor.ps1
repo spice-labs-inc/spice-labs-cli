@@ -70,6 +70,24 @@ function Install-SpiceSurveyor {
 
   # ── Output ─────────────────────────────────────────────────────────────────
 
+  # Symbols are built from code points, so that every string here is ASCII.
+  # Windows PowerShell reads a script without a BOM in the ANSI code page, where
+  # some bytes of UTF-8 emoji are curly quotes, which end strings; and `irm`
+  # decodes one served without a charset as ISO-8859-1.
+  function U([int[]]$CodePoints) { ($CodePoints | ForEach-Object { [char]::ConvertFromUtf32($_) }) -join '' }
+  $Bullet = U 0x2022
+  $IconBulb = U 0x1F4A1
+  $IconCheck = U 0x2705
+  $IconCross = U 0x274C
+  $IconFolder = U 0x1F4C1
+  $IconKey = U 0x1F511
+  $IconLock = U 0x1F510
+  $IconMemo = U 0x1F4DD
+  $IconPackage = U 0x1F4E6
+  $IconUndo = U 0x21A9, 0xFE0F
+  $IconWarn = U 0x26A0, 0xFE0F
+
+
   # Paths, commands and variable names are shown in cyan italics on a terminal
   $styled = $Host.UI.SupportsVirtualTerminal -and -not [Console]::IsOutputRedirected `
     -and -not $env:NO_COLOR -and $env:TERM -ne 'dumb'
@@ -91,7 +109,7 @@ function Install-SpiceSurveyor {
 
   # Stops the installation; the message has been shown, and rollback follows
   function Die([string]$Text) {
-    Write-Host "❌ $Text"
+    Write-Host "$($IconCross) $Text"
     throw (New-Object System.OperationCanceledException "spice-install")
   }
 
@@ -139,7 +157,7 @@ function Install-SpiceSurveyor {
 
   function Undo-Journal {
     if ($journal.Count -eq 0) { return }
-    Write-Host "↩️  Installation failed; undoing the changes made so far."
+    Write-Host "$($IconUndo)  Installation failed; undoing the changes made so far."
     for ($i = $journal.Count - 1; $i -ge 0; $i--) {
       $entry = $journal[$i]
       try {
@@ -155,7 +173,7 @@ function Install-SpiceSurveyor {
           'userpath' { Set-UserPath $entry.Value }
         }
       } catch {
-        Write-Host "⚠️  Couldn't undo a change to $(C $entry.Target): $_"
+        Write-Host "$($IconWarn)  Couldn't undo a change to $(C $entry.Target): $_"
       }
     }
     $journal.Clear()
@@ -365,7 +383,7 @@ function Install-SpiceSurveyor {
 
   function Select-Credential {
     Say ""
-    Say "🔑 $(C spice) needs a Spice License or a Spice Pass to run."
+    Say "$($IconKey) $(C spice) needs a Spice License or a Spice Pass to run."
     $have = $false
     foreach ($var in @('SPICE_LICENSE', 'SPICE_PASS')) {
       $value = [Environment]::GetEnvironmentVariable($var)
@@ -486,7 +504,7 @@ function Install-SpiceSurveyor {
     $image.Password = $env:SPICE_PASSWORD
     if (-not $image.Password -and $interactive) {
       Say ""
-      Say "🔐 Downloading $(Get-EditionTitle $image.Edition) needs a login to $(C $Registry)."
+      Say "$($IconLock) Downloading $(Get-EditionTitle $image.Edition) needs a login to $(C $Registry)."
       $image.Password = Read-Password "Password for $(C $LoginUser): "
     }
     if (-not $image.Password) {
@@ -564,7 +582,7 @@ function Install-SpiceSurveyor {
     }
 
     Say ""
-    Say "📁 Where should $(C spice) be installed?"
+    Say "$($IconFolder) Where should $(C spice) be installed?"
     Say ""
     for ($i = 0; $i -lt $list.Count; $i++) {
       $note = ""
@@ -627,12 +645,12 @@ function Install-SpiceSurveyor {
     if (-not $interactive) { return @($candidates | Where-Object { $_.Default } | ForEach-Object { $_.Path }) }
     if ($candidates.Count -eq 1) {
       Say ""
-      if (Confirm "📝 Set up $(C spice) in $(P $candidates[0].Path)?" $true) { return @($candidates[0].Path) }
+      if (Confirm "$($IconMemo) Set up $(C spice) in $(P $candidates[0].Path)?" $true) { return @($candidates[0].Path) }
       return @()
     }
 
     Say ""
-    Say "📝 Which PowerShell profiles should set up $(C spice)?"
+    Say "$($IconMemo) Which PowerShell profiles should set up $(C spice)?"
     Say ""
     $defaults = @()
     for ($i = 0; $i -lt $candidates.Count; $i++) {
@@ -771,7 +789,7 @@ function Install-SpiceSurveyor {
   if ($interactive -and ([Console]::IsInputRedirected -or -not [Environment]::UserInteractive -or
       ([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-NonI' }))) {
     $interactive = $false
-    Say "💡 No console to ask questions on, so installing with the defaults."
+    Say "$($IconBulb) No console to ask questions on, so installing with the defaults."
   }
   if (-not $Dir -and $env:SPICE_INSTALL_DIR) { $Dir = $env:SPICE_INSTALL_DIR }
   $modifyProfile = -not ($NoModifyProfile -or $env:SPICE_INSTALL_NO_MODIFY_PROFILE -eq '1')
@@ -834,14 +852,14 @@ function Install-SpiceSurveyor {
 
     Say ""
     Say "Ready to install:"
-    Say "  • $(C spice) in $(P $installDir)"
-    if ($cred.Var) { Say "  • $(C $cred.Var) saved in $(P $CredentialsFile)" }
-    if ($image.Login) { Say "  • a Docker login to $(C $Registry)" }
-    Say "  • the image $(C $image.Ref), with tab completion from it"
-    if ($image.Action -eq 'write') { Say "  • $(C SPICE_IMAGE) saved in $(P $EnvironmentFile)" }
-    if ($image.Action -eq 'remove') { Say "  • $(P $EnvironmentFile) removed, so $(C spice) uses its default image" }
-    if ($userPath) { Say "  • $(P $installDir) added to your user $(C PATH)" }
-    foreach ($c in $changedProfiles) { Say "  • $(C spice) set up in $(P $c.Path)" }
+    Say "  $($Bullet) $(C spice) in $(P $installDir)"
+    if ($cred.Var) { Say "  $($Bullet) $(C $cred.Var) saved in $(P $CredentialsFile)" }
+    if ($image.Login) { Say "  $($Bullet) a Docker login to $(C $Registry)" }
+    Say "  $($Bullet) the image $(C $image.Ref), with tab completion from it"
+    if ($image.Action -eq 'write') { Say "  $($Bullet) $(C SPICE_IMAGE) saved in $(P $EnvironmentFile)" }
+    if ($image.Action -eq 'remove') { Say "  $($Bullet) $(P $EnvironmentFile) removed, so $(C spice) uses its default image" }
+    if ($userPath) { Say "  $($Bullet) $(P $installDir) added to your user $(C PATH)" }
+    foreach ($c in $changedProfiles) { Say "  $($Bullet) $(C spice) set up in $(P $c.Path)" }
     if ($interactive -and -not (Confirm "Proceed with installation?" $true)) {
       Say "Nothing was changed."
       $completed = $true
@@ -851,7 +869,7 @@ function Install-SpiceSurveyor {
     # 3. Download the script and the image, and generate from the image.
 
     Say ""
-    Say "📦 Downloading $(C spice)"
+    Say "$($IconPackage) Downloading $(C spice)"
     $script = Join-Path $stage 'spice.ps1'
     try {
       Invoke-WebRequest -UseBasicParsing -Uri $ScriptUrl -OutFile $script
@@ -861,7 +879,7 @@ function Install-SpiceSurveyor {
     if (-not ([IO.File]::ReadAllText($script).StartsWith('#'))) { Die "The download from $(C $ScriptUrl) isn't a script." }
 
     if ($image.Login) { Invoke-RegistryLogin }
-    Say "📦 Downloading $(C $image.Ref)"
+    Say "$($IconPackage) Downloading $(C $image.Ref)"
     if ($interactive) {
       $ErrorActionPreference = 'Continue'
       & docker pull $image.Ref
@@ -951,37 +969,37 @@ function Install-SpiceSurveyor {
     # 5. Report.
 
     Say ""
-    Say "✅ $(C spice) installed in $(P $installDir)"
+    Say "$($IconCheck) $(C spice) installed in $(P $installDir)"
     if ($existing -and $existing -ne $installDir) {
-      Say "💡 Another $(C spice) is still installed in $(P $existing); remove it if you no longer need it."
+      Say "$($IconBulb) Another $(C spice) is still installed in $(P $existing); remove it if you no longer need it."
     }
-    if ($image.Edition) { Say "✅ Using $(Get-EditionTitle $image.Edition), from $(C $image.Ref)" }
+    if ($image.Edition) { Say "$($IconCheck) Using $(Get-EditionTitle $image.Edition), from $(C $image.Ref)" }
     if (-not $haveCompletion) {
-      Say "💡 Couldn't generate tab completion from the image. Generate it later with:"
+      Say "$($IconBulb) Couldn't generate tab completion from the image. Generate it later with:"
       Say "   $(C "spice generate-powershell-completion > `"$CompletionPath`"")"
     }
     if ($profiles) {
-      Say "✅ PowerShell profiles set up: open a new window to start using $(C spice)"
+      Say "$($IconCheck) PowerShell profiles set up: open a new window to start using $(C spice)"
     } else {
-      Say "💡 To set up PowerShell, add these lines to your profile ($(P $PROFILE.CurrentUserAllHosts)):"
+      Say "$($IconBulb) To set up PowerShell, add these lines to your profile ($(P $PROFILE.CurrentUserAllHosts)):"
       foreach ($line in (Get-ProfileBlock $PROFILE.CurrentUserAllHosts)) { Say "   $(C $line)" }
     }
     if ($IsWindows -and $profiles) {
       $policy = Get-ExecutionPolicy
       if (@('Restricted', 'AllSigned', 'Undefined') -contains [string]$policy) {
-        Say "⚠️  PowerShell's execution policy is $(C $policy), so it won't run your profile, or $(C spice.ps1). To allow both:"
+        Say "$($IconWarn)  PowerShell's execution policy is $(C $policy), so it won't run your profile, or $(C spice.ps1). To allow both:"
         Say "   $(C 'Set-ExecutionPolicy -Scope CurrentUser RemoteSigned')"
       }
     }
     if (-not $env:SPICE_PASS -and -not $env:SPICE_LICENSE -and -not (Test-Path -LiteralPath $CredentialsFile)) {
-      Say "⚠️  Neither $(C SPICE_PASS) nor $(C SPICE_LICENSE) is set. Run the installer again to save one, or set it in your profile:"
+      Say "$($IconWarn)  Neither $(C SPICE_PASS) nor $(C SPICE_LICENSE) is set. Run the installer again to save one, or set it in your profile:"
       Say "   $(C '$env:SPICE_PASS = "your-secret-token"')"
       Say "   $(C '$env:SPICE_LICENSE = "your-license"')"
     }
   } catch [System.OperationCanceledException] {
     # Die has shown the message
   } catch {
-    Write-Host "❌ $_"
+    Write-Host "$($IconCross) $_"
   } finally {
     foreach ($f in $prepared) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
     if (-not $completed) { Undo-Journal }
