@@ -72,6 +72,7 @@ jobs:
           # covers the shared library in the context it actually runs in.
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 \
             install.sh \
+            install-surveyor.sh \
             test/wrapper/entrypoint.sh \
             scripts/update-path-manifest.sh \
             spice

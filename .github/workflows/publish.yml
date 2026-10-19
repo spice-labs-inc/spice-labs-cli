@@ -124,6 +124,7 @@ jobs:
             spice
             spice.ps1
             install.sh
+            install-surveyor.sh
             install.ps1
             cli-docs.json
 
