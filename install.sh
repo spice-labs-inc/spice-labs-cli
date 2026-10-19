@@ -212,9 +212,11 @@ choose_credential() {
   [ -z "${SPICE_LICENSE:-}" ] || say "   SPICE_LICENSE is already set in this shell."
   [ -z "${SPICE_PASS:-}" ] || say "   SPICE_PASS is already set in this shell."
   ! credential_saved || say "   A credential is already saved in $(tildify "$CREDENTIALS_FILE")."
+  say ""
   say "  1) Spice License: issued to your organization by Spice Labs"
   say "  2) Spice Pass: downloaded from your Spice Labs project dashboard"
   say "  3) Skip"
+  say ""
   while :; do
     ask "Which do you have? [3] " 3
     case "$REPLY" in
@@ -323,6 +325,7 @@ choose_dir() {
 
   say ""
   say "📁 Where should spice be installed?"
+  say ""
   cd_n=0
   while IFS= read -r cd_d; do
     [ -n "$cd_d" ] || continue
@@ -336,6 +339,7 @@ $cd_list
 EOF
   cd_other=$((cd_n + 1))
   say "  $cd_other) Somewhere else"
+  say ""
 
   while :; do
     ask "Choose [1] " 1
@@ -421,6 +425,7 @@ choose_rc() {
 
   say ""
   say "📝 Which shell init scripts should set up spice?"
+  say ""
   cr_n=0
   cr_nums=""
   while IFS= read -r cr_f; do
@@ -432,6 +437,7 @@ choose_rc() {
   done <<EOF
 $cr_all
 EOF
+  say ""
   [ -n "$cr_nums" ] || cr_nums=none
 
   while :; do
