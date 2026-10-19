@@ -40,11 +40,11 @@ tildify() {
   esac
 }
 
-# Paths, commands and variable names are shown in white italics on a terminal
+# Paths, commands and variable names are shown in cyan italics on a terminal
 CODE_ON=""
 CODE_OFF=""
 if [ -t 1 ] && [ -t 2 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
-  CODE_ON=$(printf '\033[3;97m')
+  CODE_ON=$(printf '\033[3;36m')
   CODE_OFF=$(printf '\033[23;39m')
 fi
 code() { printf '%s%s%s' "$CODE_ON" "$*" "$CODE_OFF"; }
