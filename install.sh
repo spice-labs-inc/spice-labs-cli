@@ -352,7 +352,7 @@ EOF
   say ""
 
   while :; do
-    ask "Choose [1] " 1
+    ask "Please select a location [1]: " 1
     case "$REPLY" in
       *[!0-9]*|"") continue ;;
     esac
@@ -451,7 +451,7 @@ EOF
   [ -n "$cr_nums" ] || cr_nums=none
 
   while :; do
-    ask "Numbers separated by spaces, or 'none' [$cr_nums] " "$cr_nums"
+    ask "Please specify numbers, separated by spaces or $(code none) [$cr_nums]: " "$cr_nums"
     [ "$REPLY" != none ] || { RC_FILES=""; return 0; }
     RC_FILES=""
     cr_ok=1
@@ -668,7 +668,7 @@ EOF
   done <<EOF
 $rc_changed
 EOF
-  if [ "$INTERACTIVE" = 1 ] && ! confirm "Go ahead?" y; then
+  if [ "$INTERACTIVE" = 1 ] && ! confirm "Proceed with installation?" y; then
     say "Nothing was changed."
     exit 0
   fi
