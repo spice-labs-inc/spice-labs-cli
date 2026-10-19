@@ -173,13 +173,20 @@ commit_file() {
     cf_backup="$1.spice-old.$$"
     cp -p "$1" "$cf_backup"
   fi
-  JOURNAL="file$NL$1$NL$cf_backup$NL$JOURNAL"
   if [ -L "$1" ]; then
-    # Write through symlinks, so files managed by a dotfiles repo stay managed
+    # Write through symlinks, so files managed by a dotfiles repo stay managed.
+    # This isn't atomic, so it's journalled first: rollback restores the file,
+    # however far the write got.
+    JOURNAL="file$NL$1$NL$cf_backup$NL$JOURNAL"
     cat "$cf_new" > "$1"
     rm -f "$cf_new"
   else
-    mv -f "$cf_new" "$1"
+    # A move either happens or doesn't, so it's journalled only once it has
+    if ! mv -f "$cf_new" "$1"; then
+      [ -z "$cf_backup" ] || rm -f "$cf_backup"
+      return 1
+    fi
+    JOURNAL="file$NL$1$NL$cf_backup$NL$JOURNAL"
   fi
 }
 

@@ -32,27 +32,43 @@ irm -UseBasicParsing -Uri https://install.spicelabs.io | iex
 
 After installation, add `spice` to your PATH as instructed by the installer.
 
-### Surveyor installer (macOS / Linux)
+### Surveyor installer
+
+macOS / Linux:
 
 ```bash
 curl -sSLf https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/install-surveyor.sh | sh
 ```
 
+Windows PowerShell:
+
+```powershell
+irm -UseBasicParsing -Uri https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/install-surveyor.ps1 | iex
+```
+
 This installer asks where to install `spice`, for your Spice License or Spice Pass (saved in
-`~/.config/spice/credentials`, readable only by you), and which shell init scripts to set up.
+`~/.config/spice/credentials`, or `%APPDATA%\spice\credentials` on Windows, readable only by
+you), and which shell init scripts or PowerShell profiles to set up. On Windows, it adds
+`spice` to your user `PATH`.
 Its changes are in a block marked `# >>> spice >>>`, which running the installer again
 rewrites rather than duplicates.
 
 Docker must be installed and running. With a Spice License, the installer pulls your
 edition's image (e.g. Surveyor IT Pro) from `surveyor.spicelabs.io`, after a `docker login`,
-and saves it as `SPICE_IMAGE` in `~/.config/spice/environment`. For now that login needs the
+and saves it as `SPICE_IMAGE` in `environment`, beside `credentials`. For now that login needs the
 registry password, in `SPICE_PASSWORD` or entered when asked. Otherwise it pulls
 `spicelabs/spice-labs-cli` from Docker Hub.
 
-To install without questions, as in CI, pass options after `sh -s --`:
+To install without questions, as in CI, pass options after `sh -s --`, or in PowerShell to
+the script block (or set `SPICE_INSTALL_NONINTERACTIVE=1`, `SPICE_INSTALL_DIR` and
+`SPICE_INSTALL_NO_MODIFY_PROFILE=1`):
 
 ```bash
 curl -sSLf https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/install-surveyor.sh | sh -s -- --yes --dir ~/bin --no-modify-rc
+```
+
+```powershell
+& ([scriptblock]::Create((irm -UseBasicParsing -Uri https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/install-surveyor.ps1))) -Yes -Dir C:\Tools -NoModifyProfile
 ```
 
 ---

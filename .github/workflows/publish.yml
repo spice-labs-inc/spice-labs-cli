@@ -126,6 +126,7 @@ jobs:
             install.sh
             install-surveyor.sh
             install.ps1
+            install-surveyor.ps1
             cli-docs.json
 
       - name: Mark this release as Latest now that it has its files

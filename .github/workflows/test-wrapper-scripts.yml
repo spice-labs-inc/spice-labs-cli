@@ -68,6 +68,7 @@ jobs:
         shell: powershell
         run: |
           & (Join-Path $PWD 'test/wrapper/ps5-check.ps1') (Join-Path $PWD 'spice.ps1')
+          & (Join-Path $PWD 'test/wrapper/ps5-check.ps1') (Join-Path $PWD 'install-surveyor.ps1')
 
       - name: Run Pester tests
         shell: powershell
