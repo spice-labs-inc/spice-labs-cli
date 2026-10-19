@@ -80,9 +80,10 @@ else
   echo "  $BASH_SOURCE_LINE"
 fi
 
-if [[ -z "${SPICE_PASS:-}" ]]; then
-  echo "⚠️  SPICE_PASS is not set. Set it in your shell env to use the CLI:"
+if [[ -z "${SPICE_PASS:-}" && -z "${SPICE_LICENSE:-}" ]]; then
+  echo "⚠️  Neither SPICE_PASS nor SPICE_LICENSE is set. Set one in your shell env to use the CLI:"
   echo "  export SPICE_PASS=\"your-secret-token\""
+  echo "  export SPICE_LICENSE=\"your-license\""
 fi
 
 if ! command -v docker &> /dev/null; then
