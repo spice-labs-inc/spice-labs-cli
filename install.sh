@@ -40,6 +40,16 @@ tildify() {
   esac
 }
 
+# Paths, commands and variable names are shown in white italics on a terminal
+CODE_ON=""
+CODE_OFF=""
+if [ -t 1 ] && [ -t 2 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+  CODE_ON=$(printf '\033[3;97m')
+  CODE_OFF=$(printf '\033[23;39m')
+fi
+code() { printf '%s%s%s' "$CODE_ON" "$*" "$CODE_OFF"; }
+path() { code "$(tildify "$1")"; }
+
 # Whether newline-separated LIST contains the line ITEM
 contains_line() {
   case "$NL$1$NL" in
@@ -208,10 +218,10 @@ credential_saved() { [ -f "$CREDENTIALS_FILE" ]; }
 
 choose_credential() {
   say ""
-  say "🔑 spice needs a Spice License or a Spice Pass to run."
-  [ -z "${SPICE_LICENSE:-}" ] || say "   SPICE_LICENSE is already set in this shell."
-  [ -z "${SPICE_PASS:-}" ] || say "   SPICE_PASS is already set in this shell."
-  ! credential_saved || say "   A credential is already saved in $(tildify "$CREDENTIALS_FILE")."
+  say "🔑 $(code spice) needs a Spice License or a Spice Pass to run."
+  [ -z "${SPICE_LICENSE:-}" ] || say "   $(code SPICE_LICENSE) is already set in this shell."
+  [ -z "${SPICE_PASS:-}" ] || say "   $(code SPICE_PASS) is already set in this shell."
+  ! credential_saved || say "   A credential is already saved in $(path "$CREDENTIALS_FILE")."
   say ""
   say "  1) Spice License: issued to your organization by Spice Labs"
   say "  2) Spice Pass: downloaded from your Spice Labs project dashboard"
@@ -324,7 +334,7 @@ choose_dir() {
   IFS=$cd_ifs
 
   say ""
-  say "📁 Where should spice be installed?"
+  say "📁 Where should $(code spice) be installed?"
   say ""
   cd_n=0
   while IFS= read -r cd_d; do
@@ -332,8 +342,8 @@ choose_dir() {
     cd_n=$((cd_n + 1))
     cd_note=""
     [ "$cd_d" != "$EXISTING" ] || cd_note="  (current install)"
-    on_path "$cd_d" || cd_note="$cd_note  (will be added to PATH)"
-    say "  $cd_n) $(tildify "$cd_d")$cd_note"
+    on_path "$cd_d" || cd_note="$cd_note  (will be added to $(code PATH))"
+    say "  $cd_n) $(path "$cd_d")$cd_note"
   done <<EOF
 $cd_list
 EOF
@@ -357,7 +367,7 @@ EOF
         if ! cd_d=$(normalize_dir "$REPLY"); then
           say "   Directory names can't contain quotes, \$, \`, \\ or :."
         elif ! dir_writable "$cd_d"; then
-          say "   You can't write to $(tildify "$cd_d")."
+          say "   You can't write to $(path "$cd_d")."
         else
           INSTALL_DIR=$cd_d
           return 0
@@ -419,12 +429,12 @@ choose_rc() {
 
   if [ "$(printf '%s\n' "$cr_all" | wc -l)" -eq 1 ]; then
     say ""
-    if confirm "📝 Set up spice in $(tildify "$cr_all")?" y; then RC_FILES=$cr_all; fi
+    if confirm "📝 Set up $(code spice) in $(path "$cr_all")?" y; then RC_FILES=$cr_all; fi
     return 0
   fi
 
   say ""
-  say "📝 Which shell init scripts should set up spice?"
+  say "📝 Which shell init scripts should set up $(code spice)?"
   say ""
   cr_n=0
   cr_nums=""
@@ -433,7 +443,7 @@ choose_rc() {
     if contains_line "$cr_default" "$cr_f"; then
       cr_nums="$cr_nums${cr_nums:+ }$cr_n"
     fi
-    say "  $cr_n) $(tildify "$cr_f")"
+    say "  $cr_n) $(path "$cr_f")"
   done <<EOF
 $cr_all
 EOF
@@ -458,8 +468,8 @@ EOF
 }
 
 check_rc() {
-  [ ! -f "$1" ] || [ -w "$1" ] || die "Can't write to $(tildify "$1")."
-  dir_writable "$(dirname "$1")" || die "Can't write to $(tildify "$(dirname "$1")")."
+  [ ! -f "$1" ] || [ -w "$1" ] || die "Can't write to $(path "$1")."
+  dir_writable "$(dirname "$1")" || die "Can't write to $(path "$(dirname "$1")")."
   cr_begins=0
   cr_ends=0
   if [ -f "$1" ]; then
@@ -467,7 +477,7 @@ check_rc() {
     cr_ends=$(grep -cxF "$BLOCK_END" "$1" || true)
   fi
   if [ "$cr_begins" -gt 1 ] || [ "$cr_begins" != "$cr_ends" ]; then
-    die "$(tildify "$1") has a damaged spice block. Remove the lines between '$BLOCK_BEGIN' and '$BLOCK_END', then run the installer again."
+    die "$(path "$1") has a damaged $(code spice) block. Remove the lines between $(code "$BLOCK_BEGIN") and $(code "$BLOCK_END"), then run the installer again."
   fi
 }
 
@@ -553,7 +563,7 @@ rewrite_rc() {
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 usage() {
-  say "Usage: install.sh [--yes] [--dir DIR] [--no-modify-rc]"
+  say "Usage: $(code "install.sh [--yes] [--dir DIR] [--no-modify-rc]")"
 }
 
 main() {
@@ -562,7 +572,7 @@ main() {
   while [ $# -gt 0 ]; do
     case "$1" in
       -y|--yes) ASSUME_YES=1 ;;
-      --dir) [ $# -ge 2 ] || die "--dir needs a directory."; INSTALL_DIR=$2; shift ;;
+      --dir) [ $# -ge 2 ] || die "$(code --dir) needs a directory."; INSTALL_DIR=$2; shift ;;
       --dir=*) INSTALL_DIR=${1#--dir=} ;;
       --no-modify-rc) MODIFY_RC=0 ;;
       -h|--help) usage; exit 0 ;;
@@ -583,13 +593,13 @@ main() {
 
   find_existing
   if [ -n "$INSTALL_DIR" ]; then
-    INSTALL_DIR=$(normalize_dir "$INSTALL_DIR") || die "--dir can't contain quotes, \$, \`, \\ or :."
+    INSTALL_DIR=$(normalize_dir "$INSTALL_DIR") || die "$(code --dir) can't contain quotes, \$, \`, \\ or :."
   elif [ "$INTERACTIVE" = 1 ]; then
     choose_dir
   else
     INSTALL_DIR=${EXISTING:-$DEFAULT_DIR}
   fi
-  dir_writable "$INSTALL_DIR" || die "Can't write to $(tildify "$INSTALL_DIR")."
+  dir_writable "$INSTALL_DIR" || die "Can't write to $(path "$INSTALL_DIR")."
 
   [ "$INTERACTIVE" = 0 ] || choose_credential
   [ "$MODIFY_RC" = 0 ] || choose_rc
@@ -603,12 +613,12 @@ EOF
 
   STAGE=$(mktemp -d)
   say ""
-  say "📦 Downloading spice"
-  curl -fsSL "$SCRIPT_URL" -o "$STAGE/spice" || die "Couldn't download $SCRIPT_URL."
+  say "📦 Downloading $(code spice)"
+  curl -fsSL "$SCRIPT_URL" -o "$STAGE/spice" || die "Couldn't download $(code "$SCRIPT_URL")."
   IFS= read -r first < "$STAGE/spice" || first=""
   case "$first" in
     "#!"*) ;;
-    *) die "The download from $SCRIPT_URL isn't a script." ;;
+    *) die "The download from $(code "$SCRIPT_URL") isn't a script." ;;
   esac
   chmod +x "$STAGE/spice"
 
@@ -650,11 +660,11 @@ EOF
 
   say ""
   say "Ready to install:"
-  say "  • spice in $(tildify "$INSTALL_DIR")"
-  [ "$have_completion" = 0 ] || say "  • tab completion generated from ${IMAGE}:${TAG}"
-  [ -z "$CRED_VAR" ] || say "  • $CRED_VAR saved in $(tildify "$CREDENTIALS_FILE")"
+  say "  • $(code spice) in $(path "$INSTALL_DIR")"
+  [ "$have_completion" = 0 ] || say "  • tab completion generated from $(code "${IMAGE}:${TAG}")"
+  [ -z "$CRED_VAR" ] || say "  • $(code "$CRED_VAR") saved in $(path "$CREDENTIALS_FILE")"
   while IFS= read -r n && IFS= read -r f; do
-    [ -z "$f" ] || say "  • spice set up in $(tildify "$f")"
+    [ -z "$f" ] || say "  • $(code spice) set up in $(path "$f")"
   done <<EOF
 $rc_changed
 EOF
@@ -706,36 +716,36 @@ EOF
   # 5. Report.
 
   say ""
-  say "✅ spice installed in $(tildify "$INSTALL_DIR")"
+  say "✅ $(code spice) installed in $(path "$INSTALL_DIR")"
   if [ -n "$EXISTING" ] && [ "$EXISTING" != "$INSTALL_DIR" ]; then
-    say "💡 Another spice is still installed in $(tildify "$EXISTING"); remove it if you no longer need it."
+    say "💡 Another $(code spice) is still installed in $(path "$EXISTING"); remove it if you no longer need it."
   fi
 
   if [ "$have_completion" = 0 ]; then
-    say "💡 Skipped tab completion (needs Docker + the spice image). Generate it later with:"
-    say "   spice generate-completion > \"$COMPLETION_DIR/spice.bash\""
+    say "💡 Skipped tab completion (needs Docker + the $(code spice) image). Generate it later with:"
+    say "   $(code "spice generate-completion > \"$COMPLETION_DIR/spice.bash\"")"
   fi
 
   if [ -n "$RC_FILES" ]; then
-    say "✅ Shell init scripts set up: open a new shell to start using spice"
+    say "✅ Shell init scripts set up: open a new shell to start using $(code spice)"
   else
     say "💡 To set up your shell, add these lines to its init script:"
-    on_path "$INSTALL_DIR" || say "   export PATH=\"\$PATH:$INSTALL_DIR\""
+    on_path "$INSTALL_DIR" || say "   $(code "export PATH=\"\$PATH:$INSTALL_DIR\"")"
     if credential_saved; then
-      say "   [ -f \"$CREDENTIALS_FILE\" ] && . \"$CREDENTIALS_FILE\""
+      say "   $(code "[ -f \"$CREDENTIALS_FILE\" ] && . \"$CREDENTIALS_FILE\"")"
     fi
-    say "   [ -f \"$COMPLETION_DIR/spice.bash\" ] && . \"$COMPLETION_DIR/spice.bash\""
+    say "   $(code "[ -f \"$COMPLETION_DIR/spice.bash\" ] && . \"$COMPLETION_DIR/spice.bash\"")"
   fi
 
   if [ -z "${SPICE_PASS:-}" ] && [ -z "${SPICE_LICENSE:-}" ] && ! credential_saved; then
-    say "⚠️  Neither SPICE_PASS nor SPICE_LICENSE is set. Run the installer again to save one, or set it in your shell env:"
-    say "   export SPICE_PASS=\"your-secret-token\""
-    say "   export SPICE_LICENSE=\"your-license\""
+    say "⚠️  Neither $(code SPICE_PASS) nor $(code SPICE_LICENSE) is set. Run the installer again to save one, or set it in your shell env:"
+    say "   $(code "export SPICE_PASS=\"your-secret-token\"")"
+    say "   $(code "export SPICE_LICENSE=\"your-license\"")"
   fi
 
   if ! command -v docker >/dev/null 2>&1; then
-    say "⚠️  Docker is not installed or not in PATH. The spice CLI uses Docker unless JVM mode is enabled."
-    say "  → Install Docker from https://docs.docker.com/get-docker/"
+    say "⚠️  Docker is not installed or not in $(code PATH). The $(code spice) CLI uses Docker unless JVM mode is enabled."
+    say "  → Install Docker from $(code https://docs.docker.com/get-docker/)"
   fi
 }
 
