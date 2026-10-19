@@ -222,12 +222,12 @@ confirm() {
   done
 }
 
-# Reads a line, echoing a * for each character. Canonical mode is off, because
-# it limits a line to 1024 bytes on macOS and a pasted credential can be
-# longer, so editing keys are handled here: Backspace, and Ctrl-U to erase
-# everything. Echo and canonical mode change before the prompt appears, so
-# nothing typed after it is shown.
-ask_secret() {
+# Reads a long line, such as a pasted credential, which canonical mode would
+# truncate at 1024 bytes on macOS. With canonical mode off, editing keys are
+# handled here: Backspace, and Ctrl-U to erase everything. Each character is
+# echoed as MASK, if given, or else as itself. The terminal's own echo is off
+# before the prompt appears, so nothing typed after it is shown unmasked.
+ask_long() {
   STTY_SAVED=$(stty -g </dev/tty)
   stty -echo -icanon min 1 time 0 </dev/tty
   printf '%s' "$1" >/dev/tty
@@ -260,7 +260,7 @@ ask_secret() {
         # Drop the rest of an escape sequence, such as an arrow key
         "$ESC") break ;;
         [[:cntrl:]]) ;;
-        *) REPLY="$REPLY$as_c"; as_echo="$as_echo*" ;;
+        *) REPLY="$REPLY$as_c"; as_echo="$as_echo${2:-$as_c}" ;;
       esac
     done
     printf '%s' "$as_echo" >/dev/tty
@@ -406,7 +406,7 @@ choose_credential() {
 
   while :; do
     CRED_VAR=""
-    ask_secret "Credential [Enter to $cc_skip]: "
+    ask_long "Credential [Enter to $cc_skip]: "
     cc_input=$REPLY
     case "$cc_input" in
       "~"/*) cc_input="$HOME/${cc_input#"~/"}" ;;
@@ -538,7 +538,7 @@ choose_registry_password() {
   if [ -z "$REGISTRY_PASSWORD" ] && [ "$INTERACTIVE" = 1 ]; then
     say ""
     say "🔐 Downloading $(edition_title "$LICENSE_EDITION") needs a login to $(code "$REGISTRY")."
-    ask_secret "Password for $(code "$LOGIN_USER"): "
+    ask_long "Password for $(code "$LOGIN_USER"): " "*"
     REGISTRY_PASSWORD=$REPLY
   fi
   [ -n "$REGISTRY_PASSWORD" ] \
