@@ -21,7 +21,17 @@ Surveys software artifacts for post-quantum cryptographic readiness. Supports **
 ### macOS / Linux
 
 ```bash
-curl -sSLf https://install.spicelabs.io | bash
+curl -sSLf https://install.spicelabs.io | sh
+```
+
+The installer asks where to install `spice`, for your Spice License or Spice Pass (saved in
+`~/.config/spice/credentials`, readable only by you), and which shell init scripts to set up.
+Its changes are in a block marked `# >>> spice >>>`, which running the installer again
+rewrites rather than duplicates. To install without questions, as in CI, pass options after
+`sh -s --`:
+
+```bash
+curl -sSLf https://install.spicelabs.io | sh -s -- --yes --dir ~/bin --no-modify-rc
 ```
 
 ### Windows PowerShell

@@ -1,95 +1,736 @@
 #!/bin/sh
+# To Install : `curl -sSfL https://install.spicelabs.io | sh`
+#
+# Interactive when a terminal is available: asks for a credential, where to
+# install, and which shell init scripts to update. Options, which also work when
+# piped (`curl ... | sh -s -- --yes`):
+#
+#   -y, --yes        accept the defaults without asking (also SPICE_INSTALL_NONINTERACTIVE=1)
+#   --dir DIR        install the spice script into DIR
+#   --no-modify-rc   leave shell init scripts untouched
+#
+# Changes are made as a transaction: everything is downloaded, generated and
+# written beside its destination first, then moved into place, and if anything
+# fails before the last move, every change already made is undone.
+
 set -eu
 
-# To Install : `curl -sSfL https://install.spicelabs.io | bash`
-
-TARGET_DIR="${HOME}/.local/bin"
-DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/spice"
-COMPLETION_DIR="${HOME}/.local/share/spice/completions"
 SCRIPT_URL="https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice"
-
-echo "📦 Installing spice to ${TARGET_DIR}"
-
-mkdir -p "$TARGET_DIR"
-mkdir -p "$COMPLETION_DIR"
-curl -fsSL "$SCRIPT_URL" -o "$TARGET_DIR/spice"
-chmod +x "$TARGET_DIR/spice"
-
-# Generate plugin-aware tab completion from the configured image (no static fallback):
-# the script reflects whatever plugins (e.g. `registry`) that image ships. Needs Docker
-# and the image; skipped gracefully otherwise. SKIP_PULL keeps stdout clean for capture.
 IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
 TAG="${SPICE_IMAGE_TAG:-latest}"
-if command -v docker >/dev/null 2>&1 && docker pull -q "${IMAGE}:${TAG}" >/dev/null 2>&1 \
-   && SPICE_LABS_CLI_SKIP_PULL=1 "$TARGET_DIR/spice" generate-completion > "$COMPLETION_DIR/spice.bash.tmp" 2>/dev/null \
-   && [ -s "$COMPLETION_DIR/spice.bash.tmp" ]; then
-  mv "$COMPLETION_DIR/spice.bash.tmp" "$COMPLETION_DIR/spice.bash"
-  echo "✅ Generated tab completion from ${IMAGE}:${TAG}"
-else
-  rm -f "$COMPLETION_DIR/spice.bash.tmp"
-  echo "💡 Skipped tab completion (needs Docker + the spice image). Generate it later with:"
-  echo "   spice generate-completion > \"$COMPLETION_DIR/spice.bash\""
-fi
+DEFAULT_DIR="${HOME}/.local/bin"
+DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/spice"
+COMPLETION_DIR="${HOME}/.local/share/spice/completions"
+CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/spice"
+CREDENTIALS_FILE="$CONFIG_DIR/credentials"
+FISH_CONFIG="${XDG_CONFIG_HOME:-${HOME}/.config}/fish/config.fish"
+BLOCK_BEGIN="# >>> spice >>>"
+BLOCK_END="# <<< spice <<<"
+NL='
+'
 
-# Seed the path manifest from the same image, so the first invocation already
-# knows which arguments to bind-mount — including any plugin's. The wrapper
-# refreshes this itself when the image changes; this only removes the cost from
-# the first run. Skipped gracefully, exactly like completion above.
-mkdir -p "$DATA_DIR"
-if SPICE_LABS_CLI_SKIP_PULL=1 SPICE_SKIP_MANIFEST_REFRESH=1 \
-     "$TARGET_DIR/spice" path-manifest > "$DATA_DIR/path-manifest.tmp" 2>/dev/null \
-   && grep -q '^# spice-path-manifest ' "$DATA_DIR/path-manifest.tmp"; then
-  mv "$DATA_DIR/path-manifest.tmp" "$DATA_DIR/path-manifest"
-else
-  rm -f "$DATA_DIR/path-manifest.tmp"
-fi
+say() { printf '%s\n' "$*"; }
+die() { printf '❌ %s\n' "$*" >&2; exit 1; }
 
-case ":$PATH:" in
-  *":$TARGET_DIR:"*)
-    echo "✅ spice installed and ready to use"
-    ;;
-  *)
-    echo "⚠️  ${TARGET_DIR} is not in your PATH. Add this line to your shell profile:"
-    echo "  export PATH=\"\$PATH:$TARGET_DIR\""
-    ;;
-esac
+# Shows a path with $HOME abbreviated to ~
+tildify() {
+  case "$1" in
+    "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 
-# ── Tab completion ───────────────────────────────────────────────────────────
+# Whether newline-separated LIST contains the line ITEM
+contains_line() {
+  case "$NL$1$NL" in
+    *"$NL$2$NL"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
-BASH_SOURCE_LINE="[ -f \"$COMPLETION_DIR/spice.bash\" ] && source \"$COMPLETION_DIR/spice.bash\""
-ZSH_SOURCE_BLOCK="autoload -U +X bashcompinit 2>/dev/null && bashcompinit 2>/dev/null
-[ -f \"$COMPLETION_DIR/spice.bash\" ] && source \"$COMPLETION_DIR/spice.bash\""
-COMPLETION_INSTALLED=0
-for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
-  [ -f "$rc" ] || continue
-  case "$rc" in
-    *.zshrc)
-      if ! grep -qF "bashcompinit" "$rc" 2>/dev/null || ! grep -qF "$COMPLETION_DIR/spice.bash" "$rc" 2>/dev/null; then
-        printf '\n# Spice CLI tab completion\n%s\n' "$ZSH_SOURCE_BLOCK" >> "$rc"
+on_path() {
+  case ":$PATH:" in
+    *":$1:"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# ── Transaction ──────────────────────────────────────────────────────────────
+#
+# JOURNAL records each committed change, newest first, as three lines: the kind
+# (dir or file), the target, and the backup of what it replaced (empty if it
+# replaced nothing). PREPARED lists the new files staged beside their targets.
+
+STAGE=""
+JOURNAL=""
+PREPARED=""
+STTY_SAVED=""
+
+rollback() {
+  [ -n "$JOURNAL" ] || return 0
+  say "↩️  Installation failed; undoing the changes made so far." >&2
+  while IFS= read -r kind && IFS= read -r target && IFS= read -r backup; do
+    case "$kind" in
+      dir) rmdir "$target" 2>/dev/null || true ;;
+      file)
+        if [ -z "$backup" ]; then
+          rm -f "$target"
+        elif [ -L "$target" ]; then
+          cat "$backup" > "$target" && rm -f "$backup"
+        else
+          mv -f "$backup" "$target"
+        fi
+        ;;
+    esac
+  done <<EOF
+$JOURNAL
+EOF
+  JOURNAL=""
+}
+
+cleanup() {
+  status=$?
+  if [ -n "$STTY_SAVED" ]; then
+    stty "$STTY_SAVED" </dev/tty 2>/dev/null || true
+    printf '\n' >/dev/tty 2>/dev/null || true
+  fi
+  if [ -n "$PREPARED" ]; then
+    printf '%s\n' "$PREPARED" | while IFS= read -r f; do
+      [ -z "$f" ] || rm -f "$f"
+    done
+  fi
+  [ "$status" -eq 0 ] || rollback
+  [ -z "$STAGE" ] || rm -rf "$STAGE"
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Creates DIR and any missing parents, journalling each so rollback removes them
+make_dir() {
+  md_missing=""
+  md_d=$1
+  while [ ! -d "$md_d" ]; do
+    md_missing="$md_d$NL$md_missing"
+    md_d=$(dirname "$md_d")
+  done
+  mkdir -p "$1"
+  # Parents are journalled before children, so rollback removes children first
+  while IFS= read -r md_d; do
+    [ -z "$md_d" ] || JOURNAL="dir$NL$md_d$NL$NL$JOURNAL"
+  done <<EOF
+$md_missing
+EOF
+}
+
+# Copies SOURCE beside TARGET, ready to be moved into place by commit_file
+prepare_file() {
+  pf_new="$2.spice-new.$$"
+  PREPARED="$PREPARED$NL$pf_new"
+  if [ -f "$2" ]; then
+    cp -p "$2" "$pf_new"       # keeps the target's permissions
+    cat "$1" > "$pf_new"
+  else
+    cp "$1" "$pf_new"
+  fi
+}
+
+# Moves the file prepared for TARGET into place, keeping a backup of the old one
+commit_file() {
+  cf_new="$1.spice-new.$$"
+  cf_backup=""
+  if [ -f "$1" ]; then
+    cf_backup="$1.spice-old.$$"
+    cp -p "$1" "$cf_backup"
+  fi
+  JOURNAL="file$NL$1$NL$cf_backup$NL$JOURNAL"
+  if [ -L "$1" ]; then
+    # Write through symlinks, so files managed by a dotfiles repo stay managed
+    cat "$cf_new" > "$1"
+    rm -f "$cf_new"
+  else
+    mv -f "$cf_new" "$1"
+  fi
+}
+
+# Ends the transaction: the changes are kept, and the backups are not needed
+finish() {
+  while IFS= read -r kind && IFS= read -r target && IFS= read -r backup; do
+    [ -z "$backup" ] || rm -f "$backup"
+  done <<EOF
+$JOURNAL
+EOF
+  JOURNAL=""
+}
+
+# ── Prompts ──────────────────────────────────────────────────────────────────
+#
+# Prompts read from /dev/tty, because when the script is piped from curl its
+# standard input is the script itself.
+
+ask() {
+  printf '%s' "$1" >/dev/tty
+  IFS= read -r REPLY </dev/tty || { printf '\n' >/dev/tty; die "Cancelled; nothing was changed."; }
+  [ -n "$REPLY" ] || REPLY=$2
+}
+
+confirm() {
+  while :; do
+    if [ "$2" = y ]; then ask "$1 [Y/n] " y; else ask "$1 [y/N] " n; fi
+    case "$REPLY" in
+      [Yy]|[Yy][Ee][Ss]) return 0 ;;
+      [Nn]|[Nn][Oo]) return 1 ;;
+    esac
+  done
+}
+
+# Reads a line without echoing it. Canonical mode is off as well, because it
+# limits a line to 1024 bytes on macOS, and a pasted credential can be longer.
+# Both change before the prompt appears, so nothing typed after it is echoed.
+ask_secret() {
+  STTY_SAVED=$(stty -g </dev/tty)
+  stty -echo -icanon min 1 time 0 </dev/tty
+  printf '%s' "$1" >/dev/tty
+  IFS= read -r REPLY </dev/tty || REPLY=""
+  stty "$STTY_SAVED" </dev/tty
+  STTY_SAVED=""
+  printf '\n' >/dev/tty
+}
+
+# ── Credential ───────────────────────────────────────────────────────────────
+
+CRED_VAR=""
+CRED_VALUE=""
+
+credential_saved() { [ -f "$CREDENTIALS_FILE" ]; }
+
+choose_credential() {
+  say ""
+  say "🔑 spice needs a Spice License or a Spice Pass to run."
+  [ -z "${SPICE_LICENSE:-}" ] || say "   SPICE_LICENSE is already set in this shell."
+  [ -z "${SPICE_PASS:-}" ] || say "   SPICE_PASS is already set in this shell."
+  ! credential_saved || say "   A credential is already saved in $(tildify "$CREDENTIALS_FILE")."
+  say "  1) Spice License: issued to your organization by Spice Labs"
+  say "  2) Spice Pass: downloaded from your Spice Labs project dashboard"
+  say "  3) Skip"
+  while :; do
+    ask "Which do you have? [3] " 3
+    case "$REPLY" in
+      1) CRED_VAR=SPICE_LICENSE; cc_name="Spice License"; break ;;
+      2) CRED_VAR=SPICE_PASS; cc_name="Spice Pass"; break ;;
+      3) return 0 ;;
+    esac
+  done
+
+  while :; do
+    ask_secret "Paste your $cc_name (hidden), or the path to a file containing it: "
+    cc_input=$REPLY
+    case "$cc_input" in
+      "~"/*) cc_input="$HOME/${cc_input#"~/"}" ;;
+    esac
+    if [ -f "$cc_input" ]; then
+      cc_input=$(cat "$cc_input")
+    fi
+    CRED_VALUE=$(printf '%s' "$cc_input" | tr -d '[:space:]')
+    if [ -z "$CRED_VALUE" ]; then
+      say "   No $cc_name entered; skipping."
+      CRED_VAR=""
+      return 0
+    fi
+    # The credentials file must parse the same way in sh and fish, so the value
+    # is limited to the characters a token can contain.
+    case "$CRED_VALUE" in
+      *[!A-Za-z0-9._~+/=-]*) say "   That doesn't look like a $cc_name. Try again, or press Enter to skip." ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+# Writes the credentials file to FILE: the existing one, with CRED_VAR replaced
+write_credentials() {
+  {
+    if credential_saved; then
+      grep -v "^export $CRED_VAR=" "$CREDENTIALS_FILE" || true
+    else
+      say "# Spice Labs credentials, loaded by the spice block in your shell init script."
+      say "# Every line here must be valid in sh, bash, zsh and fish."
+    fi
+    say "export $CRED_VAR='$CRED_VALUE'"
+  } > "$1"
+  chmod 600 "$1"
+}
+
+# ── Install directory ────────────────────────────────────────────────────────
+
+INSTALL_DIR=""
+EXISTING=""
+
+# Makes a directory absolute and tidy, or fails if it can't be used
+normalize_dir() {
+  nd=$1
+  case "$nd" in
+    "~") nd=$HOME ;;
+    "~"/*) nd="$HOME/${nd#"~/"}" ;;
+    /*) ;;
+    *) nd="$PWD/$nd" ;;
+  esac
+  while :; do
+    case "$nd" in
+      ?*/) nd=${nd%/} ;;
+      *) break ;;
+    esac
+  done
+  # The directory is written into shell init scripts and PATH
+  case "$nd" in
+    *[\"\$\`\\:]*|*"$NL"*) return 1 ;;
+  esac
+  printf '%s' "$nd"
+}
+
+# Whether DIR is writable, or could be created
+dir_writable() {
+  dw=$1
+  while [ ! -d "$dw" ]; do dw=$(dirname "$dw"); done
+  [ -w "$dw" ]
+}
+
+find_existing() {
+  fe=$(command -v spice 2>/dev/null) || return 0
+  case "$fe" in
+    /*) EXISTING=$(dirname "$fe") ;;
+  esac
+}
+
+choose_dir() {
+  cd_list=""
+  for cd_d in "$EXISTING" "$DEFAULT_DIR"; do
+    [ -n "$cd_d" ] || continue
+    contains_line "$cd_list" "$cd_d" || cd_list="$cd_list$cd_d$NL"
+  done
+  cd_ifs=$IFS
+  IFS=:
+  set -f
+  for cd_d in $PATH; do
+    case "$cd_d" in /*) ;; *) continue ;; esac
+    cd_d=$(normalize_dir "$cd_d") || continue
+    [ -d "$cd_d" ] && [ -w "$cd_d" ] || continue
+    contains_line "$cd_list" "$cd_d" || cd_list="$cd_list$cd_d$NL"
+  done
+  set +f
+  IFS=$cd_ifs
+
+  say ""
+  say "📁 Where should spice be installed?"
+  cd_n=0
+  while IFS= read -r cd_d; do
+    [ -n "$cd_d" ] || continue
+    cd_n=$((cd_n + 1))
+    cd_note=""
+    [ "$cd_d" != "$EXISTING" ] || cd_note="  (current install)"
+    on_path "$cd_d" || cd_note="$cd_note  (will be added to PATH)"
+    say "  $cd_n) $(tildify "$cd_d")$cd_note"
+  done <<EOF
+$cd_list
+EOF
+  cd_other=$((cd_n + 1))
+  say "  $cd_other) Somewhere else"
+
+  while :; do
+    ask "Choose [1] " 1
+    case "$REPLY" in
+      *[!0-9]*|"") continue ;;
+    esac
+    if [ "$REPLY" -ge 1 ] && [ "$REPLY" -le "$cd_n" ]; then
+      INSTALL_DIR=$(printf '%s' "$cd_list" | sed -n "${REPLY}p")
+      return 0
+    fi
+    if [ "$REPLY" -eq "$cd_other" ]; then
+      while :; do
+        ask "Directory: " ""
+        [ -n "$REPLY" ] || continue
+        if ! cd_d=$(normalize_dir "$REPLY"); then
+          say "   Directory names can't contain quotes, \$, \`, \\ or :."
+        elif ! dir_writable "$cd_d"; then
+          say "   You can't write to $(tildify "$cd_d")."
+        else
+          INSTALL_DIR=$cd_d
+          return 0
+        fi
+      done
+    fi
+  done
+}
+
+# ── Shell init scripts ───────────────────────────────────────────────────────
+
+RC_FILES=""
+
+# Whether FILE already has spice lines: a block, or lines from older installers
+has_spice() {
+  [ -f "$1" ] && grep -qxF -e "$BLOCK_BEGIN" -e "# Spice CLI tab completion" "$1"
+}
+
+# Lists the candidate init scripts, then their default selection, separated by
+# a line holding only "--"
+rc_candidates() {
+  rcc_shell=$(basename "${SHELL:-sh}")
+  rcc_all=""
+  rcc_default=""
+  for rcc_f in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$FISH_CONFIG" "$HOME/.profile"; do
+    rcc_login=0
+    case "$rcc_shell:$rcc_f" in
+      zsh:*/.zshrc|bash:*/.bashrc|fish:*/config.fish) rcc_login=1 ;;
+      # On macOS, Terminal starts bash as a login shell, which reads only
+      # .bash_profile; it often loads .bashrc itself, and then doesn't need us
+      bash:*/.bash_profile)
+        if [ "$(uname -s)" = Darwin ] && [ -f "$rcc_f" ] && ! grep -q bashrc "$rcc_f"; then
+          rcc_login=1
+        fi
+        ;;
+    esac
+    [ -f "$rcc_f" ] || [ "$rcc_login" = 1 ] || continue
+    rcc_all="$rcc_all$rcc_f$NL"
+    if [ "$rcc_login" = 1 ] || has_spice "$rcc_f"; then
+      rcc_default="$rcc_default$rcc_f$NL"
+    fi
+  done
+  printf '%s--\n%s' "$rcc_all" "$rcc_default"
+}
+
+choose_rc() {
+  cr_out=$(rc_candidates)
+  cr_all=$(printf '%s\n' "$cr_out" | sed '/^--$/,$d')
+  cr_default=$(printf '%s\n' "$cr_out" | sed '1,/^--$/d')
+
+  if [ "$INTERACTIVE" = 0 ]; then
+    RC_FILES=$cr_default
+    return 0
+  fi
+
+  if [ -z "$cr_all" ]; then
+    return 0
+  fi
+
+  if [ "$(printf '%s\n' "$cr_all" | wc -l)" -eq 1 ]; then
+    say ""
+    if confirm "📝 Set up spice in $(tildify "$cr_all")?" y; then RC_FILES=$cr_all; fi
+    return 0
+  fi
+
+  say ""
+  say "📝 Which shell init scripts should set up spice?"
+  cr_n=0
+  cr_nums=""
+  while IFS= read -r cr_f; do
+    cr_n=$((cr_n + 1))
+    if contains_line "$cr_default" "$cr_f"; then
+      cr_nums="$cr_nums${cr_nums:+ }$cr_n"
+    fi
+    say "  $cr_n) $(tildify "$cr_f")"
+  done <<EOF
+$cr_all
+EOF
+  [ -n "$cr_nums" ] || cr_nums=none
+
+  while :; do
+    ask "Numbers separated by spaces, or 'none' [$cr_nums] " "$cr_nums"
+    [ "$REPLY" != none ] || { RC_FILES=""; return 0; }
+    RC_FILES=""
+    cr_ok=1
+    for cr_i in $REPLY; do
+      case "$cr_i" in
+        *[!0-9]*) cr_ok=0; break ;;
+      esac
+      if [ "$cr_i" -lt 1 ] || [ "$cr_i" -gt "$cr_n" ]; then cr_ok=0; break; fi
+      cr_f=$(printf '%s\n' "$cr_all" | sed -n "${cr_i}p")
+      contains_line "$RC_FILES" "$cr_f" || RC_FILES="$RC_FILES$cr_f$NL"
+    done
+    [ "$cr_ok" = 0 ] || return 0
+  done
+}
+
+check_rc() {
+  [ ! -f "$1" ] || [ -w "$1" ] || die "Can't write to $(tildify "$1")."
+  dir_writable "$(dirname "$1")" || die "Can't write to $(tildify "$(dirname "$1")")."
+  cr_begins=0
+  cr_ends=0
+  if [ -f "$1" ]; then
+    cr_begins=$(grep -cxF "$BLOCK_BEGIN" "$1" || true)
+    cr_ends=$(grep -cxF "$BLOCK_END" "$1" || true)
+  fi
+  if [ "$cr_begins" -gt 1 ] || [ "$cr_begins" != "$cr_ends" ]; then
+    die "$(tildify "$1") has a damaged spice block. Remove the lines between '$BLOCK_BEGIN' and '$BLOCK_END', then run the installer again."
+  fi
+}
+
+# Whether FILE's spice block adds DIR to PATH
+block_adds_path() {
+  [ -f "$1" ] && sed -n "/^$BLOCK_BEGIN\$/,/^$BLOCK_END\$/p" "$1" | grep -F PATH | grep -qF "$2"
+}
+
+# Writes the spice block for init script FILE. PATH gets the install directory
+# if it isn't there already, or if this block put it there in an earlier run.
+rc_block() {
+  rb_path=0
+  if ! on_path "$INSTALL_DIR" || block_adds_path "$1" "$INSTALL_DIR"; then rb_path=1; fi
+  rb_creds=0
+  if credential_saved || [ -n "$CRED_VAR" ]; then rb_creds=1; fi
+
+  say "$BLOCK_BEGIN"
+  say "# Added by the spice installer, which rewrites this block when run again."
+  case "$1" in
+    */config.fish)
+      if [ "$rb_path" = 1 ]; then
+        say "if not contains -- \"$INSTALL_DIR\" \$PATH"
+        say "    set -gx PATH \$PATH \"$INSTALL_DIR\""
+        say "end"
+      fi
+      if [ "$rb_creds" = 1 ]; then
+        say "if test -f \"$CREDENTIALS_FILE\""
+        say "    source \"$CREDENTIALS_FILE\""
+        say "end"
       fi
       ;;
     *)
-      if ! grep -qF "$COMPLETION_DIR/spice.bash" "$rc" 2>/dev/null; then
-        printf '\n# Spice CLI tab completion\n%s\n' "$BASH_SOURCE_LINE" >> "$rc"
+      if [ "$rb_path" = 1 ]; then
+        say "case \":\$PATH:\" in *\":$INSTALL_DIR:\"*) ;; *) export PATH=\"\$PATH:$INSTALL_DIR\" ;; esac"
       fi
+      if [ "$rb_creds" = 1 ]; then
+        say "if [ -f \"$CREDENTIALS_FILE\" ]; then . \"$CREDENTIALS_FILE\"; fi"
+      fi
+      case "$1" in
+        */.zshrc)
+          # bashcompinit needs compinit, which frameworks like oh-my-zsh load already
+          say "(( \$+functions[compdef] )) || { autoload -U compinit && compinit; }"
+          say "autoload -U +X bashcompinit 2>/dev/null && bashcompinit 2>/dev/null"
+          say "if [ -f \"$COMPLETION_DIR/spice.bash\" ]; then . \"$COMPLETION_DIR/spice.bash\"; fi"
+          ;;
+        */.bashrc|*/.bash_profile)
+          say "if [ -f \"$COMPLETION_DIR/spice.bash\" ]; then . \"$COMPLETION_DIR/spice.bash\"; fi"
+          ;;
+      esac
       ;;
   esac
-  COMPLETION_INSTALLED=1
-done
-if [ "$COMPLETION_INSTALLED" = "1" ]; then
-  echo "✅ Tab completion installed (restart your shell or source your profile to activate)"
-else
-  echo "💡 To enable tab completion, add this to your shell profile:"
-  echo "  $BASH_SOURCE_LINE"
-fi
+  say "$BLOCK_END"
+}
 
-if [ -z "${SPICE_PASS:-}" ] && [ -z "${SPICE_LICENSE:-}" ]; then
-  echo "⚠️  Neither SPICE_PASS nor SPICE_LICENSE is set. Set one in your shell env to use the CLI:"
-  echo "  export SPICE_PASS=\"your-secret-token\""
-  echo "  export SPICE_LICENSE=\"your-license\""
-fi
+# Writes init script FILE with its spice block replaced by BLOCK, or appended.
+# Lines that older installers appended without a block are removed.
+rewrite_rc() {
+  rr_in=/dev/null
+  [ ! -f "$1" ] || rr_in=$1
+  awk -v begin="$BLOCK_BEGIN" -v end="$BLOCK_END" -v blockfile="$2" \
+      -v legacy="# Spice CLI tab completion" -v completion="$COMPLETION_DIR/spice.bash" '
+    function emit(line) {
+      while ((getline line < blockfile) > 0) print line
+      close(blockfile)
+      done = 1
+    }
+    function flush() { for (; blanks > 0; blanks--) print "" }
+    $0 == begin { flush(); if (!done) emit(); inblock = 1; next }
+    inblock { if ($0 == end) inblock = 0; next }
+    $0 == legacy { inlegacy = 1; if (!done) { flush(); emit() } next }
+    inlegacy && (index($0, completion) || $0 ~ /^autoload -U \+X bashcompinit/) { next }
+    { inlegacy = 0 }
+    $0 == "" { blanks++; next }
+    { flush(); print; printed = 1 }
+    END {
+      if (!done && printed && blanks == 0) print ""
+      flush()
+      if (!done) emit()
+    }
+  ' "$rr_in" > "$3"
+}
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "⚠️  Docker is not installed or not in PATH. The spice CLI uses Docker unless JVM mode is enabled."
-  echo "  → Install Docker from https://docs.docker.com/get-docker/"
-fi
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+usage() {
+  say "Usage: install.sh [--yes] [--dir DIR] [--no-modify-rc]"
+}
+
+main() {
+  ASSUME_YES=0
+  MODIFY_RC=1
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -y|--yes) ASSUME_YES=1 ;;
+      --dir) [ $# -ge 2 ] || die "--dir needs a directory."; INSTALL_DIR=$2; shift ;;
+      --dir=*) INSTALL_DIR=${1#--dir=} ;;
+      --no-modify-rc) MODIFY_RC=0 ;;
+      -h|--help) usage; exit 0 ;;
+      *) usage >&2; die "Unknown option: $1" ;;
+    esac
+    shift
+  done
+
+  INTERACTIVE=1
+  if [ "$ASSUME_YES" = 1 ] || [ "${SPICE_INSTALL_NONINTERACTIVE:-}" = 1 ]; then
+    INTERACTIVE=0
+  elif ! (: </dev/tty) 2>/dev/null; then
+    INTERACTIVE=0
+    say "💡 No terminal to ask questions on, so installing with the defaults."
+  fi
+
+  # 1. Questions. Nothing is changed yet.
+
+  find_existing
+  if [ -n "$INSTALL_DIR" ]; then
+    INSTALL_DIR=$(normalize_dir "$INSTALL_DIR") || die "--dir can't contain quotes, \$, \`, \\ or :."
+  elif [ "$INTERACTIVE" = 1 ]; then
+    choose_dir
+  else
+    INSTALL_DIR=${EXISTING:-$DEFAULT_DIR}
+  fi
+  dir_writable "$INSTALL_DIR" || die "Can't write to $(tildify "$INSTALL_DIR")."
+
+  [ "$INTERACTIVE" = 0 ] || choose_credential
+  [ "$MODIFY_RC" = 0 ] || choose_rc
+  while IFS= read -r f; do
+    [ -z "$f" ] || check_rc "$f"
+  done <<EOF
+$RC_FILES
+EOF
+
+  # 2. Download and generate everything into a staging directory.
+
+  STAGE=$(mktemp -d)
+  say ""
+  say "📦 Downloading spice"
+  curl -fsSL "$SCRIPT_URL" -o "$STAGE/spice" || die "Couldn't download $SCRIPT_URL."
+  IFS= read -r first < "$STAGE/spice" || first=""
+  case "$first" in
+    "#!"*) ;;
+    *) die "The download from $SCRIPT_URL isn't a script." ;;
+  esac
+  chmod +x "$STAGE/spice"
+
+  # Plugin-aware tab completion and the path manifest both come from the
+  # configured image (no static fallback), so they reflect whatever plugins
+  # (e.g. `registry`) it ships. Both need Docker and the image, and are skipped
+  # gracefully otherwise. SKIP_PULL keeps stdout clean for capture. The manifest
+  # tells the first invocation which arguments to bind-mount; the wrapper
+  # refreshes it itself when the image changes.
+  have_completion=0
+  if command -v docker >/dev/null 2>&1 && docker pull -q "${IMAGE}:${TAG}" >/dev/null 2>&1 \
+     && SPICE_LABS_CLI_SKIP_PULL=1 "$STAGE/spice" generate-completion > "$STAGE/spice.bash" 2>/dev/null \
+     && [ -s "$STAGE/spice.bash" ]; then
+    have_completion=1
+  fi
+  have_manifest=0
+  if SPICE_LABS_CLI_SKIP_PULL=1 SPICE_SKIP_MANIFEST_REFRESH=1 \
+       "$STAGE/spice" path-manifest > "$STAGE/path-manifest" 2>/dev/null \
+     && grep -q '^# spice-path-manifest ' "$STAGE/path-manifest"; then
+    have_manifest=1
+  fi
+
+  [ -z "$CRED_VAR" ] || write_credentials "$STAGE/credentials"
+
+  rc_changed=""
+  n=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    n=$((n + 1))
+    rc_block "$f" > "$STAGE/block.$n"
+    rewrite_rc "$f" "$STAGE/block.$n" "$STAGE/rc.$n"
+    if [ -f "$f" ] && cmp -s "$f" "$STAGE/rc.$n"; then continue; fi
+    rc_changed="$rc_changed$n$NL$f$NL"
+  done <<EOF
+$RC_FILES
+EOF
+
+  # 3. Confirm.
+
+  say ""
+  say "Ready to install:"
+  say "  • spice in $(tildify "$INSTALL_DIR")"
+  [ "$have_completion" = 0 ] || say "  • tab completion generated from ${IMAGE}:${TAG}"
+  [ -z "$CRED_VAR" ] || say "  • $CRED_VAR saved in $(tildify "$CREDENTIALS_FILE")"
+  while IFS= read -r n && IFS= read -r f; do
+    [ -z "$f" ] || say "  • spice set up in $(tildify "$f")"
+  done <<EOF
+$rc_changed
+EOF
+  if [ "$INTERACTIVE" = 1 ] && ! confirm "Go ahead?" y; then
+    say "Nothing was changed."
+    exit 0
+  fi
+
+  # 4. Stage every file beside its destination, then move them all into place.
+
+  make_dir "$INSTALL_DIR"
+  prepare_file "$STAGE/spice" "$INSTALL_DIR/spice"
+  if [ "$have_completion" = 1 ]; then
+    make_dir "$COMPLETION_DIR"
+    prepare_file "$STAGE/spice.bash" "$COMPLETION_DIR/spice.bash"
+  fi
+  if [ "$have_manifest" = 1 ]; then
+    make_dir "$DATA_DIR"
+    prepare_file "$STAGE/path-manifest" "$DATA_DIR/path-manifest"
+  fi
+  if [ -n "$CRED_VAR" ]; then
+    make_dir "$CONFIG_DIR"
+    # Never readable by others, not even while staged
+    old_umask=$(umask)
+    umask 077
+    prepare_file "$STAGE/credentials" "$CREDENTIALS_FILE"
+    umask "$old_umask"
+    chmod 600 "$CREDENTIALS_FILE.spice-new.$$"
+  fi
+  while IFS= read -r n && IFS= read -r f; do
+    [ -n "$f" ] || continue
+    make_dir "$(dirname "$f")"
+    prepare_file "$STAGE/rc.$n" "$f"
+  done <<EOF
+$rc_changed
+EOF
+
+  commit_file "$INSTALL_DIR/spice"
+  [ "$have_completion" = 0 ] || commit_file "$COMPLETION_DIR/spice.bash"
+  [ "$have_manifest" = 0 ] || commit_file "$DATA_DIR/path-manifest"
+  [ -z "$CRED_VAR" ] || commit_file "$CREDENTIALS_FILE"
+  while IFS= read -r n && IFS= read -r f; do
+    [ -z "$f" ] || commit_file "$f"
+  done <<EOF
+$rc_changed
+EOF
+  finish
+
+  # 5. Report.
+
+  say ""
+  say "✅ spice installed in $(tildify "$INSTALL_DIR")"
+  if [ -n "$EXISTING" ] && [ "$EXISTING" != "$INSTALL_DIR" ]; then
+    say "💡 Another spice is still installed in $(tildify "$EXISTING"); remove it if you no longer need it."
+  fi
+
+  if [ "$have_completion" = 0 ]; then
+    say "💡 Skipped tab completion (needs Docker + the spice image). Generate it later with:"
+    say "   spice generate-completion > \"$COMPLETION_DIR/spice.bash\""
+  fi
+
+  if [ -n "$RC_FILES" ]; then
+    say "✅ Shell init scripts set up: open a new shell to start using spice"
+  else
+    say "💡 To set up your shell, add these lines to its init script:"
+    on_path "$INSTALL_DIR" || say "   export PATH=\"\$PATH:$INSTALL_DIR\""
+    if credential_saved; then
+      say "   [ -f \"$CREDENTIALS_FILE\" ] && . \"$CREDENTIALS_FILE\""
+    fi
+    say "   [ -f \"$COMPLETION_DIR/spice.bash\" ] && . \"$COMPLETION_DIR/spice.bash\""
+  fi
+
+  if [ -z "${SPICE_PASS:-}" ] && [ -z "${SPICE_LICENSE:-}" ] && ! credential_saved; then
+    say "⚠️  Neither SPICE_PASS nor SPICE_LICENSE is set. Run the installer again to save one, or set it in your shell env:"
+    say "   export SPICE_PASS=\"your-secret-token\""
+    say "   export SPICE_LICENSE=\"your-license\""
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    say "⚠️  Docker is not installed or not in PATH. The spice CLI uses Docker unless JVM mode is enabled."
+    say "  → Install Docker from https://docs.docker.com/get-docker/"
+  fi
+}
+
+main "$@"
