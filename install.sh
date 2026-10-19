@@ -2,8 +2,11 @@
 # To Install : `curl -sSfL https://install.spicelabs.io | sh`
 #
 # Interactive when a terminal is available: asks for a credential, where to
-# install, and which shell init scripts to update. Options, which also work when
-# piped (`curl ... | sh -s -- --yes`):
+# install, and which shell init scripts to update. Docker must be installed and
+# running. A Spice License selects its edition's image, which is pulled through
+# the Spice Labs registry (SPICE_REGISTRY overrides it) after logging in to it;
+# otherwise the image is spicelabs/spice-labs-cli, from Docker Hub. Options,
+# which also work when piped (`curl ... | sh -s -- --yes`):
 #
 #   -y, --yes        accept the defaults without asking (also SPICE_INSTALL_NONINTERACTIVE=1)
 #   --dir DIR        install the spice script into DIR
@@ -16,13 +19,16 @@
 set -eu
 
 SCRIPT_URL="https://github.com/spice-labs-inc/spice-labs-cli/releases/latest/download/spice"
-IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
-TAG="${SPICE_IMAGE_TAG:-latest}"
+DEFAULT_IMAGE="spicelabs/spice-labs-cli:${SPICE_IMAGE_TAG:-latest}"
+# The registry (bael) that the licensed editions' images are pulled through
+REGISTRY="${SPICE_REGISTRY:-surveyor.spicelabs.io}"
 DEFAULT_DIR="${HOME}/.local/bin"
 DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/spice"
 COMPLETION_DIR="${HOME}/.local/share/spice/completions"
 CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/spice"
 CREDENTIALS_FILE="$CONFIG_DIR/credentials"
+ENVIRONMENT_FILE="$CONFIG_DIR/environment"
+DOCKER_CONFIG_FILE="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
 FISH_CONFIG="${XDG_CONFIG_HOME:-${HOME}/.config}/fish/config.fish"
 BLOCK_BEGIN="# >>> spice >>>"
 BLOCK_END="# <<< spice <<<"
@@ -74,8 +80,13 @@ on_path() {
 # ── Transaction ──────────────────────────────────────────────────────────────
 #
 # JOURNAL records each committed change, newest first, as three lines: the kind
-# (dir or file), the target, and the backup of what it replaced (empty if it
-# replaced nothing). PREPARED lists the new files staged beside their targets.
+# (dir, file or login), the target, and the backup of what it replaced (empty if
+# it replaced nothing). PREPARED lists the new files staged beside their targets.
+#
+# A registry login is undone by logging out, but only if there was no login for
+# that registry before: Docker can't give back a login it has replaced. A pulled
+# image isn't removed, as it's only a cache, and removing it would just mean
+# downloading it again on the next attempt.
 
 STAGE=""
 JOURNAL=""
@@ -88,6 +99,7 @@ rollback() {
   while IFS= read -r kind && IFS= read -r target && IFS= read -r backup; do
     case "$kind" in
       dir) rmdir "$target" 2>/dev/null || true ;;
+      login) docker logout "$target" >/dev/null 2>&1 || true ;;
       file)
         if [ -z "$backup" ]; then
           rm -f "$target"
@@ -171,6 +183,14 @@ commit_file() {
   fi
 }
 
+# Removes TARGET, keeping a backup so rollback can restore it
+commit_remove() {
+  rm_backup="$1.spice-old.$$"
+  cp -p "$1" "$rm_backup"
+  JOURNAL="file$NL$1$NL$rm_backup$NL$JOURNAL"
+  rm -f "$1"
+}
+
 # Ends the transaction: the changes are kept, and the backups are not needed
 finish() {
   while IFS= read -r kind && IFS= read -r target && IFS= read -r backup; do
@@ -251,34 +271,142 @@ ask_secret() {
 }
 
 # ── Credential ───────────────────────────────────────────────────────────────
+#
+# A Spice License and a Spice Pass are both JWTs. Their claims are read here
+# without verifying the signature, only to describe the credential and to choose
+# the image for its edition: spice verifies a License itself when it runs.
 
 CRED_VAR=""
 CRED_VALUE=""
 
 credential_saved() { [ -f "$CREDENTIALS_FILE" ]; }
 
+# The value of VAR in the credentials file, if it's there
+saved_value() {
+  [ -f "$CREDENTIALS_FILE" ] || return 0
+  sed -n "s/^export $1='\(.*\)'\$/\1/p" "$CREDENTIALS_FILE" | tail -n 1
+}
+
+b64url_decode() {
+  bd=$(printf '%s' "$1" | tr -- '-_' '+/')
+  case $((${#bd} % 4)) in
+    2) bd="$bd==" ;;
+    3) bd="$bd=" ;;
+  esac
+  # macOS before 13 has only -D; openssl is the last resort
+  bd_out=$(printf '%s' "$bd" | base64 -d 2>/dev/null) \
+    || bd_out=$(printf '%s' "$bd" | base64 -D 2>/dev/null) \
+    || bd_out=$(printf '%s' "$bd" | openssl base64 -d -A 2>/dev/null) \
+    || return 1
+  printf '%s' "$bd_out"
+}
+
+# The value of the string or number claim NAME in JSON. A pattern, not a parser:
+# enough for the flat claims read here, and nothing depends on it but messages
+# and the choice of image.
+claim() {
+  printf '%s' "$1" | tr -d '\n' \
+    | sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\{0,1\}\([^",}]*\).*/\1/p'
+}
+
+# Sets KIND (license, pass or unknown), EDITION, and EXPIRES (in seconds since
+# the epoch) for the credential TOKEN
+inspect_credential() {
+  KIND=unknown
+  EDITION=""
+  EXPIRES=""
+  case "$1" in
+    *.*.*) ;;
+    *) return 0 ;;
+  esac
+  ic_header=$(b64url_decode "$(printf '%s' "$1" | cut -d. -f1)") || return 0
+  ic_payload=$(b64url_decode "$(printf '%s' "$1" | cut -d. -f2)") || return 0
+  # The same markers spice checks: a License's typ header and x-type claim
+  ic_type=$(claim "$ic_payload" x-type)
+  if [ "$(claim "$ic_header" typ)" = spice-license+jwt ] || [ "$ic_type" = license ]; then
+    KIND=license
+  elif [ -n "$ic_type" ]; then
+    KIND=pass
+  fi
+  EDITION=$(claim "$ic_payload" x-edition)
+  EXPIRES=$(claim "$ic_payload" exp)
+  case "$EXPIRES" in
+    *[!0-9]*) EXPIRES="" ;;
+  esac
+}
+
+expired() { [ -n "$EXPIRES" ] && [ "$EXPIRES" -lt "$(date +%s)" ]; }
+
+# Formats seconds since the epoch as a date, if this system's date can
+format_date() {
+  date -u -r "$1" '+%-d %B %Y' 2>/dev/null || date -u -d "@$1" '+%-d %B %Y' 2>/dev/null
+}
+
+# The editions, as named in surveyor's editions.json
+edition_title() {
+  case "$1" in
+    cli) printf 'Surveyor CLI' ;;
+    otpro) printf 'Surveyor OT Pro' ;;
+    it) printf 'Surveyor IT' ;;
+    itpro) printf 'Surveyor IT Pro' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# The image for EDITION, pulled through the registry; nothing for the default
+edition_image() {
+  case "$1" in
+    otpro|it|itpro) printf '%s/spice-labs-inc/surveyor-%s:latest' "$REGISTRY" "$1" ;;
+  esac
+}
+
+# Describes the credential last inspected, e.g. "a Spice License for Surveyor
+# IT Pro, valid until 1 January 2028"
+describe_credential() {
+  case "$KIND" in
+    license)
+      dc="a Spice License"
+      [ -z "$EDITION" ] || dc="$dc for $(edition_title "$EDITION")"
+      ;;
+    pass) dc="a Spice Pass" ;;
+    *) printf 'a credential of an unknown form'; return 0 ;;
+  esac
+  if [ -n "$EXPIRES" ]; then
+    dc_date=$(format_date "$EXPIRES") || dc_date=""
+    if expired; then
+      if [ -n "$dc_date" ]; then dc="$dc, which expired on $dc_date"; else dc="$dc, which has expired"; fi
+    elif [ -n "$dc_date" ]; then
+      dc="$dc, valid until $dc_date"
+    fi
+  fi
+  printf '%s' "$dc"
+}
+
 choose_credential() {
   say ""
   say "🔑 $(code spice) needs a Spice License or a Spice Pass to run."
-  [ -z "${SPICE_LICENSE:-}" ] || say "   $(code SPICE_LICENSE) is already set in this shell."
-  [ -z "${SPICE_PASS:-}" ] || say "   $(code SPICE_PASS) is already set in this shell."
-  ! credential_saved || say "   A credential is already saved in $(path "$CREDENTIALS_FILE")."
-  say ""
-  say "  1) Spice License: issued to your organization by Spice Labs"
-  say "  2) Spice Pass: downloaded from your Spice Labs project dashboard"
-  say "  3) Skip"
-  say ""
-  while :; do
-    ask "Which do you have? [3] " 3
-    case "$REPLY" in
-      1) CRED_VAR=SPICE_LICENSE; cc_name="Spice License"; break ;;
-      2) CRED_VAR=SPICE_PASS; cc_name="Spice Pass"; break ;;
-      3) return 0 ;;
-    esac
+  cc_have=0
+  for cc_var in SPICE_LICENSE SPICE_PASS; do
+    eval "cc_value=\${$cc_var:-}"
+    if [ -n "$cc_value" ]; then
+      inspect_credential "$cc_value"
+      say "   $(code "$cc_var") is set in this shell: $(describe_credential)."
+      cc_have=1
+    fi
+    cc_value=$(saved_value "$cc_var")
+    if [ -n "$cc_value" ]; then
+      inspect_credential "$cc_value"
+      say "   $(code "$cc_var") is saved in $(path "$CREDENTIALS_FILE"): $(describe_credential)."
+      cc_have=1
+    fi
   done
+  if [ "$cc_have" = 1 ]; then cc_skip="keep it"; else cc_skip="skip"; fi
+  say ""
+  say "Paste your Spice License or Spice Pass, or the path to a file containing it."
 
   while :; do
-    ask_secret "Paste your $cc_name, or the path to a file containing it: "
+    CRED_VAR=""
+    ask_secret "Credential [Enter to $cc_skip]: "
     cc_input=$REPLY
     case "$cc_input" in
       "~"/*) cc_input="$HOME/${cc_input#"~/"}" ;;
@@ -287,17 +415,41 @@ choose_credential() {
       cc_input=$(cat "$cc_input")
     fi
     CRED_VALUE=$(printf '%s' "$cc_input" | tr -d '[:space:]')
-    if [ -z "$CRED_VALUE" ]; then
-      say "   No $cc_name entered; skipping."
-      CRED_VAR=""
-      return 0
-    fi
+    [ -n "$CRED_VALUE" ] || return 0
     # The credentials file must parse the same way in sh and fish, so the value
     # is limited to the characters a token can contain.
     case "$CRED_VALUE" in
-      *[!A-Za-z0-9._~+/=-]*) say "   That doesn't look like a $cc_name. Try again, or press Enter to skip." ;;
-      *) return 0 ;;
+      *[!A-Za-z0-9._~+/=-]*)
+        say "   That isn't a Spice License or a Spice Pass. Try again, or press Enter to $cc_skip."
+        continue
+        ;;
     esac
+
+    inspect_credential "$CRED_VALUE"
+    case "$KIND" in
+      license) CRED_VAR=SPICE_LICENSE ;;
+      pass) CRED_VAR=SPICE_PASS ;;
+      *)
+        say "   This doesn't look like a Spice License or a Spice Pass. Which is it?"
+        say ""
+        say "  1) Spice License: issued to your organization by Spice Labs"
+        say "  2) Spice Pass: downloaded from your Spice Labs project dashboard"
+        say "  3) Neither: enter it again"
+        say ""
+        while :; do
+          ask "Please select [3]: " 3
+          case "$REPLY" in
+            1) CRED_VAR=SPICE_LICENSE; break ;;
+            2) CRED_VAR=SPICE_PASS; break ;;
+            3) break ;;
+          esac
+        done
+        [ -n "$CRED_VAR" ] || continue
+        ;;
+    esac
+    [ "$KIND" = unknown ] || say "   This is $(describe_credential)."
+    if expired && ! confirm "   Save it anyway?" n; then continue; fi
+    return 0
   done
 }
 
@@ -313,6 +465,104 @@ write_credentials() {
     say "export $CRED_VAR='$CRED_VALUE'"
   } > "$1"
   chmod 600 "$1"
+}
+
+# ── Image ────────────────────────────────────────────────────────────────────
+#
+# The image is the one for the edition of the Spice License that spice will run
+# with, saved as SPICE_IMAGE in the environment file, which the wrapper uses
+# instead of its default. A SPICE_IMAGE the user set themselves is left alone.
+
+IMAGE_REF=""
+SAVE_IMAGE=""
+ENV_ACTION=""
+LICENSE_EDITION=""
+NEED_LOGIN=0
+REGISTRY_PASSWORD=""
+
+# Sets LICENSE_EDITION from the first License among: the credential entered now,
+# then those set in this shell or saved, under either variable
+find_license_edition() {
+  LICENSE_EDITION=""
+  for fl_value in "$CRED_VALUE" "${SPICE_LICENSE:-}" "$(saved_value SPICE_LICENSE)" \
+                  "${SPICE_PASS:-}" "$(saved_value SPICE_PASS)"; do
+    [ -n "$fl_value" ] || continue
+    inspect_credential "$fl_value"
+    if [ "$KIND" = license ]; then
+      LICENSE_EDITION=$EDITION
+      return 0
+    fi
+  done
+}
+
+choose_image() {
+  ci_ours=""
+  if [ -f "$ENVIRONMENT_FILE" ]; then
+    ci_ours=$(sed -n "s/^export SPICE_IMAGE='\(.*\)'\$/\1/p" "$ENVIRONMENT_FILE" | tail -n 1)
+  fi
+  if [ -n "${SPICE_IMAGE:-}" ] && [ "$SPICE_IMAGE" != "$ci_ours" ]; then
+    IMAGE_REF=$SPICE_IMAGE
+  else
+    find_license_edition
+    SAVE_IMAGE=$(edition_image "$LICENSE_EDITION")
+    IMAGE_REF=${SAVE_IMAGE:-$DEFAULT_IMAGE}
+    if [ -n "$SAVE_IMAGE" ] && [ "$SAVE_IMAGE" != "$ci_ours" ]; then
+      ENV_ACTION="write"
+    elif [ -z "$SAVE_IMAGE" ] && [ -f "$ENVIRONMENT_FILE" ]; then
+      ENV_ACTION="remove"
+    fi
+  fi
+  case "$IMAGE_REF" in
+    "$REGISTRY"/*) NEED_LOGIN=1 ;;
+  esac
+}
+
+# Whether the environment file will exist once the installation is done
+environment_kept() {
+  [ "$ENV_ACTION" = write ] || { [ -f "$ENVIRONMENT_FILE" ] && [ "$ENV_ACTION" != remove ]; }
+}
+
+write_environment() {
+  say "# Settings for spice, loaded by the spice block in your shell init script."
+  say "# The spice installer rewrites this file when run again."
+  say "export SPICE_IMAGE='$SAVE_IMAGE'"
+}
+
+# The registry can't yet accept a Spice License or Spice Pass, so for now the
+# login is the user "download", with the password in SPICE_PASSWORD. Once it
+# can, log in with the credential itself instead, and drop SPICE_PASSWORD.
+LOGIN_USER=download
+
+choose_registry_password() {
+  REGISTRY_PASSWORD=${SPICE_PASSWORD:-}
+  if [ -z "$REGISTRY_PASSWORD" ] && [ "$INTERACTIVE" = 1 ]; then
+    say ""
+    say "🔐 Downloading $(edition_title "$LICENSE_EDITION") needs a login to $(code "$REGISTRY")."
+    ask_secret "Password for $(code "$LOGIN_USER"): "
+    REGISTRY_PASSWORD=$REPLY
+  fi
+  [ -n "$REGISTRY_PASSWORD" ] \
+    || die "Logging in to $(code "$REGISTRY") needs a password. Set $(code SPICE_PASSWORD) to it, then run the installer again."
+}
+
+# Logs in to the registry, journalling the login if there wasn't one already
+registry_login() {
+  rl_new=1
+  if [ -f "$DOCKER_CONFIG_FILE" ] && grep -qF "\"$REGISTRY\"" "$DOCKER_CONFIG_FILE"; then
+    rl_new=0
+  fi
+  if ! printf '%s' "$REGISTRY_PASSWORD" \
+       | docker login "$REGISTRY" --username "$LOGIN_USER" --password-stdin >/dev/null 2>"$STAGE/login.err"; then
+    die "Couldn't log in to $(code "$REGISTRY"): $(cat "$STAGE/login.err")"
+  fi
+  [ "$rl_new" = 0 ] || JOURNAL="login$NL$REGISTRY$NL$NL$JOURNAL"
+}
+
+check_docker() {
+  command -v docker >/dev/null 2>&1 \
+    || die "spice needs Docker, which isn't installed. Install it from $(code https://docs.docker.com/get-docker/), then run the installer again."
+  docker info >/dev/null 2>&1 \
+    || die "Docker is installed, but isn't running. Start it, then run the installer again."
 }
 
 # ── Install directory ────────────────────────────────────────────────────────
@@ -534,6 +784,8 @@ rc_block() {
   if ! on_path "$INSTALL_DIR" || block_adds_path "$1" "$INSTALL_DIR"; then rb_path=1; fi
   rb_creds=0
   if credential_saved || [ -n "$CRED_VAR" ]; then rb_creds=1; fi
+  rb_env=0
+  if environment_kept; then rb_env=1; fi
 
   say "$BLOCK_BEGIN"
   say "# Added by the spice installer, which rewrites this block when run again."
@@ -549,6 +801,11 @@ rc_block() {
         say "    source \"$CREDENTIALS_FILE\""
         say "end"
       fi
+      if [ "$rb_env" = 1 ]; then
+        say "if test -f \"$ENVIRONMENT_FILE\""
+        say "    source \"$ENVIRONMENT_FILE\""
+        say "end"
+      fi
       ;;
     *)
       if [ "$rb_path" = 1 ]; then
@@ -556,6 +813,9 @@ rc_block() {
       fi
       if [ "$rb_creds" = 1 ]; then
         say "if [ -f \"$CREDENTIALS_FILE\" ]; then . \"$CREDENTIALS_FILE\"; fi"
+      fi
+      if [ "$rb_env" = 1 ]; then
+        say "if [ -f \"$ENVIRONMENT_FILE\" ]; then . \"$ENVIRONMENT_FILE\"; fi"
       fi
       case "$1" in
         */.zshrc)
@@ -630,6 +890,8 @@ main() {
     say "💡 No terminal to ask questions on, so installing with the defaults."
   fi
 
+  check_docker
+
   # 1. Questions. Nothing is changed yet.
 
   find_existing
@@ -643,6 +905,8 @@ main() {
   dir_writable "$INSTALL_DIR" || die "Can't write to $(path "$INSTALL_DIR")."
 
   [ "$INTERACTIVE" = 0 ] || choose_credential
+  choose_image
+  [ "$NEED_LOGIN" = 0 ] || choose_registry_password
   [ "$MODIFY_RC" = 0 ] || choose_rc
   while IFS= read -r f; do
     [ -z "$f" ] || check_rc "$f"
@@ -650,39 +914,11 @@ main() {
 $RC_FILES
 EOF
 
-  # 2. Download and generate everything into a staging directory.
+  # 2. Write the new files into a staging directory, and confirm.
 
   STAGE=$(mktemp -d)
-  say ""
-  say "📦 Downloading $(code spice)"
-  curl -fsSL "$SCRIPT_URL" -o "$STAGE/spice" || die "Couldn't download $(code "$SCRIPT_URL")."
-  IFS= read -r first < "$STAGE/spice" || first=""
-  case "$first" in
-    "#!"*) ;;
-    *) die "The download from $(code "$SCRIPT_URL") isn't a script." ;;
-  esac
-  chmod +x "$STAGE/spice"
-
-  # Plugin-aware tab completion and the path manifest both come from the
-  # configured image (no static fallback), so they reflect whatever plugins
-  # (e.g. `registry`) it ships. Both need Docker and the image, and are skipped
-  # gracefully otherwise. SKIP_PULL keeps stdout clean for capture. The manifest
-  # tells the first invocation which arguments to bind-mount; the wrapper
-  # refreshes it itself when the image changes.
-  have_completion=0
-  if command -v docker >/dev/null 2>&1 && docker pull -q "${IMAGE}:${TAG}" >/dev/null 2>&1 \
-     && SPICE_LABS_CLI_SKIP_PULL=1 "$STAGE/spice" generate-completion > "$STAGE/spice.bash" 2>/dev/null \
-     && [ -s "$STAGE/spice.bash" ]; then
-    have_completion=1
-  fi
-  have_manifest=0
-  if SPICE_LABS_CLI_SKIP_PULL=1 SPICE_SKIP_MANIFEST_REFRESH=1 \
-       "$STAGE/spice" path-manifest > "$STAGE/path-manifest" 2>/dev/null \
-     && grep -q '^# spice-path-manifest ' "$STAGE/path-manifest"; then
-    have_manifest=1
-  fi
-
   [ -z "$CRED_VAR" ] || write_credentials "$STAGE/credentials"
+  [ "$ENV_ACTION" != write ] || write_environment > "$STAGE/environment"
 
   rc_changed=""
   n=0
@@ -697,13 +933,16 @@ EOF
 $RC_FILES
 EOF
 
-  # 3. Confirm.
-
   say ""
   say "Ready to install:"
   say "  • $(code spice) in $(path "$INSTALL_DIR")"
-  [ "$have_completion" = 0 ] || say "  • tab completion generated from $(code "${IMAGE}:${TAG}")"
   [ -z "$CRED_VAR" ] || say "  • $(code "$CRED_VAR") saved in $(path "$CREDENTIALS_FILE")"
+  [ "$NEED_LOGIN" = 0 ] || say "  • a Docker login to $(code "$REGISTRY")"
+  say "  • the image $(code "$IMAGE_REF"), with tab completion from it"
+  case "$ENV_ACTION" in
+    write) say "  • $(code SPICE_IMAGE) saved in $(path "$ENVIRONMENT_FILE")" ;;
+    remove) say "  • $(path "$ENVIRONMENT_FILE") removed, so $(code spice) uses its default image" ;;
+  esac
   while IFS= read -r n && IFS= read -r f; do
     [ -z "$f" ] || say "  • $(code spice) set up in $(path "$f")"
   done <<EOF
@@ -712,6 +951,45 @@ EOF
   if [ "$INTERACTIVE" = 1 ] && ! confirm "Proceed with installation?" y; then
     say "Nothing was changed."
     exit 0
+  fi
+
+  # 3. Download the script and the image, and generate from the image.
+
+  say ""
+  say "📦 Downloading $(code spice)"
+  curl -fsSL "$SCRIPT_URL" -o "$STAGE/spice" || die "Couldn't download $(code "$SCRIPT_URL")."
+  IFS= read -r first < "$STAGE/spice" || first=""
+  case "$first" in
+    "#!"*) ;;
+    *) die "The download from $(code "$SCRIPT_URL") isn't a script." ;;
+  esac
+  chmod +x "$STAGE/spice"
+
+  [ "$NEED_LOGIN" = 0 ] || registry_login
+  say "📦 Downloading $(code "$IMAGE_REF")"
+  if [ -t 1 ]; then
+    docker pull "$IMAGE_REF" || die "Couldn't download $(code "$IMAGE_REF")."
+  else
+    docker pull -q "$IMAGE_REF" >/dev/null || die "Couldn't download $(code "$IMAGE_REF")."
+  fi
+
+  # Plugin-aware tab completion and the path manifest both come from the image
+  # (no static fallback), so they reflect whatever plugins (e.g. `registry`) it
+  # ships, and are skipped gracefully if they can't be generated. SKIP_PULL
+  # keeps stdout clean for capture. The manifest tells the first invocation
+  # which arguments to bind-mount; the wrapper refreshes it itself when the
+  # image changes.
+  have_completion=0
+  if SPICE_IMAGE="$IMAGE_REF" SPICE_LABS_CLI_SKIP_PULL=1 \
+       "$STAGE/spice" generate-completion > "$STAGE/spice.bash" 2>/dev/null \
+     && [ -s "$STAGE/spice.bash" ]; then
+    have_completion=1
+  fi
+  have_manifest=0
+  if SPICE_IMAGE="$IMAGE_REF" SPICE_LABS_CLI_SKIP_PULL=1 SPICE_SKIP_MANIFEST_REFRESH=1 \
+       "$STAGE/spice" path-manifest > "$STAGE/path-manifest" 2>/dev/null \
+     && grep -q '^# spice-path-manifest ' "$STAGE/path-manifest"; then
+    have_manifest=1
   fi
 
   # 4. Stage every file beside its destination, then move them all into place.
@@ -735,6 +1013,10 @@ EOF
     umask "$old_umask"
     chmod 600 "$CREDENTIALS_FILE.spice-new.$$"
   fi
+  if [ "$ENV_ACTION" = write ]; then
+    make_dir "$CONFIG_DIR"
+    prepare_file "$STAGE/environment" "$ENVIRONMENT_FILE"
+  fi
   while IFS= read -r n && IFS= read -r f; do
     [ -n "$f" ] || continue
     make_dir "$(dirname "$f")"
@@ -747,6 +1029,10 @@ EOF
   [ "$have_completion" = 0 ] || commit_file "$COMPLETION_DIR/spice.bash"
   [ "$have_manifest" = 0 ] || commit_file "$DATA_DIR/path-manifest"
   [ -z "$CRED_VAR" ] || commit_file "$CREDENTIALS_FILE"
+  case "$ENV_ACTION" in
+    write) commit_file "$ENVIRONMENT_FILE" ;;
+    remove) commit_remove "$ENVIRONMENT_FILE" ;;
+  esac
   while IFS= read -r n && IFS= read -r f; do
     [ -z "$f" ] || commit_file "$f"
   done <<EOF
@@ -762,8 +1048,12 @@ EOF
     say "💡 Another $(code spice) is still installed in $(path "$EXISTING"); remove it if you no longer need it."
   fi
 
+  if [ -n "$LICENSE_EDITION" ]; then
+    say "✅ Using $(edition_title "$LICENSE_EDITION"), from $(code "$IMAGE_REF")"
+  fi
+
   if [ "$have_completion" = 0 ]; then
-    say "💡 Skipped tab completion (needs Docker + the $(code spice) image). Generate it later with:"
+    say "💡 Couldn't generate tab completion from the image. Generate it later with:"
     say "   $(code "spice generate-completion > \"$COMPLETION_DIR/spice.bash\"")"
   fi
 
@@ -775,6 +1065,9 @@ EOF
     if credential_saved; then
       say "   $(code "[ -f \"$CREDENTIALS_FILE\" ] && . \"$CREDENTIALS_FILE\"")"
     fi
+    if [ -f "$ENVIRONMENT_FILE" ]; then
+      say "   $(code "[ -f \"$ENVIRONMENT_FILE\" ] && . \"$ENVIRONMENT_FILE\"")"
+    fi
     say "   $(code "[ -f \"$COMPLETION_DIR/spice.bash\" ] && . \"$COMPLETION_DIR/spice.bash\"")"
   fi
 
@@ -782,11 +1075,6 @@ EOF
     say "⚠️  Neither $(code SPICE_PASS) nor $(code SPICE_LICENSE) is set. Run the installer again to save one, or set it in your shell env:"
     say "   $(code "export SPICE_PASS=\"your-secret-token\"")"
     say "   $(code "export SPICE_LICENSE=\"your-license\"")"
-  fi
-
-  if ! command -v docker >/dev/null 2>&1; then
-    say "⚠️  Docker is not installed or not in $(code PATH). The $(code spice) CLI uses Docker unless JVM mode is enabled."
-    say "  → Install Docker from $(code https://docs.docker.com/get-docker/)"
   fi
 }
 

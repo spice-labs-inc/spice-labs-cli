@@ -27,7 +27,13 @@ curl -sSLf https://install.spicelabs.io | sh
 The installer asks where to install `spice`, for your Spice License or Spice Pass (saved in
 `~/.config/spice/credentials`, readable only by you), and which shell init scripts to set up.
 Its changes are in a block marked `# >>> spice >>>`, which running the installer again
-rewrites rather than duplicates. To install without questions, as in CI, pass options after
+rewrites rather than duplicates.
+
+Docker must be installed and running. With a Spice License, the installer pulls your
+edition's image (e.g. Surveyor IT Pro) from `surveyor.spicelabs.io`, after a `docker login`,
+and saves it as `SPICE_IMAGE` in `~/.config/spice/environment`. For now that login needs the
+registry password, in `SPICE_PASSWORD` or entered when asked. Otherwise it pulls
+`spicelabs/spice-labs-cli` from Docker Hub. To install without questions, as in CI, pass options after
 `sh -s --`:
 
 ```bash
