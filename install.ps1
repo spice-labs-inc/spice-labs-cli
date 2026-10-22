@@ -97,9 +97,10 @@ if (Test-Path $CompletionPath) {
     Write-Host "    $SourceLine"
 }
 
-if (-not $env:SPICE_PASS) {
-    Write-Host "⚠️  SPICE_PASS is not set. Set it in your shell env to use the CLI:"
+if (-not $env:SPICE_PASS -and -not $env:SPICE_LICENSE) {
+    Write-Host "⚠️  Neither SPICE_PASS nor SPICE_LICENSE is set. Set one in your shell env to use the CLI:"
     Write-Host '    $env:SPICE_PASS = "your-secret-token"'
+    Write-Host '    $env:SPICE_LICENSE = "your-license"'
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {

@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 # To Install : `curl -sSfL https://install.spicelabs.io | bash`
 
@@ -20,7 +20,7 @@ chmod +x "$TARGET_DIR/spice"
 # and the image; skipped gracefully otherwise. SKIP_PULL keeps stdout clean for capture.
 IMAGE="${SPICE_IMAGE:-spicelabs/spice-labs-cli}"
 TAG="${SPICE_IMAGE_TAG:-latest}"
-if command -v docker &>/dev/null && docker pull -q "${IMAGE}:${TAG}" &>/dev/null \
+if command -v docker >/dev/null 2>&1 && docker pull -q "${IMAGE}:${TAG}" >/dev/null 2>&1 \
    && SPICE_LABS_CLI_SKIP_PULL=1 "$TARGET_DIR/spice" generate-completion > "$COMPLETION_DIR/spice.bash.tmp" 2>/dev/null \
    && [ -s "$COMPLETION_DIR/spice.bash.tmp" ]; then
   mv "$COMPLETION_DIR/spice.bash.tmp" "$COMPLETION_DIR/spice.bash"
@@ -44,12 +44,15 @@ else
   rm -f "$DATA_DIR/path-manifest.tmp"
 fi
 
-if [[ ":$PATH:" != *":$TARGET_DIR:"* ]]; then
-  echo "⚠️  ${TARGET_DIR} is not in your PATH. Add this line to your shell profile:"
-  echo "  export PATH=\"\$PATH:$TARGET_DIR\""
-else
-  echo "✅ spice installed and ready to use"
-fi
+case ":$PATH:" in
+  *":$TARGET_DIR:"*)
+    echo "✅ spice installed and ready to use"
+    ;;
+  *)
+    echo "⚠️  ${TARGET_DIR} is not in your PATH. Add this line to your shell profile:"
+    echo "  export PATH=\"\$PATH:$TARGET_DIR\""
+    ;;
+esac
 
 # ── Tab completion ───────────────────────────────────────────────────────────
 
@@ -80,12 +83,13 @@ else
   echo "  $BASH_SOURCE_LINE"
 fi
 
-if [[ -z "${SPICE_PASS:-}" ]]; then
-  echo "⚠️  SPICE_PASS is not set. Set it in your shell env to use the CLI:"
+if [ -z "${SPICE_PASS:-}" ] && [ -z "${SPICE_LICENSE:-}" ]; then
+  echo "⚠️  Neither SPICE_PASS nor SPICE_LICENSE is set. Set one in your shell env to use the CLI:"
   echo "  export SPICE_PASS=\"your-secret-token\""
+  echo "  export SPICE_LICENSE=\"your-license\""
 fi
 
-if ! command -v docker &> /dev/null; then
+if ! command -v docker >/dev/null 2>&1; then
   echo "⚠️  Docker is not installed or not in PATH. The spice CLI uses Docker unless JVM mode is enabled."
   echo "  → Install Docker from https://docs.docker.com/get-docker/"
 fi

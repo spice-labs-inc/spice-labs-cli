@@ -221,7 +221,7 @@ class LicenseGateTest {
    */
   @Test
   void exemptList_coversWhatTheWrapperAndInstallersInvoke() throws Exception {
-    List<String> scripts = List.of("spice", "install.sh", "install.ps1", "spice.ps1");
+    List<String> scripts = List.of("spice", "install.sh", "install-surveyor.sh", "install.ps1", "install-surveyor.ps1", "spice.ps1");
     for (String command : List.of("docs", "path-manifest", "generate-completion", "generate-powershell-completion")) {
       boolean invoked = false;
       for (String script : scripts) {
