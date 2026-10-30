@@ -16,7 +16,7 @@ jobs:
   survey:
     name: Survey Published Artifacts
     runs-on: ubuntu-24.04
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && vars.SPICE_LABS_UPLOADS == 'on' }}
     permissions:
       contents: read
       packages: read
