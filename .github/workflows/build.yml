@@ -194,7 +194,7 @@ jobs:
       - format
       - test
       - build-image-spice
-    if: always()
+    if: always() && vars.SPICE_LABS_UPLOADS == 'on'
     runs-on: ubuntu-24.04
     permissions:
       contents: read

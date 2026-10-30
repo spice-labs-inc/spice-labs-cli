@@ -78,7 +78,7 @@ jobs:
     name: Export OpenTelemetry traces
     needs:
       - cleanup
-    if: always()
+    if: always() && vars.SPICE_LABS_UPLOADS == 'on'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
